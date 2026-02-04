@@ -23,7 +23,7 @@ import (
 // GatewayRouterSpec defines the desired state of GatewayRouter
 type GatewayRouterSpec struct {
 
-	GatewayRef GatewayRef `json:"gateway-ref"`
+	GatewayRef GatewayRef `json:"gatewayRef"`
 
 	// Name of the interface to reach external gateway
 	Interface string `json:"interface"`
@@ -45,10 +45,10 @@ type GatewayRef struct {
 
 type BgpSpec struct {
 	// The ASN number of the Gateway Router
-	RemoteASN uint32 `json:"remote-asn"`
+	RemoteASN uint32 `json:"remoteASN"`
 
 	// The ASN number of the system where the Attractor FrontEnds locates
-	LocalASN uint32 `json:"local-asn"`
+	LocalASN uint32 `json:"localASN"`
 
 	// BFD monitoring of BGP session.
 	// +optional
@@ -61,7 +61,7 @@ type BgpSpec struct {
 	// The duration will be rounded by second
 	// Minimum duration is 3s.
 	// +optional
-	HoldTime string `json:"hold-time,omitempty"`
+	HoldTime string `json:"holdTime,omitempty"`
 
 	// +kubebuilder:default=179
 	// +kubebuilder:validation:Minimum=1
@@ -69,7 +69,7 @@ type BgpSpec struct {
 
 	// BGP listening port of the Gateway Router.
 	// +optional
-	RemotePort *uint16 `json:"remote-port,omitempty"`
+	RemotePort *uint16 `json:"remotePort,omitempty"`
 
 	// +kubebuilder:default=179
 	// +kubebuilder:validation:Minimum=1
@@ -77,7 +77,7 @@ type BgpSpec struct {
 
 	// BGP listening port of the Attractor FrontEnds.
 	// +optional
-	LocalPort *uint16 `json:"local-port,omitempty"`
+	LocalPort *uint16 `json:"localPort,omitempty"`
 }
 
 type BfdSpec struct {
@@ -93,13 +93,13 @@ type BfdSpec struct {
 	// The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
 	// The duration will be rounded by millisecond.
 	// +optional
-	MinTx string `json:"min-tx,omitempty"`
+	MinTx string `json:"minTx,omitempty"`
 
 	// Min-rx timer of bfd session. Please refere to BFD material to understand what this implies.
 	// The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
 	// The duration will be rounded by millisecond.
 	// +optional
-	MinRx string `json:"min-rx,omitempty"`
+	MinRx string `json:"minRx,omitempty"`
 
 	// Multiplier of bfd session.
 	// When this number of bfd packets failed to receive, bfd session will go down.
