@@ -20,19 +20,91 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // GatewayRouterSpec defines the desired state of GatewayRouter
 type GatewayRouterSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of GatewayRouter. Edit gatewayrouter_types.go to remove/update
+	GatewayRef GatewayRef `json:"gateway-ref"`
+
+	// Name of the interface to reach external gateway
+	Interface string `json:"interface"`
+
+	//+kubebuilder:validation:XValidation:rule=isIp(self),message=Must be an ip address
+
+	// Address of the Gateway Router
+	Address string `json:"address"`
+
+	// Parameters to set up the BGP session to specified Address.
+	// If the Protocol is bgp, the minimal parameters to be defined in bgp properties
+	// are RemoteASN and LocalASN
+	BGP BgpSpec `json:"bgp"`
+}
+
+type GatewayRef struct {
+	Name string `json:"name"`
+}
+
+type BgpSpec struct {
+	// The ASN number of the Gateway Router
+	RemoteASN uint32 `json:"remote-asn"`
+
+	// The ASN number of the system where the Attractor FrontEnds locates
+	LocalASN uint32 `json:"local-asn"`
+
+	// BFD monitoring of BGP session.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	BFD *BfdSpec `json:"bfd,omitempty"`
+
+	// +kubebuilder:validation:XValidation:rule=duration(self) >= duration('3s'),message=Must be at least 3s
+
+	// Hold timer of the BGP session. Please refere to BGP material to understand what this implies.
+	// The value must be a valid duration format. For example, 90s, 1m, 1h.
+	// The duration will be rounded by second
+	// Minimum duration is 3s.
+	// +optional
+	HoldTime string `json:"hold-time,omitempty"`
+
+	// +kubebuilder:default=179
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+
+	// BGP listening port of the Gateway Router.
+	// +optional
+	RemotePort *uint16 `json:"remote-port,omitempty"`
+
+	// +kubebuilder:default=179
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+
+	// BGP listening port of the Attractor FrontEnds.
+	// +optional
+	LocalPort *uint16 `json:"local-port,omitempty"`
+}
+
+type BfdSpec struct {
+	// BFD monitoring.
+	// Valid values are:
+	// - false: no BFD monitoring;
+	// - true: turns on the BFD monitoring.
+	// When left empty, there is no BFD monitoring.
+	// +optional
+	Switch *bool `json:"switch,omitempty"`
+
+	// Min-tx timer of bfd session. Please refere to BFD material to understand what this implies.
+	// The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+	// The duration will be rounded by millisecond.
+	// +optional
+	MinTx string `json:"min-tx,omitempty"`
+
+	// Min-rx timer of bfd session. Please refere to BFD material to understand what this implies.
+	// The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+	// The duration will be rounded by millisecond.
+	// +optional
+	MinRx string `json:"min-rx,omitempty"`
+
+	// Multiplier of bfd session.
+	// When this number of bfd packets failed to receive, bfd session will go down.
+	// +optional
+	Multiplier *uint16 `json:"multiplier,omitempty"`
 }
 
 // GatewayRouterStatus defines the observed state of GatewayRouter.
