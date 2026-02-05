@@ -182,11 +182,16 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-validations:
+                - message: each byteMatch must be a valid string
+                  rule: 'self.all(byteMatch, byteMatch.matches(''^(sctp|tcp|udp)\[[0-9]+
+                    *: *[124]\]( *& *0x[0-9a-f]+)? *= *([0-9]+|0x[0-9a-f]+)$''))'
               destinationCIDRs:
                 description: |-
                   Destination CIDRs that this L34Route will send traffic to.
                   It is interpreted by the implementation as the set of VIPs exposed by the Gateway.
                   The destination CIDRs should not have overlaps.
+                  Each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
                 items:
                   type: string
                 type: array
@@ -206,6 +211,14 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-validations:
+                - message: each destinationPort must be a single port, a port range,
+                    or 'any'
+                  rule: self.all(port, port == 'any' || (port.matches('^\\d+$') &&
+                    port.asInteger() >= 0 && port.asInteger() <= 65535) || (port.matches('^\\d+-\\d+$')
+                    && port.split('-')[0].asInteger() >= 0 && port.split('-')[0].asInteger()
+                    <= 65535 && port.split('-')[1].asInteger() >= 0 && port.split('-')[1].asInteger()
+                    <= 65535 && port.split('-')[0].asInteger() <= port.split('-')[1].asInteger()))
               parentRefs:
                 allOf:
                 - items:
@@ -580,7 +593,9 @@ spec:
                   Priority of the L34Route
                   Multiple L34Route resources may be associated with the same Gateway, and multiple Routes may reference the same backendRef.
                   When multiple Routes match a packet, the Route with the highest priority value is selected.
+                  The priority is greater than 0
                 format: int32
+                minimum: 1
                 type: integer
               protocols:
                 description: |-
@@ -596,6 +611,11 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-validations:
+                - message: each sourceCIDR must be a valid CIDR
+                  rule: self.all(cidr, cidr.ip().isValid() && ((cidr.ip().is4() &&
+                    cidr.prefixLength() <= 32) || (cidr.ip().is6() && cidr.prefixLength()
+                    <= 128)))
               sourcePorts:
                 description: |-
                   Source port ranges allowed in the L34Route.
@@ -607,6 +627,14 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-validations:
+                - message: each sourcePort must be a single port, a port range, or
+                    'any'
+                  rule: self.all(port, port == 'any' || (port.matches('^\\d+$') &&
+                    port.asInteger() >= 0 && port.asInteger() <= 65535) || (port.matches('^\\d+-\\d+$')
+                    && port.split('-')[0].asInteger() >= 0 && port.split('-')[0].asInteger()
+                    <= 65535 && port.split('-')[1].asInteger() >= 0 && port.split('-')[1].asInteger()
+                    <= 65535 && port.split('-')[0].asInteger() <= port.split('-')[1].asInteger()))
               useDefaultGateways:
                 description: |-
                   UseDefaultGateways indicates the default Gateway scope to use for this
