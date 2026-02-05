@@ -17,22 +17,88 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // GatewayConfigSpec defines the desired state of GatewayConfig
-type GatewayConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of GatewayConfig. Edit gatewayconfig_types.go to remove/update
+// +kubebuilder:validation:XValidation:rule=self.networkSubnets.size() == self.networks.size(),message="Size of networkSubnets, and networks arrays must match!"
+type GatewayConfigSpec struct {
+
+	// List of k8s.v1.cni.cncf.io/networks interfaces, for which gateway workloads should be attached to
+	CNINetworks []CNINetwork `json:"cniNetworks"`
+
+	// +kubebuilder:validation:MinItems=1
+
+	// NOTE I'm assuming here that len(Networks) == len(NetworksSubnets) should match, otherwise it would be weird
+
+	// Networks application pods must be attached to in order to consider them as endpoint
+	Networks []Network `json:"networks"`
+
+	// +kubebuilder:validation:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
+
+	// Indicates in which subnet(s) the application endpoint IP(s) are
+	NetworkSubnets []string `json:"networkSubnets"`
+
+	HorizontalScaling HorizontalScaling `json:"horizontalScaling"`
+
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	VerticalScaling *VerticalScaling `json:"verticalScaling,omitempty"`
+}
+
+type CNINetwork struct {
+	Name      string `json:"name"`
+	Interface string `json:"interface"`
+}
+
+type Network struct {
+	Name      string `json:"name"`
+	Interface string `json:"net1"`
+}
+
+type HorizontalScaling struct {
+
+	// +kubebuilder:default=2
+	// +kubebuilder:validation:Minimum=1
+
+	Replicas uint `json:"replicas"`
+
+	// +kubebuilder:default=false
+	// Control Knob: If true, the controller enforces 'replicas'.
+	// If false, the controller steps aside, allowing HPA to control the Deployment.
+	EnforceReplicas bool `json:"enforceReplicas"`
+}
+
+type VerticalScaling struct {
+	// TODO not sure if we want this as an array, if we only set router, and sllb containers, then just using two fields
+	// should suffice.
+	// +optional
+	Containers []ContainerArgs `json:"containers,omitempty"`
+
+	// Resizing Strategy: Applies to ALL containers where enforceResources is true
+	ResizeStrategy ResizeStrategy `json:"resizeStrategy"`
+}
+
+type ContainerArgs struct {
+	Name string `json:"name"`
+
+	// TODO I've just put the one defined by k8s/core/v1/api here,
+	// it has more fields than just limit, and
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// +kubebuilder:default=false
+
+	// Control Knob for VPA Deferral for THIS container
+	// If true, controller enforces 'resources' via patch/template.
+	// If false, controller ignores 'resources', deferring to VPA/other external tool.
+	EnforceResource bool `json:"enforceResources"`
+}
+
+type ResizeStrategy struct {
+	// +kubebuilder:validation:Enum=InPlace;RollingUpgrade
+	Mode string `json:"mode"`
 }
 
 // GatewayConfigStatus defines the observed state of GatewayConfig.

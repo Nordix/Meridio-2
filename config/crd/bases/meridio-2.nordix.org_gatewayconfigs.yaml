@@ -39,11 +39,163 @@ spec:
           spec:
             description: spec defines the desired state of GatewayConfig
             properties:
-              foo:
-                description: foo is an example field of GatewayConfig. Edit gatewayconfig_types.go
-                  to remove/update
-                type: string
+              cniNetworks:
+                description: List of k8s.v1.cni.cncf.io/networks interfaces, for which
+                  gateway workloads should be attached to
+                items:
+                  properties:
+                    interface:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - interface
+                  - name
+                  type: object
+                type: array
+              horizontalScaling:
+                properties:
+                  enforceReplicas:
+                    default: false
+                    description: |-
+                      Control Knob: If true, the controller enforces 'replicas'.
+                      If false, the controller steps aside, allowing HPA to control the Deployment.
+                    type: boolean
+                  replicas:
+                    default: 2
+                    minimum: 1
+                    type: integer
+                required:
+                - enforceReplicas
+                - replicas
+                type: object
+              networkSubnets:
+                description: Indicates in which subnet(s) the application endpoint
+                  IP(s) are
+                items:
+                  type: string
+                type: array
+                x-kubernetes-validations:
+                - message: Must be a valid CIDR notation!
+                  rule: isCIDR(self)
+              networks:
+                description: Networks application pods must be attached to in order
+                  to consider them as endpoint
+                items:
+                  properties:
+                    name:
+                      type: string
+                    net1:
+                      type: string
+                  required:
+                  - name
+                  - net1
+                  type: object
+                type: array
+              verticalScaling:
+                properties:
+                  containers:
+                    description: should suffice.
+                    items:
+                      properties:
+                        enforceResources:
+                          default: false
+                          description: |-
+                            Control Knob for VPA Deferral for THIS container
+                            If true, controller enforces 'resources' via patch/template.
+                            If false, controller ignores 'resources', deferring to VPA/other external tool.
+                          type: boolean
+                        name:
+                          type: string
+                        resources:
+                          description: it has more fields than just limit, and
+                          properties:
+                            claims:
+                              description: |-
+                                Claims lists the names of resources, defined in spec.resourceClaims,
+                                that are used by this container.
+
+                                This field depends on the
+                                DynamicResourceAllocation feature gate.
+
+                                This field is immutable. It can only be set for containers.
+                              items:
+                                description: ResourceClaim references one entry in
+                                  PodSpec.ResourceClaims.
+                                properties:
+                                  name:
+                                    description: |-
+                                      Name must match the name of one entry in pod.spec.resourceClaims of
+                                      the Pod where this field is used. It makes that resource available
+                                      inside a container.
+                                    type: string
+                                  request:
+                                    description: |-
+                                      Request is the name chosen for a request in the referenced claim.
+                                      If empty, everything from the claim is made available, otherwise
+                                      only the result of this request.
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            limits:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Limits describes the maximum amount of compute resources allowed.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                            requests:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Requests describes the minimum amount of compute resources required.
+                                If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                          type: object
+                      required:
+                      - enforceResources
+                      - name
+                      type: object
+                    type: array
+                  resizeStrategy:
+                    description: 'Resizing Strategy: Applies to ALL containers where
+                      enforceResources is true'
+                    properties:
+                      mode:
+                        enum:
+                        - InPlace
+                        - RollingUpgrade
+                        type: string
+                    required:
+                    - mode
+                    type: object
+                required:
+                - resizeStrategy
+                type: object
+            required:
+            - cniNetworks
+            - horizontalScaling
+            - networkSubnets
+            - networks
             type: object
+            x-kubernetes-validations:
+            - message: Size of networkSubnets, and networks arrays must match!
+              rule: self.networkSubnets.size() == self.networks.size()
           status:
             description: status defines the observed state of GatewayConfig
             properties:
