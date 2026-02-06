@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the meridio-2 itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- distributiongroup_admin_role.yaml
+- distributiongroup_editor_role.yaml
+- distributiongroup_viewer_role.yaml
 - endpointnetworkconfiguration_admin_role.yaml
 - endpointnetworkconfiguration_editor_role.yaml
 - endpointnetworkconfiguration_viewer_role.yaml
@@ -31,9 +34,6 @@ resources:
 - l34route_admin_role.yaml
 - l34route_editor_role.yaml
 - l34route_viewer_role.yaml
-- customservice_admin_role.yaml
-- customservice_editor_role.yaml
-- customservice_viewer_role.yaml
 - gatewayconfig_admin_role.yaml
 - gatewayconfig_editor_role.yaml
 - gatewayconfig_viewer_role.yaml

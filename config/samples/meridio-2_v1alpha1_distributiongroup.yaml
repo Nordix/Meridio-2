@@ -1,0 +1,14 @@
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  labels:
+    app.kubernetes.io/name: meridio-2
+    app.kubernetes.io/managed-by: kustomize
+  name: distributiongroup-sample
+spec:
+  selector:
+    app: target-application-sample
+  maglev:
+    maxEndpoints: 102
+  parentRefs:
+    - name: sllb-sample

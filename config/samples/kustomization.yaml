@@ -5,4 +5,5 @@ resources:
 - meridio-2_v1alpha1_l34route.yaml
 - meridio-2_v1alpha1_gatewayrouter.yaml
 - meridio-2_v1alpha1_endpointnetworkconfiguration.yaml
+- meridio-2_v1alpha1_distributiongroup.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
