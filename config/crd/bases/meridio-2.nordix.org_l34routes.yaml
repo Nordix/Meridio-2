@@ -180,12 +180,14 @@ spec:
               byteMatches:
                 description: ByteMatches matches bytes in the L4 header in the L34Route.
                 items:
+                  maxLength: 80
                   type: string
+                maxItems: 10
                 type: array
                 x-kubernetes-validations:
                 - message: each byteMatch must be a valid string
-                  rule: 'self.all(byteMatch, byteMatch.matches(''^(sctp|tcp|udp)\[[0-9]+
-                    *: *[124]\]( *& *0x[0-9a-f]+)? *= *([0-9]+|0x[0-9a-f]+)$''))'
+                  rule: 'self.all(byteMatch, byteMatch.matches("^(sctp|tcp|udp)\\[[0-9]+
+                    *: *[124]\\]( *& *0x[0-9a-f]+)? *= *([0-9]+|0x[0-9a-f]+)$"))'
               destinationCIDRs:
                 description: |-
                   Destination CIDRs that this L34Route will send traffic to.
@@ -193,13 +195,11 @@ spec:
                   The destination CIDRs should not have overlaps.
                   Each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
                 items:
+                  maxLength: 50
+                  pattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])/32$|^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))/128$
                   type: string
+                maxItems: 100
                 type: array
-                x-kubernetes-validations:
-                - message: each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
-                  rule: self.all(cidr, cidr.ip().isValid() && ((cidr.ip().is4() &&
-                    cidr.prefixLength() == 32) || (cidr.ip().is6() && cidr.prefixLength()
-                    == 128)))
               destinationPorts:
                 description: |-
                   Destination port ranges allowed in the L34Route.
@@ -209,385 +209,180 @@ spec:
                   - a port range, such as 3000-4000;
                   - "any", which is equivalent to port range 0-65535.
                 items:
+                  maxLength: 11
                   type: string
+                maxItems: 20
                 type: array
                 x-kubernetes-validations:
                 - message: each destinationPort must be a single port, a port range,
                     or 'any'
                   rule: self.all(port, port == 'any' || (port.matches('^\\d+$') &&
-                    port.asInteger() >= 0 && port.asInteger() <= 65535) || (port.matches('^\\d+-\\d+$')
-                    && port.split('-')[0].asInteger() >= 0 && port.split('-')[0].asInteger()
-                    <= 65535 && port.split('-')[1].asInteger() >= 0 && port.split('-')[1].asInteger()
-                    <= 65535 && port.split('-')[0].asInteger() <= port.split('-')[1].asInteger()))
+                    int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\d+-\\d+$')
+                    && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <=
+                    65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1])
+                    <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))
               parentRefs:
-                allOf:
-                - items:
-                    description: |-
-                      ParentReference identifies an API object (usually a Gateway) that can be considered
-                      a parent of this resource (usually a route). There are two kinds of parent resources
-                      with "Core" support:
-
-                      * Gateway (Gateway conformance profile)
-                      * Service (Mesh conformance profile, ClusterIP Services only)
-
-                      This API may be extended in the future to support additional kinds of parent
-                      resources.
-
-                      The API object must be valid in the cluster; the Group and Kind must
-                      be registered in the cluster for this reference to be valid.
-                    properties:
-                      group:
-                        default: gateway.networking.k8s.io
-                        description: |-
-                          Group is the group of the referent.
-                          When unspecified, "gateway.networking.k8s.io" is inferred.
-                          To set the core API group (such as for a "Service" kind referent),
-                          Group must be explicitly set to "" (empty string).
-
-                          Support: Core
-                        maxLength: 253
-                        pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                        type: string
-                      kind:
-                        default: Gateway
-                        description: |-
-                          Kind is kind of the referent.
-
-                          There are two kinds of parent resources with "Core" support:
-
-                          * Gateway (Gateway conformance profile)
-                          * Service (Mesh conformance profile, ClusterIP Services only)
-
-                          Support for other resources is Implementation-Specific.
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
-                        type: string
-                      name:
-                        description: |-
-                          Name is the name of the referent.
-
-                          Support: Core
-                        maxLength: 253
-                        minLength: 1
-                        type: string
-                      namespace:
-                        description: |-
-                          Namespace is the namespace of the referent. When unspecified, this refers
-                          to the local namespace of the Route.
-
-                          Note that there are specific rules for ParentRefs which cross namespace
-                          boundaries. Cross-namespace references are only valid if they are explicitly
-                          allowed by something in the namespace they are referring to. For example:
-                          Gateway has the AllowedRoutes field, and ReferenceGrant provides a
-                          generic way to enable any other kind of cross-namespace reference.
-
-                          <gateway:experimental:description>
-                          ParentRefs from a Route to a Service in the same namespace are "producer"
-                          routes, which apply default routing rules to inbound connections from
-                          any namespace to the Service.
-
-                          ParentRefs from a Route to a Service in a different namespace are
-                          "consumer" routes, and these routing rules are only applied to outbound
-                          connections originating from the same namespace as the Route, for which
-                          the intended destination of the connections are a Service targeted as a
-                          ParentRef of the Route.
-                          </gateway:experimental:description>
-
-                          Support: Core
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
-                        type: string
-                      port:
-                        description: |-
-                          Port is the network port this Route targets. It can be interpreted
-                          differently based on the type of parent resource.
-
-                          When the parent resource is a Gateway, this targets all listeners
-                          listening on the specified port that also support this kind of Route(and
-                          select this Route). It's not recommended to set `Port` unless the
-                          networking behaviors specified in a Route must apply to a specific port
-                          as opposed to a listener(s) whose port(s) may be changed. When both Port
-                          and SectionName are specified, the name and port of the selected listener
-                          must match both specified values.
-
-                          <gateway:experimental:description>
-                          When the parent resource is a Service, this targets a specific port in the
-                          Service spec. When both Port (experimental) and SectionName are specified,
-                          the name and port of the selected port must match both specified values.
-                          </gateway:experimental:description>
-
-                          Implementations MAY choose to support other parent resources.
-                          Implementations supporting other types of parent resources MUST clearly
-                          document how/if Port is interpreted.
-
-                          For the purpose of status, an attachment is considered successful as
-                          long as the parent resource accepts it partially. For example, Gateway
-                          listeners can restrict which Routes can attach to them by Route kind,
-                          namespace, or hostname. If 1 of 2 Gateway listeners accept attachment
-                          from the referencing Route, the Route MUST be considered successfully
-                          attached. If no Gateway listeners accept attachment from this Route,
-                          the Route MUST be considered detached from the Gateway.
-
-                          Support: Extended
-                        format: int32
-                        maximum: 65535
-                        minimum: 1
-                        type: integer
-                      sectionName:
-                        description: |-
-                          SectionName is the name of a section within the target resource. In the
-                          following resources, SectionName is interpreted as the following:
-
-                          * Gateway: Listener name. When both Port (experimental) and SectionName
-                          are specified, the name and port of the selected listener must match
-                          both specified values.
-                          * Service: Port name. When both Port (experimental) and SectionName
-                          are specified, the name and port of the selected listener must match
-                          both specified values.
-
-                          Implementations MAY choose to support attaching Routes to other resources.
-                          If that is the case, they MUST clearly document how SectionName is
-                          interpreted.
-
-                          When unspecified (empty string), this will reference the entire resource.
-                          For the purpose of status, an attachment is considered successful if at
-                          least one section in the parent resource accepts it. For example, Gateway
-                          listeners can restrict which Routes can attach to them by Route kind,
-                          namespace, or hostname. If 1 of 2 Gateway listeners accept attachment from
-                          the referencing Route, the Route MUST be considered successfully
-                          attached. If no Gateway listeners accept attachment from this Route, the
-                          Route MUST be considered detached from the Gateway.
-
-                          Support: Core
-                        maxLength: 253
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  maxItems: 32
-                - items:
-                    description: |-
-                      ParentReference identifies an API object (usually a Gateway) that can be considered
-                      a parent of this resource (usually a route). There are two kinds of parent resources
-                      with "Core" support:
-
-                      * Gateway (Gateway conformance profile)
-                      * Service (Mesh conformance profile, ClusterIP Services only)
-
-                      This API may be extended in the future to support additional kinds of parent
-                      resources.
-
-                      The API object must be valid in the cluster; the Group and Kind must
-                      be registered in the cluster for this reference to be valid.
-                    properties:
-                      group:
-                        default: gateway.networking.k8s.io
-                        description: |-
-                          Group is the group of the referent.
-                          When unspecified, "gateway.networking.k8s.io" is inferred.
-                          To set the core API group (such as for a "Service" kind referent),
-                          Group must be explicitly set to "" (empty string).
-
-                          Support: Core
-                        maxLength: 253
-                        pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                        type: string
-                      kind:
-                        default: Gateway
-                        description: |-
-                          Kind is kind of the referent.
-
-                          There are two kinds of parent resources with "Core" support:
-
-                          * Gateway (Gateway conformance profile)
-                          * Service (Mesh conformance profile, ClusterIP Services only)
-
-                          Support for other resources is Implementation-Specific.
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
-                        type: string
-                      name:
-                        description: |-
-                          Name is the name of the referent.
-
-                          Support: Core
-                        maxLength: 253
-                        minLength: 1
-                        type: string
-                      namespace:
-                        description: |-
-                          Namespace is the namespace of the referent. When unspecified, this refers
-                          to the local namespace of the Route.
-
-                          Note that there are specific rules for ParentRefs which cross namespace
-                          boundaries. Cross-namespace references are only valid if they are explicitly
-                          allowed by something in the namespace they are referring to. For example:
-                          Gateway has the AllowedRoutes field, and ReferenceGrant provides a
-                          generic way to enable any other kind of cross-namespace reference.
-
-                          <gateway:experimental:description>
-                          ParentRefs from a Route to a Service in the same namespace are "producer"
-                          routes, which apply default routing rules to inbound connections from
-                          any namespace to the Service.
-
-                          ParentRefs from a Route to a Service in a different namespace are
-                          "consumer" routes, and these routing rules are only applied to outbound
-                          connections originating from the same namespace as the Route, for which
-                          the intended destination of the connections are a Service targeted as a
-                          ParentRef of the Route.
-                          </gateway:experimental:description>
-
-                          Support: Core
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
-                        type: string
-                      port:
-                        description: |-
-                          Port is the network port this Route targets. It can be interpreted
-                          differently based on the type of parent resource.
-
-                          When the parent resource is a Gateway, this targets all listeners
-                          listening on the specified port that also support this kind of Route(and
-                          select this Route). It's not recommended to set `Port` unless the
-                          networking behaviors specified in a Route must apply to a specific port
-                          as opposed to a listener(s) whose port(s) may be changed. When both Port
-                          and SectionName are specified, the name and port of the selected listener
-                          must match both specified values.
-
-                          <gateway:experimental:description>
-                          When the parent resource is a Service, this targets a specific port in the
-                          Service spec. When both Port (experimental) and SectionName are specified,
-                          the name and port of the selected port must match both specified values.
-                          </gateway:experimental:description>
-
-                          Implementations MAY choose to support other parent resources.
-                          Implementations supporting other types of parent resources MUST clearly
-                          document how/if Port is interpreted.
-
-                          For the purpose of status, an attachment is considered successful as
-                          long as the parent resource accepts it partially. For example, Gateway
-                          listeners can restrict which Routes can attach to them by Route kind,
-                          namespace, or hostname. If 1 of 2 Gateway listeners accept attachment
-                          from the referencing Route, the Route MUST be considered successfully
-                          attached. If no Gateway listeners accept attachment from this Route,
-                          the Route MUST be considered detached from the Gateway.
-
-                          Support: Extended
-                        format: int32
-                        maximum: 65535
-                        minimum: 1
-                        type: integer
-                      sectionName:
-                        description: |-
-                          SectionName is the name of a section within the target resource. In the
-                          following resources, SectionName is interpreted as the following:
-
-                          * Gateway: Listener name. When both Port (experimental) and SectionName
-                          are specified, the name and port of the selected listener must match
-                          both specified values.
-                          * Service: Port name. When both Port (experimental) and SectionName
-                          are specified, the name and port of the selected listener must match
-                          both specified values.
-
-                          Implementations MAY choose to support attaching Routes to other resources.
-                          If that is the case, they MUST clearly document how SectionName is
-                          interpreted.
-
-                          When unspecified (empty string), this will reference the entire resource.
-                          For the purpose of status, an attachment is considered successful if at
-                          least one section in the parent resource accepts it. For example, Gateway
-                          listeners can restrict which Routes can attach to them by Route kind,
-                          namespace, or hostname. If 1 of 2 Gateway listeners accept attachment from
-                          the referencing Route, the Route MUST be considered successfully
-                          attached. If no Gateway listeners accept attachment from this Route, the
-                          Route MUST be considered detached from the Gateway.
-
-                          Support: Core
-                        maxLength: 253
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  maxItems: 1
                 description: |-
-                  ParentRefs references the resources (usually Gateways) that a Route wants
-                  to be attached to. Note that the referenced parent resource needs to
-                  allow this for the attachment to be complete. For Gateways, that means
-                  the Gateway needs to allow attachment from Routes of this kind and
-                  namespace. For Services, that means the Service must either be in the same
-                  namespace for a "producer" route, or the mesh implementation must support
-                  and allow "consumer" routes for the referenced Service. ReferenceGrant is
-                  not applicable for governing ParentRefs to Services - it is not possible to
-                  create a "producer" route for a Service in a different namespace from the
-                  Route.
+                  ParentRefs specifies the Gateway in which the route will be configured.
+                  Reference to gatewayapiv1.Gateway object.
 
-                  There are two kinds of parent resources with "Core" support:
+                  A L34Route defines the set of VIP addresses that a Gateway must support,
+                  so only a single parent Gateway is allowed. Reuse of an L34Route across
+                  multiple Gateways is not supported, as VIP ownership would otherwise
+                  become ambiguous.
 
-                  * Gateway (Gateway conformance profile)
-                  * Service (Mesh conformance profile, ClusterIP Services only)
+                  Future extensions could consider allowing shared L34Routes, but (possibly)
+                  only for Route objects that do not define destinationCIDRs.
+                items:
+                  description: |-
+                    ParentReference identifies an API object (usually a Gateway) that can be considered
+                    a parent of this resource (usually a route). There are two kinds of parent resources
+                    with "Core" support:
 
-                  This API may be extended in the future to support additional kinds of parent
-                  resources.
+                    * Gateway (Gateway conformance profile)
+                    * Service (Mesh conformance profile, ClusterIP Services only)
 
-                  ParentRefs must be _distinct_. This means either that:
+                    This API may be extended in the future to support additional kinds of parent
+                    resources.
 
-                  * They select different objects.  If this is the case, then parentRef
-                    entries are distinct. In terms of fields, this means that the
-                    multi-part key defined by `group`, `kind`, `namespace`, and `name` must
-                    be unique across all parentRef entries in the Route.
-                  * They do not select different objects, but for each optional field used,
-                    each ParentRef that selects the same object must set the same set of
-                    optional fields to different values. If one ParentRef sets a
-                    combination of optional fields, all must set the same combination.
+                    The API object must be valid in the cluster; the Group and Kind must
+                    be registered in the cluster for this reference to be valid.
+                  properties:
+                    group:
+                      default: gateway.networking.k8s.io
+                      description: |-
+                        Group is the group of the referent.
+                        When unspecified, "gateway.networking.k8s.io" is inferred.
+                        To set the core API group (such as for a "Service" kind referent),
+                        Group must be explicitly set to "" (empty string).
 
-                  Some examples:
+                        Support: Core
+                      maxLength: 253
+                      pattern: ^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                      type: string
+                    kind:
+                      default: Gateway
+                      description: |-
+                        Kind is kind of the referent.
 
-                  * If one ParentRef sets `sectionName`, all ParentRefs referencing the
-                    same object must also set `sectionName`.
-                  * If one ParentRef sets `port`, all ParentRefs referencing the same
-                    object must also set `port`.
-                  * If one ParentRef sets `sectionName` and `port`, all ParentRefs
-                    referencing the same object must also set `sectionName` and `port`.
+                        There are two kinds of parent resources with "Core" support:
 
-                  It is possible to separately reference multiple distinct objects that may
-                  be collapsed by an implementation. For example, some implementations may
-                  choose to merge compatible Gateway Listeners together. If that is the
-                  case, the list of routes attached to those resources should also be
-                  merged.
+                        * Gateway (Gateway conformance profile)
+                        * Service (Mesh conformance profile, ClusterIP Services only)
 
-                  Note that for ParentRefs that cross namespace boundaries, there are specific
-                  rules. Cross-namespace references are only valid if they are explicitly
-                  allowed by something in the namespace they are referring to. For example,
-                  Gateway has the AllowedRoutes field, and ReferenceGrant provides a
-                  generic way to enable other kinds of cross-namespace reference.
+                        Support for other resources is Implementation-Specific.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
+                      type: string
+                    name:
+                      description: |-
+                        Name is the name of the referent.
 
-                  <gateway:experimental:description>
-                  ParentRefs from a Route to a Service in the same namespace are "producer"
-                  routes, which apply default routing rules to inbound connections from
-                  any namespace to the Service.
+                        Support: Core
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    namespace:
+                      description: |-
+                        Namespace is the namespace of the referent. When unspecified, this refers
+                        to the local namespace of the Route.
 
-                  ParentRefs from a Route to a Service in a different namespace are
-                  "consumer" routes, and these routing rules are only applied to outbound
-                  connections originating from the same namespace as the Route, for which
-                  the intended destination of the connections are a Service targeted as a
-                  ParentRef of the Route.
-                  </gateway:experimental:description>
+                        Note that there are specific rules for ParentRefs which cross namespace
+                        boundaries. Cross-namespace references are only valid if they are explicitly
+                        allowed by something in the namespace they are referring to. For example:
+                        Gateway has the AllowedRoutes field, and ReferenceGrant provides a
+                        generic way to enable any other kind of cross-namespace reference.
 
-                  <gateway:standard:validation:XValidation:message="sectionName must be specified when parentRefs includes 2 or more references to the same parent",rule="self.all(p1, self.all(p2, p1.group == p2.group && p1.kind == p2.kind && p1.name == p2.name && (((!has(p1.__namespace__) || p1.__namespace__ == '') && (!has(p2.__namespace__) || p2.__namespace__ == '')) || (has(p1.__namespace__) && has(p2.__namespace__) && p1.__namespace__ == p2.__namespace__ )) ? ((!has(p1.sectionName) || p1.sectionName == '') == (!has(p2.sectionName) || p2.sectionName == '')) : true))">
-                  <gateway:standard:validation:XValidation:message="sectionName must be unique when parentRefs includes 2 or more references to the same parent",rule="self.all(p1, self.exists_one(p2, p1.group == p2.group && p1.kind == p2.kind && p1.name == p2.name && (((!has(p1.__namespace__) || p1.__namespace__ == '') && (!has(p2.__namespace__) || p2.__namespace__ == '')) || (has(p1.__namespace__) && has(p2.__namespace__) && p1.__namespace__ == p2.__namespace__ )) && (((!has(p1.sectionName) || p1.sectionName == '') && (!has(p2.sectionName) || p2.sectionName == '')) || (has(p1.sectionName) && has(p2.sectionName) && p1.sectionName == p2.sectionName))))">
-                  <gateway:experimental:validation:XValidation:message="sectionName or port must be specified when parentRefs includes 2 or more references to the same parent",rule="self.all(p1, self.all(p2, p1.group == p2.group && p1.kind == p2.kind && p1.name == p2.name && (((!has(p1.__namespace__) || p1.__namespace__ == '') && (!has(p2.__namespace__) || p2.__namespace__ == '')) || (has(p1.__namespace__) && has(p2.__namespace__) && p1.__namespace__ == p2.__namespace__)) ? ((!has(p1.sectionName) || p1.sectionName == '') == (!has(p2.sectionName) || p2.sectionName == '') && (!has(p1.port) || p1.port == 0) == (!has(p2.port) || p2.port == 0)): true))">
-                  <gateway:experimental:validation:XValidation:message="sectionName or port must be unique when parentRefs includes 2 or more references to the same parent",rule="self.all(p1, self.exists_one(p2, p1.group == p2.group && p1.kind == p2.kind && p1.name == p2.name && (((!has(p1.__namespace__) || p1.__namespace__ == '') && (!has(p2.__namespace__) || p2.__namespace__ == '')) || (has(p1.__namespace__) && has(p2.__namespace__) && p1.__namespace__ == p2.__namespace__ )) && (((!has(p1.sectionName) || p1.sectionName == '') && (!has(p2.sectionName) || p2.sectionName == '')) || ( has(p1.sectionName) && has(p2.sectionName) && p1.sectionName == p2.sectionName)) && (((!has(p1.port) || p1.port == 0) && (!has(p2.port) || p2.port == 0)) || (has(p1.port) && has(p2.port) && p1.port == p2.port))))">
+                        <gateway:experimental:description>
+                        ParentRefs from a Route to a Service in the same namespace are "producer"
+                        routes, which apply default routing rules to inbound connections from
+                        any namespace to the Service.
+
+                        ParentRefs from a Route to a Service in a different namespace are
+                        "consumer" routes, and these routing rules are only applied to outbound
+                        connections originating from the same namespace as the Route, for which
+                        the intended destination of the connections are a Service targeted as a
+                        ParentRef of the Route.
+                        </gateway:experimental:description>
+
+                        Support: Core
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    port:
+                      description: |-
+                        Port is the network port this Route targets. It can be interpreted
+                        differently based on the type of parent resource.
+
+                        When the parent resource is a Gateway, this targets all listeners
+                        listening on the specified port that also support this kind of Route(and
+                        select this Route). It's not recommended to set `Port` unless the
+                        networking behaviors specified in a Route must apply to a specific port
+                        as opposed to a listener(s) whose port(s) may be changed. When both Port
+                        and SectionName are specified, the name and port of the selected listener
+                        must match both specified values.
+
+                        <gateway:experimental:description>
+                        When the parent resource is a Service, this targets a specific port in the
+                        Service spec. When both Port (experimental) and SectionName are specified,
+                        the name and port of the selected port must match both specified values.
+                        </gateway:experimental:description>
+
+                        Implementations MAY choose to support other parent resources.
+                        Implementations supporting other types of parent resources MUST clearly
+                        document how/if Port is interpreted.
+
+                        For the purpose of status, an attachment is considered successful as
+                        long as the parent resource accepts it partially. For example, Gateway
+                        listeners can restrict which Routes can attach to them by Route kind,
+                        namespace, or hostname. If 1 of 2 Gateway listeners accept attachment
+                        from the referencing Route, the Route MUST be considered successfully
+                        attached. If no Gateway listeners accept attachment from this Route,
+                        the Route MUST be considered detached from the Gateway.
+
+                        Support: Extended
+                      format: int32
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
+                    sectionName:
+                      description: |-
+                        SectionName is the name of a section within the target resource. In the
+                        following resources, SectionName is interpreted as the following:
+
+                        * Gateway: Listener name. When both Port (experimental) and SectionName
+                        are specified, the name and port of the selected listener must match
+                        both specified values.
+                        * Service: Port name. When both Port (experimental) and SectionName
+                        are specified, the name and port of the selected listener must match
+                        both specified values.
+
+                        Implementations MAY choose to support attaching Routes to other resources.
+                        If that is the case, they MUST clearly document how SectionName is
+                        interpreted.
+
+                        When unspecified (empty string), this will reference the entire resource.
+                        For the purpose of status, an attachment is considered successful if at
+                        least one section in the parent resource accepts it. For example, Gateway
+                        listeners can restrict which Routes can attach to them by Route kind,
+                        namespace, or hostname. If 1 of 2 Gateway listeners accept attachment from
+                        the referencing Route, the Route MUST be considered successfully
+                        attached. If no Gateway listeners accept attachment from this Route, the
+                        Route MUST be considered detached from the Gateway.
+
+                        Support: Core
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 1
                 minItems: 1
                 type: array
-                x-kubernetes-list-type: atomic
               priority:
                 description: |-
                   Priority of the L34Route
@@ -609,13 +404,10 @@ spec:
                   Source CIDRs allowed in the L34Route.
                   The source CIDRs should not have overlaps.
                 items:
+                  maxLength: 50
                   type: string
+                maxItems: 100
                 type: array
-                x-kubernetes-validations:
-                - message: each sourceCIDR must be a valid CIDR
-                  rule: self.all(cidr, cidr.ip().isValid() && ((cidr.ip().is4() &&
-                    cidr.prefixLength() <= 32) || (cidr.ip().is6() && cidr.prefixLength()
-                    <= 128)))
               sourcePorts:
                 description: |-
                   Source port ranges allowed in the L34Route.
@@ -625,36 +417,18 @@ spec:
                   - a port range, such as 3000-4000;
                   - "any", which is equivalent to port range 0-65535.
                 items:
+                  maxLength: 11
                   type: string
+                maxItems: 20
                 type: array
                 x-kubernetes-validations:
                 - message: each sourcePort must be a single port, a port range, or
                     'any'
                   rule: self.all(port, port == 'any' || (port.matches('^\\d+$') &&
-                    port.asInteger() >= 0 && port.asInteger() <= 65535) || (port.matches('^\\d+-\\d+$')
-                    && port.split('-')[0].asInteger() >= 0 && port.split('-')[0].asInteger()
-                    <= 65535 && port.split('-')[1].asInteger() >= 0 && port.split('-')[1].asInteger()
-                    <= 65535 && port.split('-')[0].asInteger() <= port.split('-')[1].asInteger()))
-              useDefaultGateways:
-                description: |-
-                  UseDefaultGateways indicates the default Gateway scope to use for this
-                  Route. If unset (the default) or set to None, the Route will not be
-                  attached to any default Gateway; if set, it will be attached to any
-                  default Gateway supporting the named scope, subject to the usual rules
-                  about which Routes a Gateway is allowed to claim.
-
-                  Think carefully before using this functionality! The set of default
-                  Gateways supporting the requested scope can change over time without
-                  any notice to the Route author, and in many situations it will not be
-                  appropriate to request a default Gateway for a given Route -- for
-                  example, a Route with specific security requirements should almost
-                  certainly not use a default Gateway.
-
-                  <gateway:experimental>
-                enum:
-                - All
-                - None
-                type: string
+                    int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\d+-\\d+$')
+                    && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <=
+                    65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1])
+                    <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))
             required:
             - destinationCIDRs
             - parentRefs

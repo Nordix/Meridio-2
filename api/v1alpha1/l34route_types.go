@@ -35,7 +35,7 @@ const (
 
 // L34RouteSpec defines the desired state of L34Route
 type L34RouteSpec struct {
-	gatewayapiv1.CommonRouteSpec `json:",inline"`
+	//gatewayapiv1.CommonRouteSpec `json:",inline"`
 
 	// ParentRefs specifies the Gateway in which the route will be configured.
 	// Reference to gatewayapiv1.Gateway object.
@@ -75,13 +75,17 @@ type L34RouteSpec struct {
 	// It is interpreted by the implementation as the set of VIPs exposed by the Gateway.
 	// The destination CIDRs should not have overlaps.
 	// Each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
-	// +kubebuilder:validation:XValidation:message="each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR",rule="self.all(cidr, cidr.ip().isValid() && ((cidr.ip().is4() && cidr.prefixLength() == 32) || (cidr.ip().is6() && cidr.prefixLength() == 128)))"
+	// +kubebuilder:validation:MaxItems=100
+	// +kubebuilder:validation:items:MaxLength=50
+	// +kubebuilder:validation:XValidation:message="each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR",rule="self.all(c, isCIDR(c) && (cidr(c).prefixLength() == 32 || cidr(c).prefixLength() == 128))"
 	//nolint:tagliatelle
 	DestinationCIDRs []string `json:"destinationCIDRs"`
 
 	// Source CIDRs allowed in the L34Route.
 	// The source CIDRs should not have overlaps.
-	// +kubebuilder:validation:XValidation:message="each sourceCIDR must be a valid CIDR",rule="self.all(cidr, cidr.ip().isValid() && ((cidr.ip().is4() && cidr.prefixLength() <= 32) || (cidr.ip().is6() && cidr.prefixLength() <= 128)))"
+	// +kubebuilder:validation:MaxItems=100
+	// +kubebuilder:validation:items:MaxLength=50
+	// +kubebuilder:validation:XValidation:message="each sourceCIDR must be a valid CIDR",rule="self.all(c, isCIDR(c))"
 	//nolint:tagliatelle
 	SourceCIDRs []string `json:"sourceCIDRs,omitempty"`
 
@@ -91,7 +95,9 @@ type L34RouteSpec struct {
 	// - a single port, such as 3000;
 	// - a port range, such as 3000-4000;
 	// - "any", which is equivalent to port range 0-65535.
-	// +kubebuilder:validation:XValidation:message="each sourcePort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && port.asInteger() >= 0 && port.asInteger() <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && port.split('-')[0].asInteger() >= 0 && port.split('-')[0].asInteger() <= 65535 && port.split('-')[1].asInteger() >= 0 && port.split('-')[1].asInteger() <= 65535 && port.split('-')[0].asInteger() <= port.split('-')[1].asInteger()))"
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=11
+	// +kubebuilder:validation:XValidation:message="each sourcePort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <= 65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1]) <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))"
 	SourcePorts []string `json:"sourcePorts,omitempty"`
 
 	// Destination port ranges allowed in the L34Route.
@@ -100,7 +106,9 @@ type L34RouteSpec struct {
 	// - a single port, such as 3000;
 	// - a port range, such as 3000-4000;
 	// - "any", which is equivalent to port range 0-65535.
-	// +kubebuilder:validation:XValidation:message="each destinationPort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && port.asInteger() >= 0 && port.asInteger() <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && port.split('-')[0].asInteger() >= 0 && port.split('-')[0].asInteger() <= 65535 && port.split('-')[1].asInteger() >= 0 && port.split('-')[1].asInteger() <= 65535 && port.split('-')[0].asInteger() <= port.split('-')[1].asInteger()))"
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=11
+	// +kubebuilder:validation:XValidation:message="each destinationPort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <= 65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1]) <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))"
 	DestinationPorts []string `json:"destinationPorts,omitempty"`
 
 	// Protocols allowed in this L34Route.
@@ -116,7 +124,9 @@ type L34RouteSpec struct {
 
 	// ByteMatches matches bytes in the L4 header in the L34Route.
 	// +optional
-	// +kubebuilder:validation:XValidation:message="each byteMatch must be a valid string",rule="self.all(byteMatch, byteMatch.matches('^(sctp|tcp|udp)\\[[0-9]+ *: *[124]\\]( *& *0x[0-9a-f]+)? *= *([0-9]+|0x[0-9a-f]+)$'))"
+	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:items:MaxLength=80
+	// +kubebuilder:validation:XValidation:message="each byteMatch must be a valid string",rule="self.all(byteMatch, byteMatch.matches(\"^(sctp|tcp|udp)\\\\[[0-9]+ *: *[124]\\\\]( *& *0x[0-9a-f]+)? *= *([0-9]+|0x[0-9a-f]+)$\"))"
 	ByteMatches []string `json:"byteMatches,omitempty"`
 }
 
