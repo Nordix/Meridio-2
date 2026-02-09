@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2025 OpenInfra Foundation Europe. All rights reserved.
+Copyright (c) 2026 OpenInfra Foundation Europe. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -35,8 +35,6 @@ const (
 
 // L34RouteSpec defines the desired state of L34Route
 type L34RouteSpec struct {
-	//gatewayapiv1.CommonRouteSpec `json:",inline"`
-
 	// ParentRefs specifies the Gateway in which the route will be configured.
 	// Reference to gatewayapiv1.Gateway object.
 	//
