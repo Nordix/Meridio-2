@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright (c) 2026 OpenInfra Foundation Europe. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,23 +23,17 @@ import (
 
 // GatewayConfigSpec defines the desired state of GatewayConfig
 
-// +kubebuilder:validation:XValidation:rule=self.networkSubnets.size() == self.networks.size(),message="Size of networkSubnets, and networks arrays must match!"
 type GatewayConfigSpec struct {
+
+	NetworkAttachments []NetworkAttachment `json:"networkAttachment"`
 
 	// List of k8s.v1.cni.cncf.io/networks interfaces, for which gateway workloads should be attached to
 	CNINetworks []CNINetwork `json:"cniNetworks"`
 
 	// +kubebuilder:validation:MinItems=1
 
-	// NOTE I'm assuming here that len(Networks) == len(NetworksSubnets) should match, otherwise it would be weird
-
-	// Networks application pods must be attached to in order to consider them as endpoint
-	Networks []Network `json:"networks"`
-
-	// +kubebuilder:validation:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
-
-	// Indicates in which subnet(s) the application endpoint IP(s) are
-	NetworkSubnets []string `json:"networkSubnets"`
+	// Indicates in which subnet(s) the application endpoint IP(s) are, is distinc for each type of network
+	NetworkSubnets []NetworkSubnet `json:"networkSubnets"`
 
 	HorizontalScaling HorizontalScaling `json:"horizontalScaling"`
 
@@ -47,14 +41,42 @@ type GatewayConfigSpec struct {
 	VerticalScaling *VerticalScaling `json:"verticalScaling,omitempty"`
 }
 
+type NetworkSubnet struct {
+
+	// +kubebuilder:validation:Enum=CNI;DRA
+	NADType string `json:"nadType"`
+
+	// +kubebuilder:validation:items:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
+	CIDRs []string `json:"cidrs"`
+}
+
+// +kubebuilder:validation:XValidation:rule=self.Type == "CNI" && self.CNI != null || self.Type == "DRA" && self.DRA != null,message="If type is CNI, field CNI must not be null, otherwise DRA must not be null"
+type NetworkAttachment struct {
+
+	// +optional
+	Description string `json:"description"`
+
+	// +kubebuilder:validation:Enum=CNI;DRA
+	Type string `json:"type"`
+
+	// +optional
+	CNI *CNI `json:"cni,omitempty"`
+
+	// +optional
+	DRA *DRA `json:"dra,omitempty"`
+}
+
+type CNI struct {
+	Interface string `json:"interface"`
+	Namespace string `json:"namespace"`
+}
+
+// TODO implement
+type DRA struct { /* ... */ }
+
 type CNINetwork struct {
 	Name      string `json:"name"`
 	Interface string `json:"interface"`
-}
-
-type Network struct {
-	Name      string `json:"name"`
-	Interface string `json:"net1"`
 }
 
 type HorizontalScaling struct {

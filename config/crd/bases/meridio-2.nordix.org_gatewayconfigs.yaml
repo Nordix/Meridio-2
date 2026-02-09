@@ -69,28 +69,59 @@ spec:
                 - enforceReplicas
                 - replicas
                 type: object
-              networkSubnets:
-                description: Indicates in which subnet(s) the application endpoint
-                  IP(s) are
-                items:
-                  type: string
-                type: array
-                x-kubernetes-validations:
-                - message: Must be a valid CIDR notation!
-                  rule: isCIDR(self)
-              networks:
-                description: Networks application pods must be attached to in order
-                  to consider them as endpoint
+              networkAttachment:
                 items:
                   properties:
-                    name:
+                    cni:
+                      properties:
+                        interface:
+                          type: string
+                        namespace:
+                          type: string
+                      required:
+                      - interface
+                      - namespace
+                      type: object
+                    description:
                       type: string
-                    net1:
+                    dra:
+                      type: object
+                    type:
+                      enum:
+                      - CNI
+                      - DRA
                       type: string
                   required:
-                  - name
-                  - net1
+                  - type
                   type: object
+                  x-kubernetes-validations:
+                  - message: If type is CNI, field CNI must not be null, otherwise
+                      DRA must not be null
+                    rule: self.Type == "CNI" && self.CNI != null || self.Type == "DRA"
+                      && self.DRA != null
+                type: array
+              networkSubnets:
+                description: Indicates in which subnet(s) the application endpoint
+                  IP(s) are, is distinc for each type of network
+                items:
+                  properties:
+                    cidrs:
+                      items:
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Must be a valid CIDR notation!
+                          rule: isCIDR(self)
+                      type: array
+                    nadType:
+                      enum:
+                      - CNI
+                      - DRA
+                      type: string
+                  required:
+                  - cidrs
+                  - nadType
+                  type: object
+                minItems: 1
                 type: array
               verticalScaling:
                 properties:
@@ -190,12 +221,9 @@ spec:
             required:
             - cniNetworks
             - horizontalScaling
+            - networkAttachment
             - networkSubnets
-            - networks
             type: object
-            x-kubernetes-validations:
-            - message: Size of networkSubnets, and networks arrays must match!
-              rule: self.networkSubnets.size() == self.networks.size()
           status:
             description: status defines the observed state of GatewayConfig
             properties:
