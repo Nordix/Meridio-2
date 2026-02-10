@@ -196,10 +196,13 @@ spec:
                   Each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
                 items:
                   maxLength: 50
-                  pattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])/32$|^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))/128$
                   type: string
                 maxItems: 100
                 type: array
+                x-kubernetes-validations:
+                - message: each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
+                  rule: self.all(c, isCIDR(c) && (cidr(c).prefixLength() == 32 ||
+                    cidr(c).prefixLength() == 128))
               destinationPorts:
                 description: |-
                   Destination port ranges allowed in the L34Route.
@@ -408,6 +411,9 @@ spec:
                   type: string
                 maxItems: 100
                 type: array
+                x-kubernetes-validations:
+                - message: each sourceCIDR must be a valid CIDR
+                  rule: self.all(c, isCIDR(c))
               sourcePorts:
                 description: |-
                   Source port ranges allowed in the L34Route.

@@ -1,0 +1,26 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-meridio-2-nordix-org-v1alpha1-l34route
+  failurePolicy: Fail
+  name: vl34route-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - meridio-2.nordix.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - l34routes
+  sideEffects: None
