@@ -62,9 +62,10 @@ type MaglevConfig struct {
 // DistributionGroupSpec defines the desired state of DistributionGroup.
 type DistributionGroupSpec struct {
 	// Selector restricts connectivity to endpoints that match these labels.
-	// This mirrors the behavior of corev1.ServiceSpec.Selector.
+	// This uses the standard Kubernetes LabelSelector, supporting both
+	// matchLabels and matchExpressions.
 	// +optional
-	Selector map[string]string `json:"selector,omitempty"`
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
 	// Type determines how the DistributionGroup is distributed.
 	// Defaults to Maglev. This is a discriminator for the config blocks below.

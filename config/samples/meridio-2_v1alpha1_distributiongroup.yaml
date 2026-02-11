@@ -7,7 +7,12 @@ metadata:
   name: distributiongroup-sample
 spec:
   selector:
-    app: target-application-sample
+    matchLabels:
+      app: target-application-sample
+    matchExpressions:
+      - key: status
+        operator: NotIn
+        values: [ "draining", "maintenance" ]
   maglev:
     maxEndpoints: 102
   parentRefs:

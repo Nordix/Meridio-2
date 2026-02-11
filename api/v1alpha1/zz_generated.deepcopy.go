@@ -89,10 +89,8 @@ func (in *DistributionGroupSpec) DeepCopyInto(out *DistributionGroupSpec) {
 	*out = *in
 	if in.Selector != nil {
 		in, out := &in.Selector, &out.Selector
-		*out = make(map[string]string, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
+		*out = new(v1.LabelSelector)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.Maglev != nil {
 		in, out := &in.Maglev, &out.Maglev
