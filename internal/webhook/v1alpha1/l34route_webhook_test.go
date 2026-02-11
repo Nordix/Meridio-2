@@ -35,31 +35,6 @@ var _ = Describe("L34Route Webhook", func() {
 		validator = L34RouteCustomValidator{}
 	})
 
-	Context("When validating protocols", func() {
-		It("Should accept unique protocols", func() {
-			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{
-				meridio2v1alpha1.TCP,
-				meridio2v1alpha1.UDP,
-			}
-			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
-			obj.Spec.Priority = 1
-			_, err := validator.ValidateCreate(ctx, obj)
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("Should reject duplicate protocols", func() {
-			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{
-				meridio2v1alpha1.TCP,
-				meridio2v1alpha1.TCP,
-			}
-			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
-			obj.Spec.Priority = 1
-			_, err := validator.ValidateCreate(ctx, obj)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("duplicated protocols"))
-		})
-	})
-
 	Context("When validating IP family consistency", func() {
 		It("Should accept IPv4 source and destination", func() {
 			obj.Spec.SourceCIDRs = []string{"10.0.0.0/24"}

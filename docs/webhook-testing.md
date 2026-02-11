@@ -101,7 +101,7 @@ spec:
 EOF
 ```
 
-#### 2. Duplicate Protocols (should fail - webhook validation)
+#### 2. Duplicate Protocols (should fail - CEL validation)
 
 ```bash
 kubectl apply -f - <<EOF
@@ -127,7 +127,7 @@ spec:
 EOF
 ```
 
-Expected error: `duplicated protocols`
+Expected error: `protocols must not contain duplicates`
 
 #### 3. Overlapping Source CIDRs - IPv4 (should fail - webhook validation)
 
@@ -405,7 +405,6 @@ make undeploy
 
 The webhook validates:
 
-- ✅ Protocol uniqueness (no duplicates)
 - ✅ IP family consistency (source and destination must be IPv4, IPv6, or dual-stack consistently)
 - ✅ Source CIDR overlaps (IPv4 and IPv6)
 - ✅ Destination CIDR overlaps (IPv4 /32 and IPv6 /128 only)
@@ -415,6 +414,7 @@ The webhook validates:
 CEL validation (in CRD) handles:
 
 - ✅ Required fields (parentRefs, destinationCIDRs, protocols, priority)
+- ✅ Protocol uniqueness (no duplicates)
 - ✅ CIDR format validation
 - ✅ Destination CIDR prefix length (/32 for IPv4, /128 for IPv6)
 - ✅ Port format (single port, range, "any")

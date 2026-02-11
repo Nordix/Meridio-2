@@ -401,7 +401,11 @@ spec:
                   The protocols should not have overlaps.
                 items:
                   type: string
+                maxItems: 3
                 type: array
+                x-kubernetes-validations:
+                - message: protocols must not contain duplicates
+                  rule: self.all(p, self.exists_one(x, x == p))
               sourceCIDRs:
                 description: |-
                   Source CIDRs allowed in the L34Route.

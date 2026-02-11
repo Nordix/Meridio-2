@@ -111,6 +111,8 @@ type L34RouteSpec struct {
 
 	// Protocols allowed in this L34Route.
 	// The protocols should not have overlaps.
+	// +kubebuilder:validation:MaxItems=3
+	// +kubebuilder:validation:XValidation:message="protocols must not contain duplicates",rule="self.all(p, self.exists_one(x, x == p))"
 	Protocols []TransportProtocol `json:"protocols"`
 
 	// Priority of the L34Route

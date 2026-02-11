@@ -75,16 +75,6 @@ func (v *L34RouteCustomValidator) ValidateDelete(_ context.Context, obj *meridio
 func (v *L34RouteCustomValidator) validateL34Route(r *meridio2v1alpha1.L34Route) error {
 	var allErrs field.ErrorList
 
-	// Validate protocol duplicates
-	protocols := make(map[meridio2v1alpha1.TransportProtocol]struct{})
-	for _, protocol := range r.Spec.Protocols {
-		if _, exists := protocols[protocol]; exists {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("protocols"), r.Spec.Protocols, "duplicated protocols"))
-			break
-		}
-		protocols[protocol] = struct{}{}
-	}
-
 	// Validate IP family consistency
 	if len(r.Spec.SourceCIDRs) > 0 && len(r.Spec.DestinationCIDRs) > 0 {
 		dstFamilySet, err := getIPFamilySet(r.Spec.DestinationCIDRs)
