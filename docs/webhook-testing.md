@@ -68,6 +68,39 @@ spec:
 EOF
 ```
 
+#### 1b. Valid L34Route with multiple ports and byteMatches (should succeed)
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: vip-20-0-0-1-multi-ports-a
+  namespace: default
+spec:
+  parentRefs:
+    - name: sllb-a
+  backendRefs:
+    - name: service-a
+      group: meridio-2.nordix.org
+      kind: CustomService
+  priority: 10
+  destinationCIDRs:
+    - "20.0.0.1/32"
+  sourceCIDRs:
+    - "0.0.0.0/0"
+  sourcePorts:
+    - "0-65535"
+  destinationPorts:
+    - "5000"
+    - "5001"
+  protocols:
+    - TCP
+  byteMatches:
+    - "tcp[0:4] & 0x0000fffe = 5000"
+EOF
+```
+
 #### 2. Duplicate Protocols (should fail - webhook validation)
 
 ```bash
