@@ -324,6 +324,35 @@ EOF
 
 Expected error: `each destinationPort must be a single port, a port range, or 'any'`
 
+#### 11. Mismatched IP families - IPv4 source with IPv6 destination (should fail - webhook validation)
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: mismatched-ip-families
+  namespace: default
+spec:
+  parentRefs:
+    - name: example-gateway
+      namespace: default
+  backendRefs:
+    - name: service-a
+      group: meridio-2.nordix.org
+      kind: CustomService
+  sourceCIDRs:
+    - "10.0.0.0/24"
+  destinationCIDRs:
+    - "2001:db8::1/128"
+  protocols:
+    - TCP
+  priority: 1
+EOF
+```
+
+Expected error: `source and destination CIDRs must be of the same IP family`
+
 ### Verify Webhook Logs
 
 Check webhook validation logs:
@@ -344,6 +373,7 @@ make undeploy
 The webhook validates:
 
 - ✅ Protocol uniqueness (no duplicates)
+- ✅ IP family consistency (source and destination must be IPv4, IPv6, or dual-stack consistently)
 - ✅ Source CIDR overlaps (IPv4 and IPv6)
 - ✅ Destination CIDR overlaps (IPv4 /32 and IPv6 /128 only)
 - ✅ Source port overlaps
@@ -359,7 +389,12 @@ CEL validation (in CRD) handles:
 - ✅ ByteMatch format
 - ✅ Array size limits
 
-**Note**: Destination CIDRs are restricted to /32 (IPv4) and /128 (IPv6) by CEL validation rules in the CRD.
+**Note**: 
+- Destination CIDRs are restricted to /32 (IPv4) and /128 (IPv6) by CEL validation rules in the CRD.
+- Source and destination CIDRs must have consistent IP families:
+  - Both IPv4-only
+  - Both IPv6-only
+  - Both dual-stack (containing both IPv4 and IPv6)
 
 ## Troubleshooting
 

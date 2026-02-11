@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2025 OpenInfra Foundation Europe. All rights reserved.
+Copyright (c) 2026 OpenInfra Foundation Europe. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -85,6 +85,23 @@ func (v *L34RouteCustomValidator) validateL34Route(r *meridio2v1alpha1.L34Route)
 		protocols[protocol] = struct{}{}
 	}
 
+	// Validate IP family consistency
+	if len(r.Spec.SourceCIDRs) > 0 && len(r.Spec.DestinationCIDRs) > 0 {
+		dstFamilySet, err := getIPFamilySet(r.Spec.DestinationCIDRs)
+		if err != nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("destinationCIDRs"), r.Spec.DestinationCIDRs[0], "invalid CIDR format"))
+		}
+
+		srcFamilySet, err := getIPFamilySet(r.Spec.SourceCIDRs)
+		if err != nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("sourceCIDRs"), r.Spec.SourceCIDRs[0], "invalid CIDR format"))
+		}
+
+		if srcFamilySet != dstFamilySet {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec"), r.Spec, "source and destination CIDRs must be of the same IP family"))
+		}
+	}
+
 	// Validate source CIDRs for overlaps
 	if cidr, err := validateCIDRs(r.Spec.SourceCIDRs); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("sourceCIDRs"), cidr,
@@ -118,6 +135,37 @@ func (v *L34RouteCustomValidator) validateL34Route(r *meridio2v1alpha1.L34Route)
 		r.Name,
 		allErrs,
 	)
+}
+
+// getIPFamilySet determines the IP family (IPv4, IPv6 or dual) of the given CIDRs.
+func getIPFamilySet(cidrs []string) (string, error) {
+	isIPv4 := false
+	isIPv6 := false
+	for _, c := range cidrs {
+		ip, ipnet, err := net.ParseCIDR(c)
+		if err != nil {
+			return "", fmt.Errorf("invalid CIDR format: %s", c)
+		}
+		if ip.To4() != nil {
+			if len(ipnet.IP) != net.IPv4len && ip.To16() != nil && ip.To16()[10] == 0xff && ip.To16()[11] == 0xff { // IPv4-mapped IPv6 address
+				isIPv6 = true
+			}
+			isIPv4 = true
+		} else if ip.To16() != nil {
+			isIPv6 = true
+		} else {
+			return "", fmt.Errorf("invalid IP address in CIDR: %s", c)
+		}
+	}
+
+	if isIPv4 && isIPv6 {
+		return "dual", nil
+	} else if isIPv4 {
+		return "ipv4", nil
+	} else if isIPv6 {
+		return "ipv6", nil
+	}
+	return "", fmt.Errorf("unable to determine IP family from CIDRs")
 }
 
 // validateCIDRs checks for overlapping CIDRs

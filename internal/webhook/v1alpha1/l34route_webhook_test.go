@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2025 OpenInfra Foundation Europe. All rights reserved.
+Copyright (c) 2026 OpenInfra Foundation Europe. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -60,6 +60,112 @@ var _ = Describe("L34Route Webhook", func() {
 		})
 	})
 
+	Context("When validating IP family consistency", func() {
+		It("Should accept IPv4 source and destination", func() {
+			obj.Spec.SourceCIDRs = []string{"10.0.0.0/24"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should accept IPv6 source and destination", func() {
+			obj.Spec.SourceCIDRs = []string{"2001:db8::/32"}
+			obj.Spec.DestinationCIDRs = []string{"2001:db8::1/128"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should accept dual-stack source and destination", func() {
+			obj.Spec.SourceCIDRs = []string{"10.0.0.0/24", "2001:db8::/32"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32", "2001:db8::1/128"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should reject IPv4 source with IPv6 destination", func() {
+			obj.Spec.SourceCIDRs = []string{"10.0.0.0/24"}
+			obj.Spec.DestinationCIDRs = []string{"2001:db8::1/128"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("same IP family"))
+		})
+
+		It("Should reject IPv6 source with IPv4 destination", func() {
+			obj.Spec.SourceCIDRs = []string{"2001:db8::/32"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("same IP family"))
+		})
+
+		It("Should reject dual-stack source with IPv4-only destination", func() {
+			obj.Spec.SourceCIDRs = []string{"10.0.0.0/24", "2001:db8::/32"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("same IP family"))
+		})
+
+		It("Should reject IPv4-only source with dual-stack destination", func() {
+			obj.Spec.SourceCIDRs = []string{"10.0.0.0/24"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32", "2001:db8::1/128"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("same IP family"))
+		})
+
+		It("Should accept when sourceCIDRs is empty", func() {
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should accept IPv4-mapped IPv6 addresses as dual-stack", func() {
+			obj.Spec.SourceCIDRs = []string{"::ffff:192.168.1.0/120"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32", "2001:db8::1/128"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should reject IPv4-mapped IPv6 source with IPv4-only destination", func() {
+			obj.Spec.SourceCIDRs = []string{"::ffff:192.168.1.0/120"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("same IP family"))
+		})
+
+		It("Should reject IPv4-mapped IPv6 source with IPv6-only destination", func() {
+			obj.Spec.SourceCIDRs = []string{"::ffff:192.168.1.0/120"}
+			obj.Spec.DestinationCIDRs = []string{"2001:db8::1/128"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("same IP family"))
+		})
+	})
+
 	Context("When validating source CIDRs", func() {
 		It("Should accept non-overlapping IPv4 CIDRs", func() {
 			obj.Spec.SourceCIDRs = []string{"192.168.1.0/24", "10.0.0.0/24"}
@@ -72,7 +178,7 @@ var _ = Describe("L34Route Webhook", func() {
 
 		It("Should accept non-overlapping IPv6 CIDRs", func() {
 			obj.Spec.SourceCIDRs = []string{"2001:db8::/32", "2001:db9::/32"}
-			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.DestinationCIDRs = []string{"2001:db8::1/128"}
 			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
 			obj.Spec.Priority = 1
 			_, err := validator.ValidateCreate(ctx, obj)
@@ -81,7 +187,7 @@ var _ = Describe("L34Route Webhook", func() {
 
 		It("Should accept mixed IPv4 and IPv6 CIDRs", func() {
 			obj.Spec.SourceCIDRs = []string{"192.168.1.0/24", "2001:db8::/32"}
-			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32", "2001:db8::1/128"}
 			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
 			obj.Spec.Priority = 1
 			_, err := validator.ValidateCreate(ctx, obj)
