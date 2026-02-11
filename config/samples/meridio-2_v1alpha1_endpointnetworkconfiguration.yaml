@@ -1,9 +1,49 @@
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: EndpointNetworkConfiguration
 metadata:
+  name: endpointnetworkconfiguration-sample
+  namespace: default
   labels:
     app.kubernetes.io/name: meridio-2
     app.kubernetes.io/managed-by: kustomize
-  name: endpointnetworkconfiguration-sample
 spec:
-  # TODO(user): Add fields here
+  gateways:
+    - name: sllb-a
+      domains:
+        - name: sllb-a-v4
+          ipFamily: IPv4
+          network:
+            subnet: "192.168.0.0/24"
+            interfaceHint: "net1"
+          vips:
+            - "10.0.0.1"
+            - "10.0.0.2"
+            - "10.0.0.3"
+            - "20.0.0.1"
+            - "20.0.0.10"
+          nextHops:
+            - "192.168.0.1"
+            - "192.168.0.2"
+        - name: sllb-a-v6
+          ipFamily: IPv6
+          network:
+            subnet: "100:100::/64"
+          vips:
+            - "2001:db8:1::100"
+          nextHops:
+            - "100:100::10"
+            - "100:100::11"            
+    - name: sllb-b
+      domains:
+        - name: sllb-b-v4
+          ipFamily: IPv4
+          network:
+            subnet: "192.168.101.0/24"
+            interfaceHint: "net2"
+          vips:
+            - "30.0.0.1"
+          nextHops:
+            - "192.168.101.3"
+            - "192.168.101.4"
+            - "192.168.101.5"
+            - "192.168.101.6"
