@@ -39,20 +39,6 @@ spec:
           spec:
             description: spec defines the desired state of GatewayConfig
             properties:
-              cniNetworks:
-                description: List of k8s.v1.cni.cncf.io/networks interfaces, for which
-                  gateway workloads should be attached to
-                items:
-                  properties:
-                    interface:
-                      type: string
-                    name:
-                      type: string
-                  required:
-                  - interface
-                  - name
-                  type: object
-                type: array
               horizontalScaling:
                 properties:
                   enforceReplicas:
@@ -76,10 +62,13 @@ spec:
                       properties:
                         interface:
                           type: string
+                        name:
+                          type: string
                         namespace:
                           type: string
                       required:
                       - interface
+                      - name
                       - namespace
                       type: object
                     description:
@@ -87,6 +76,7 @@ spec:
                     dra:
                       type: object
                     type:
+                      default: CNI
                       enum:
                       - CNI
                       - DRA
@@ -105,6 +95,12 @@ spec:
                   IP(s) are, is distinc for each type of network
                 items:
                   properties:
+                    attachmentType:
+                      default: CNI
+                      enum:
+                      - CNI
+                      - DRA
+                      type: string
                     cidrs:
                       items:
                         type: string
@@ -112,14 +108,9 @@ spec:
                         - message: Must be a valid CIDR notation!
                           rule: isCIDR(self)
                       type: array
-                    nadType:
-                      enum:
-                      - CNI
-                      - DRA
-                      type: string
                   required:
+                  - attachmentType
                   - cidrs
-                  - nadType
                   type: object
                 minItems: 1
                 type: array
@@ -138,6 +129,26 @@ spec:
                           type: boolean
                         name:
                           type: string
+                        resizePolicy:
+                          items:
+                            description: ContainerResizePolicy represents resource
+                              resize policy for the container.
+                            properties:
+                              resourceName:
+                                description: |-
+                                  Name of the resource to which this resource resize policy applies.
+                                  Supported values: cpu, memory.
+                                type: string
+                              restartPolicy:
+                                description: |-
+                                  Restart policy to apply when specified resource is resized.
+                                  If not specified, it defaults to NotRequired.
+                                type: string
+                            required:
+                            - resourceName
+                            - restartPolicy
+                            type: object
+                          type: array
                         resources:
                           description: it has more fields than just limit, and
                           properties:
@@ -203,23 +214,8 @@ spec:
                       - name
                       type: object
                     type: array
-                  resizeStrategy:
-                    description: 'Resizing Strategy: Applies to ALL containers where
-                      enforceResources is true'
-                    properties:
-                      mode:
-                        enum:
-                        - InPlace
-                        - RollingUpgrade
-                        type: string
-                    required:
-                    - mode
-                    type: object
-                required:
-                - resizeStrategy
                 type: object
             required:
-            - cniNetworks
             - horizontalScaling
             - networkAttachment
             - networkSubnets

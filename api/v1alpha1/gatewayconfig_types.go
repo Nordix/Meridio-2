@@ -40,8 +40,9 @@ type GatewayConfigSpec struct {
 
 type NetworkSubnet struct {
 
+	// +kubebuilder:default=CNI
 	// +kubebuilder:validation:Enum=CNI;DRA
-	NADType string `json:"nadType"`
+	AttachmentType string `json:"attachmentType"`
 
 	// +kubebuilder:validation:items:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
 	CIDRs []string `json:"cidrs"`
@@ -53,6 +54,7 @@ type NetworkAttachment struct {
 	// +optional
 	Description string `json:"description"`
 
+	// +kubebuilder:default=CNI
 	// +kubebuilder:validation:Enum=CNI;DRA
 	Type string `json:"type"`
 
@@ -90,9 +92,6 @@ type VerticalScaling struct {
 	// should suffice.
 	// +optional
 	Containers []ContainerArgs `json:"containers,omitempty"`
-
-	// Resizing Strategy: Applies to ALL containers where enforceResources is true
-	ResizeStrategy ResizeStrategy `json:"resizeStrategy"`
 }
 
 type ContainerArgs struct {
@@ -109,11 +108,8 @@ type ContainerArgs struct {
 	// If true, controller enforces 'resources' via patch/template.
 	// If false, controller ignores 'resources', deferring to VPA/other external tool.
 	EnforceResource bool `json:"enforceResources"`
-}
 
-type ResizeStrategy struct {
-	// +kubebuilder:validation:Enum=InPlace;RollingUpgrade
-	Mode string `json:"mode"`
+	ResizePolicy []corev1.ContainerResizePolicy `json:"resizePolicy,omitempty"`
 }
 
 // GatewayConfigStatus defines the observed state of GatewayConfig.
