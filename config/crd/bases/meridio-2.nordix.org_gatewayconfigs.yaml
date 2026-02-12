@@ -87,8 +87,9 @@ spec:
                   x-kubernetes-validations:
                   - message: If type is CNI, field CNI must not be null, otherwise
                       DRA must not be null
-                    rule: self.Type == "CNI" && self.CNI != null || self.Type == "DRA"
-                      && self.DRA != null
+                    rule: self.type == "CNI" && self.cni != null || self.type == "DRA"
+                      && self.dra != null
+                maxItems: 2
                 type: array
               networkSubnets:
                 description: Indicates in which subnet(s) the application endpoint
@@ -107,11 +108,13 @@ spec:
                         x-kubernetes-validations:
                         - message: Must be a valid CIDR notation!
                           rule: isCIDR(self)
+                      maxItems: 2
                       type: array
                   required:
                   - attachmentType
                   - cidrs
                   type: object
+                maxItems: 2
                 minItems: 1
                 type: array
               verticalScaling:

@@ -25,9 +25,11 @@ import (
 
 type GatewayConfigSpec struct {
 
+	// +kubebuilder:validation:MaxItems=2
 	NetworkAttachments []NetworkAttachment `json:"networkAttachment"`
 
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=2
 
 	// Indicates in which subnet(s) the application endpoint IP(s) are, is distinc for each type of network
 	NetworkSubnets []NetworkSubnet `json:"networkSubnets"`
@@ -44,11 +46,12 @@ type NetworkSubnet struct {
 	// +kubebuilder:validation:Enum=CNI;DRA
 	AttachmentType string `json:"attachmentType"`
 
+	// +kubebuilder:validation:MaxItems=15
 	// +kubebuilder:validation:items:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
 	CIDRs []string `json:"cidrs"`
 }
 
-// +kubebuilder:validation:XValidation:rule=self.Type == "CNI" && self.CNI != null || self.Type == "DRA" && self.DRA != null,message="If type is CNI, field CNI must not be null, otherwise DRA must not be null"
+// +kubebuilder:validation:XValidation:rule=self.type == "CNI" && self.cni != null || self.type == "DRA" && self.dra != null,message="If type is CNI, field CNI must not be null, otherwise DRA must not be null"
 type NetworkAttachment struct {
 
 	// +optional
