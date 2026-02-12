@@ -29,7 +29,7 @@ type GatewayRouterSpec struct {
 	// Name of the interface to reach external gateway
 	Interface string `json:"interface"`
 
-	//+kubebuilder:validation:XValidation:rule=isIp(self),message=Must be an ip address
+	//+kubebuilder:validation:XValidation:rule=isIP(self),message=Must be an ip address
 
 	// Address of the Gateway Router
 	Address string `json:"address"`
