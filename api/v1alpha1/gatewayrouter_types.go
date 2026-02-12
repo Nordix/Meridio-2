@@ -18,12 +18,13 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 // GatewayRouterSpec defines the desired state of GatewayRouter
 type GatewayRouterSpec struct {
 
-	GatewayRef GatewayRef `json:"gatewayRef"`
+	GatewayRef gatewayapiv1.ParentReference `json:"gatewayRef"`
 
 	// Name of the interface to reach external gateway
 	Interface string `json:"interface"`
@@ -37,10 +38,6 @@ type GatewayRouterSpec struct {
 	// If the Protocol is bgp, the minimal parameters to be defined in bgp properties
 	// are RemoteASN and LocalASN
 	BGP BgpSpec `json:"bgp"`
-}
-
-type GatewayRef struct {
-	Name string `json:"name"`
 }
 
 type BgpSpec struct {
