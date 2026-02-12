@@ -27,9 +27,6 @@ type GatewayConfigSpec struct {
 
 	NetworkAttachments []NetworkAttachment `json:"networkAttachment"`
 
-	// List of k8s.v1.cni.cncf.io/networks interfaces, for which gateway workloads should be attached to
-	CNINetworks []CNINetwork `json:"cniNetworks"`
-
 	// +kubebuilder:validation:MinItems=1
 
 	// Indicates in which subnet(s) the application endpoint IP(s) are, is distinc for each type of network
@@ -68,16 +65,12 @@ type NetworkAttachment struct {
 
 type CNI struct {
 	Interface string `json:"interface"`
+	Name string `json:"name"`
 	Namespace string `json:"namespace"`
 }
 
 // TODO implement
 type DRA struct { /* ... */ }
-
-type CNINetwork struct {
-	Name      string `json:"name"`
-	Interface string `json:"interface"`
-}
 
 type HorizontalScaling struct {
 
