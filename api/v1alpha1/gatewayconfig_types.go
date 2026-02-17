@@ -91,8 +91,6 @@ type HorizontalScaling struct {
 }
 
 type VerticalScaling struct {
-	// TODO not sure if we want this as an array, if we only set router, and sllb containers, then just using two fields
-	// should suffice.
 	// +optional
 	Containers []ContainerArgs `json:"containers,omitempty"`
 }
@@ -100,8 +98,6 @@ type VerticalScaling struct {
 type ContainerArgs struct {
 	Name string `json:"name"`
 
-	// TODO I've just put the one defined by k8s/core/v1/api here,
-	// it has more fields than just limit, and
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
