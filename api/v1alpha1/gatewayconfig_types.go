@@ -42,8 +42,8 @@ type GatewayConfigSpec struct {
 
 type NetworkSubnet struct {
 
-	// +kubebuilder:default=CNI
-	// +kubebuilder:validation:Enum=CNI;DRA
+	// +kubebuilder:default=NAD
+	// +kubebuilder:validation:Enum=NAD;DRA
 	AttachmentType string `json:"attachmentType"`
 
 	// +kubebuilder:validation:MaxItems=15
@@ -51,24 +51,24 @@ type NetworkSubnet struct {
 	CIDRs []string `json:"cidrs"`
 }
 
-// +kubebuilder:validation:XValidation:rule=self.type == "CNI" && self.cni != null || self.type == "DRA" && self.dra != null,message="If type is CNI, field CNI must not be null, otherwise DRA must not be null"
+// +kubebuilder:validation:XValidation:rule=self.type == "NAD" && self.cni != null || self.type == "DRA" && self.dra != null,message="If type is NAD, field NAD must not be null, otherwise DRA must not be null"
 type NetworkAttachment struct {
 
 	// +optional
 	Description string `json:"description"`
 
-	// +kubebuilder:default=CNI
-	// +kubebuilder:validation:Enum=CNI;DRA
+	// +kubebuilder:default=NAD
+	// +kubebuilder:validation:Enum=NAD;DRA
 	Type string `json:"type"`
 
 	// +optional
-	CNI *CNI `json:"cni,omitempty"`
+	NAD *NAD `json:"cni,omitempty"`
 
 	// +optional
 	DRA *DRA `json:"dra,omitempty"`
 }
 
-type CNI struct {
+type NAD struct {
 	Interface string `json:"interface"`
 	Name string `json:"name"`
 	Namespace string `json:"namespace"`
