@@ -8,17 +8,35 @@ metadata:
 spec:
   group: meridio-2.nordix.org
   names:
+    categories:
+    - meridio
+    - all
     kind: EndpointNetworkConfiguration
     listKind: EndpointNetworkConfigurationList
     plural: endpointnetworkconfigurations
+    shortNames:
+    - enc
     singular: endpointnetworkconfiguration
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].observedGeneration
+      name: Observed-Gen
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: EndpointNetworkConfiguration is the Schema for the endpointnetworkconfigurations
-          API
+        description: |-
+          EndpointNetworkConfiguration is the Schema for the endpointnetworkconfigurations API.
+          Defines the declarative network contract for a specific application Pod.
+          The name of the resource MUST be identical to the Pod's name for
+          automatic discovery by local agents.
         properties:
           apiVersion:
             description: |-
@@ -38,26 +56,111 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of EndpointNetworkConfiguration
+            description: EndpointNetworkConfigurationSpec defines the desired state
+              of the Pod's networking.
             properties:
-              foo:
-                description: foo is an example field of EndpointNetworkConfiguration.
-                  Edit endpointnetworkconfiguration_types.go to remove/update
-                type: string
+              gateways:
+                description: 'Gateways: List of Gateways the Pod has joined.'
+                items:
+                  description: GatewayConnection defines the desired state for a specific
+                    Gateway connection.
+                  properties:
+                    domains:
+                      description: 'Domains: The dual-stack network configurations
+                        for this specific Gateway.'
+                      items:
+                        description: NetworkDomain represents the desired networking
+                          state for a specific network segment.
+                        properties:
+                          ipFamily:
+                            description: |-
+                              IPFamily: The IP version used in this domain.
+                              This helps the consumer apply protocol-specific settings (like IPv6 nodad).
+                            enum:
+                            - IPv4
+                            - IPv6
+                            type: string
+                          name:
+                            description: |-
+                              Name: A unique logical identifier for this domain (e.g., "sllb-a-v4").
+                              The consumer uses this name to maintain local resource state, such as
+                              routing table ID mapping.
+                            type: string
+                          network:
+                            description: |-
+                              Network: Parameters used to identify and validate the physical or
+                              virtual interface associated with this domain.
+                            properties:
+                              interfaceHint:
+                                description: |-
+                                  InterfaceHint: An optional interface name (e.g., "net1") to accelerate
+                                  the discovery process.
+                                type: string
+                              subnet:
+                                description: |-
+                                  Subnet: The network prefix expected on the target interface (e.g., "192.168.1.0/24").
+                                  The processing entity MUST verify this subnet matches the interface's primary IP
+                                  to ensure configuration is applied to the correct network segment.
+                                maxLength: 64
+                                type: string
+                            required:
+                            - subnet
+                            type: object
+                          nextHops:
+                            description: |-
+                              NextHops: Addresses for source-based routing.
+                              If provided, the consumer MUST steer all return traffic or traffic
+                              originating from a VIP through these IPs using a dedicated routing table.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          vips:
+                            description: |-
+                              VIPs: Virtual IP addresses to be assigned as local IPs on the interface.
+                              These addresses can serve as the source IPs for outbound traffic; the consumer
+                              MUST ensure traffic originating from these VIPs is steered according to the
+                              domain's configuration (e.g., via source-based routing).
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - ipFamily
+                        - name
+                        - network
+                        type: object
+                        x-kubernetes-validations:
+                        - message: Subnet IP family mismatch
+                          rule: 'cidr(self.network.subnet).ip().family() == (self.ipFamily
+                            == ''IPv4'' ? 4 : 6)'
+                      maxItems: 2
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - ipFamily
+                      x-kubernetes-list-type: map
+                    name:
+                      description: 'Name: The identifier of the remote Gateway.'
+                      type: string
+                  required:
+                  - domains
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
             type: object
           status:
-            description: status defines the observed state of EndpointNetworkConfiguration
+            description: |-
+              EndpointNetworkConfigurationStatus defines the observed state of the network plumbing.
+              Using ObservedGeneration within conditions is recommended to track which version of the
+              Spec each individual condition represents.
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the EndpointNetworkConfiguration resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
+                  Conditions represent the latest available observations of the state.
+                  Common types: "Ready".
                   The status of each condition is one of True, False, or Unknown.
                 items:
                   description: Condition contains details for one aspect of the current
@@ -118,8 +221,6 @@ spec:
                 - type
                 x-kubernetes-list-type: map
             type: object
-        required:
-        - spec
         type: object
     served: true
     storage: true

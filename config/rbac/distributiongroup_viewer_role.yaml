@@ -11,12 +11,12 @@ metadata:
   labels:
     app.kubernetes.io/name: meridio-2
     app.kubernetes.io/managed-by: kustomize
-  name: customservice-viewer-role
+  name: distributiongroup-viewer-role
 rules:
 - apiGroups:
   - meridio-2.nordix.org
   resources:
-  - customservices
+  - distributiongroups
   verbs:
   - get
   - list
@@ -24,6 +24,6 @@ rules:
 - apiGroups:
   - meridio-2.nordix.org
   resources:
-  - customservices/status
+  - distributiongroups/status
   verbs:
   - get

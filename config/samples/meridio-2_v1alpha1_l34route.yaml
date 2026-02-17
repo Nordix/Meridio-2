@@ -5,5 +5,25 @@ metadata:
     app.kubernetes.io/name: meridio-2
     app.kubernetes.io/managed-by: kustomize
   name: l34route-sample
+  namespace: default 
 spec:
-  # TODO(user): Add fields here
+  parentRefs:
+    - name: sllb-a
+  backendRefs:
+    - name: service-a
+      group: meridio-2.nordix.org
+      kind: CustomService
+  priority: 10
+  destinationCIDRs:
+    - "20.0.0.1/32"
+  sourceCIDRs:
+    - "0.0.0.0/0"
+  sourcePorts:
+    - "0-65535"
+  destinationPorts:
+    - "5000"
+    - "5001"
+  protocols:
+    - TCP
+  byteMatches:
+    - "tcp[0:4] & 0x0000fffe = 5000"

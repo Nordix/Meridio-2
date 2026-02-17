@@ -39,10 +39,97 @@ spec:
           spec:
             description: spec defines the desired state of GatewayRouter
             properties:
-              foo:
-                description: foo is an example field of GatewayRouter. Edit gatewayrouter_types.go
-                  to remove/update
+              address:
+                description: Address of the Gateway Router
                 type: string
+                x-kubernetes-validations:
+                - message: Must be an ip address
+                  rule: isIp(self)
+              bgp:
+                description: |-
+                  Parameters to set up the BGP session to specified Address.
+                  If the Protocol is bgp, the minimal parameters to be defined in bgp properties
+                  are RemoteASN and LocalASN
+                properties:
+                  bfd:
+                    description: BFD monitoring of BGP session.
+                    properties:
+                      minRx:
+                        description: |-
+                          Min-rx timer of bfd session. Please refere to BFD material to understand what this implies.
+                          The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+                          The duration will be rounded by millisecond.
+                        type: string
+                      minTx:
+                        description: |-
+                          Min-tx timer of bfd session. Please refere to BFD material to understand what this implies.
+                          The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+                          The duration will be rounded by millisecond.
+                        type: string
+                      multiplier:
+                        description: |-
+                          Multiplier of bfd session.
+                          When this number of bfd packets failed to receive, bfd session will go down.
+                        type: integer
+                      switch:
+                        description: |-
+                          BFD monitoring.
+                          Valid values are:
+                          - false: no BFD monitoring;
+                          - true: turns on the BFD monitoring.
+                          When left empty, there is no BFD monitoring.
+                        type: boolean
+                    type: object
+                  holdTime:
+                    description: |-
+                      Hold timer of the BGP session. Please refere to BGP material to understand what this implies.
+                      The value must be a valid duration format. For example, 90s, 1m, 1h.
+                      The duration will be rounded by second
+                      Minimum duration is 3s.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: Must be at least 3s
+                      rule: duration(self) >= duration('3s')
+                  localASN:
+                    description: The ASN number of the system where the Attractor
+                      FrontEnds locates
+                    format: int32
+                    type: integer
+                  localPort:
+                    default: 179
+                    description: BGP listening port of the Attractor FrontEnds.
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  remoteASN:
+                    description: The ASN number of the Gateway Router
+                    format: int32
+                    type: integer
+                  remotePort:
+                    default: 179
+                    description: BGP listening port of the Gateway Router.
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                required:
+                - localASN
+                - remoteASN
+                type: object
+              gatewayRef:
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              interface:
+                description: Name of the interface to reach external gateway
+                type: string
+            required:
+            - address
+            - bgp
+            - gatewayRef
+            - interface
             type: object
           status:
             description: status defines the observed state of GatewayRouter
