@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright (c) 2026 OpenInfra Foundation Europe. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	webhookv1alpha1 "github.com/nordix/meridio-2/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -177,6 +178,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1alpha1.SetupL34RouteWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "L34Route")
+			os.Exit(1)
+		}
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

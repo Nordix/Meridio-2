@@ -3,10 +3,10 @@
 # It should be run by config/default
 resources:
 - bases/meridio-2.nordix.org_gatewayconfigs.yaml
-- bases/meridio-2.nordix.org_customservices.yaml
 - bases/meridio-2.nordix.org_l34routes.yaml
 - bases/meridio-2.nordix.org_gatewayrouters.yaml
 - bases/meridio-2.nordix.org_endpointnetworkconfigurations.yaml
+- bases/meridio-2.nordix.org_distributiongroups.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
