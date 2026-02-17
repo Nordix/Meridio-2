@@ -2,7 +2,7 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/meridio-2.nordix.org_gatewayconfigs.yaml
+- bases/meridio-2.nordix.org_gatewayconfigurations.yaml
 - bases/meridio-2.nordix.org_customservices.yaml
 - bases/meridio-2.nordix.org_l34routes.yaml
 - bases/meridio-2.nordix.org_gatewayrouters.yaml

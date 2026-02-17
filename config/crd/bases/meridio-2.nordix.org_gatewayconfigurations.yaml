@@ -4,20 +4,21 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: gatewayconfigs.meridio-2.nordix.org
+  name: gatewayconfigurations.meridio-2.nordix.org
 spec:
   group: meridio-2.nordix.org
   names:
-    kind: GatewayConfig
-    listKind: GatewayConfigList
-    plural: gatewayconfigs
-    singular: gatewayconfig
+    kind: GatewayConfiguration
+    listKind: GatewayConfigurationList
+    plural: gatewayconfigurations
+    singular: gatewayconfiguration
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: GatewayConfig is the Schema for the gatewayconfigs API
+        description: GatewayConfiguration is the Schema for the gatewayconfigurations
+          API
         properties:
           apiVersion:
             description: |-
@@ -37,7 +38,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of GatewayConfig
+            description: spec defines the desired state of GatewayConfiguration
             properties:
               horizontalScaling:
                 properties:
@@ -58,7 +59,11 @@ spec:
               networkAttachment:
                 items:
                   properties:
-                    cni:
+                    description:
+                      type: string
+                    dra:
+                      type: object
+                    nad:
                       properties:
                         interface:
                           type: string
@@ -71,23 +76,19 @@ spec:
                       - name
                       - namespace
                       type: object
-                    description:
-                      type: string
-                    dra:
-                      type: object
                     type:
-                      default: CNI
+                      default: NAD
                       enum:
-                      - CNI
+                      - NAD
                       - DRA
                       type: string
                   required:
                   - type
                   type: object
                   x-kubernetes-validations:
-                  - message: If type is CNI, field CNI must not be null, otherwise
+                  - message: If type is NAD, field NAD must not be null, otherwise
                       DRA must not be null
-                    rule: self.type == "CNI" && self.cni != null || self.type == "DRA"
+                    rule: self.type == "NAD" && self.nad != null || self.type == "DRA"
                       && self.dra != null
                 maxItems: 2
                 type: array
@@ -97,9 +98,9 @@ spec:
                 items:
                   properties:
                     attachmentType:
-                      default: CNI
+                      default: NAD
                       enum:
-                      - CNI
+                      - NAD
                       - DRA
                       type: string
                     cidrs:
@@ -108,7 +109,7 @@ spec:
                         x-kubernetes-validations:
                         - message: Must be a valid CIDR notation!
                           rule: isCIDR(self)
-                      maxItems: 2
+                      maxItems: 15
                       type: array
                   required:
                   - attachmentType
@@ -120,7 +121,6 @@ spec:
               verticalScaling:
                 properties:
                   containers:
-                    description: should suffice.
                     items:
                       properties:
                         enforceResources:
@@ -153,7 +153,8 @@ spec:
                             type: object
                           type: array
                         resources:
-                          description: it has more fields than just limit, and
+                          description: ResourceRequirements describes the compute
+                            resource requirements.
                           properties:
                             claims:
                               description: |-
@@ -224,11 +225,11 @@ spec:
             - networkSubnets
             type: object
           status:
-            description: status defines the observed state of GatewayConfig
+            description: status defines the observed state of GatewayConfiguration
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the GatewayConfig resource.
+                  conditions represent the current state of the GatewayConfiguration resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
 
                   Standard condition types include:

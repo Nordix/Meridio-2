@@ -11,12 +11,12 @@ metadata:
   labels:
     app.kubernetes.io/name: meridio-2
     app.kubernetes.io/managed-by: kustomize
-  name: gatewayconfig-editor-role
+  name: gatewayconfiguration-editor-role
 rules:
 - apiGroups:
   - meridio-2.nordix.org
   resources:
-  - gatewayconfigs
+  - gatewayconfigurations
   verbs:
   - create
   - delete
@@ -28,6 +28,6 @@ rules:
 - apiGroups:
   - meridio-2.nordix.org
   resources:
-  - gatewayconfigs/status
+  - gatewayconfigurations/status
   verbs:
   - get

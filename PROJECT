@@ -14,7 +14,7 @@ resources:
     namespaced: true
   domain: nordix.org
   group: meridio-2
-  kind: GatewayConfig
+  kind: GatewayConfiguration
   path: github.com/nordix/meridio-2/api/v1alpha1
   version: v1alpha1
 - api:

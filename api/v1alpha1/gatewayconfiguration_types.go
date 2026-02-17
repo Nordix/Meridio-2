@@ -21,9 +21,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GatewayConfigSpec defines the desired state of GatewayConfig
+// GatewayConfigurationSpec defines the desired state of GatewayConfiguration
 
-type GatewayConfigSpec struct {
+type GatewayConfigurationSpec struct {
 
 	// +kubebuilder:validation:MaxItems=2
 	NetworkAttachments []NetworkAttachment `json:"networkAttachment"`
@@ -111,15 +111,15 @@ type ContainerArgs struct {
 	ResizePolicy []corev1.ContainerResizePolicy `json:"resizePolicy,omitempty"`
 }
 
-// GatewayConfigStatus defines the observed state of GatewayConfig.
-type GatewayConfigStatus struct {
+// GatewayConfigurationStatus defines the observed state of GatewayConfiguration.
+type GatewayConfigurationStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// For Kubernetes API conventions, see:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 
-	// conditions represent the current state of the GatewayConfig resource.
+	// conditions represent the current state of the GatewayConfiguration resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	//
 	// Standard condition types include:
@@ -137,32 +137,32 @@ type GatewayConfigStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// GatewayConfig is the Schema for the gatewayconfigs API
-type GatewayConfig struct {
+// GatewayConfiguration is the Schema for the gatewayconfigurations API
+type GatewayConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the desired state of GatewayConfig
+	// spec defines the desired state of GatewayConfiguration
 	// +required
-	Spec GatewayConfigSpec `json:"spec"`
+	Spec GatewayConfigurationSpec `json:"spec"`
 
-	// status defines the observed state of GatewayConfig
+	// status defines the observed state of GatewayConfiguration
 	// +optional
-	Status GatewayConfigStatus `json:"status,omitzero"`
+	Status GatewayConfigurationStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
 
-// GatewayConfigList contains a list of GatewayConfig
-type GatewayConfigList struct {
+// GatewayConfigurationList contains a list of GatewayConfiguration
+type GatewayConfigurationList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []GatewayConfig `json:"items"`
+	Items           []GatewayConfiguration `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&GatewayConfig{}, &GatewayConfigList{})
+	SchemeBuilder.Register(&GatewayConfiguration{}, &GatewayConfigurationList{})
 }

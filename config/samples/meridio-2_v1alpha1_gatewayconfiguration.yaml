@@ -1,21 +1,21 @@
 apiVersion: meridio-2.nordix.org/v1alpha1
-kind: GatewayConfig
+kind: GatewayConfiguration
 metadata:
   labels:
     app.kubernetes.io/name: meridio-2
     app.kubernetes.io/managed-by: kustomize
-  name: gatewayconfig-sample
+  name: gatewayconfiguration-sample
 spec:
   networkAttachment:
     - description: "VLAN 100 network for gateway traffic"
       type: NAD
-      cni:
+      nad:
         name: vlan-100
         namespace: default
         interface: vlan-100
     - description: "MACVLAN network for application endpoints"
       type: NAD
-      cni:
+      nad:
         name: macvlan-nad-1
         namespace: default
         interface: net1

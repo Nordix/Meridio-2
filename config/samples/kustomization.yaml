@@ -1,6 +1,6 @@
 ## Append samples of your project ##
 resources:
-- meridio-2_v1alpha1_gatewayconfig.yaml
+- meridio-2_v1alpha1_gatewayconfiguration.yaml
 - meridio-2_v1alpha1_customservice.yaml
 - meridio-2_v1alpha1_l34route.yaml
 - meridio-2_v1alpha1_gatewayrouter.yaml
