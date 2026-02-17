@@ -51,7 +51,7 @@ type NetworkSubnet struct {
 	CIDRs []string `json:"cidrs"`
 }
 
-// +kubebuilder:validation:XValidation:rule=self.type == "NAD" && self.cni != null || self.type == "DRA" && self.dra != null,message="If type is NAD, field NAD must not be null, otherwise DRA must not be null"
+// +kubebuilder:validation:XValidation:rule=self.type == "NAD" && self.nad != null || self.type == "DRA" && self.dra != null,message="If type is NAD, field NAD must not be null, otherwise DRA must not be null"
 type NetworkAttachment struct {
 
 	// +optional
@@ -62,7 +62,7 @@ type NetworkAttachment struct {
 	Type string `json:"type"`
 
 	// +optional
-	NAD *NAD `json:"cni,omitempty"`
+	NAD *NAD `json:"nad,omitempty"`
 
 	// +optional
 	DRA *DRA `json:"dra,omitempty"`
