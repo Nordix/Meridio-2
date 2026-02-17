@@ -26,7 +26,7 @@ import (
 type GatewayConfigurationSpec struct {
 
 	// +kubebuilder:validation:MaxItems=2
-	NetworkAttachments []NetworkAttachment `json:"networkAttachment"`
+	NetworkAttachments []NetworkAttachment `json:"networkAttachments"`
 
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=2
@@ -106,7 +106,7 @@ type ContainerArgs struct {
 	// Control Knob for VPA Deferral for THIS container
 	// If true, controller enforces 'resources' via patch/template.
 	// If false, controller ignores 'resources', deferring to VPA/other external tool.
-	EnforceResource bool `json:"enforceResources"`
+	EnforceResources bool `json:"enforceResources"`
 
 	ResizePolicy []corev1.ContainerResizePolicy `json:"resizePolicy,omitempty"`
 }

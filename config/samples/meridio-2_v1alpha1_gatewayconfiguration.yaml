@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: gatewayconfiguration-sample
 spec:
-  networkAttachment:
+  networkAttachments:
     - description: "VLAN 100 network for gateway traffic"
       type: NAD
       nad:
