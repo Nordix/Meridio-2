@@ -6,4 +6,18 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: gatewayrouter-sample
 spec:
-  # TODO(user): Add fields here
+  gatewayRef:
+    name: sllb-a
+  interface: "vlan-100"
+  address: "169.254.100.150"
+  bgp:
+    localASN: 8103
+    remoteASN: 4248829953
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
