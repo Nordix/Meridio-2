@@ -10,9 +10,9 @@ spec:
   parentRefs:
     - name: sllb-a
   backendRefs:
-    - name: service-a
+    - name: distribution-group-sample
       group: meridio-2.nordix.org
-      kind: CustomService
+      kind: DistributionGroup
   priority: 10
   destinationCIDRs:
     - "20.0.0.1/32"
