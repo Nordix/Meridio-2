@@ -12,6 +12,7 @@
 !cmd/
 !api/
 !internal/
+!pkg/
 !hack/
 
 # Exclude test files

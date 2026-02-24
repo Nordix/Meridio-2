@@ -18,12 +18,13 @@ help: ## Display this help.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-IMAGES ?= controller-manager stateless-load-balancer
+IMAGES ?= controller-manager stateless-load-balancer router
 
 # Versions
 VERSION ?= latest
 VERSION_CONTROLLER_MANAGER ?= $(VERSION)
 VERSION_SLLB ?= $(VERSION)
+VERSION_ROUTER ?= $(VERSION)
 LOCAL_VERSION ?= $(VERSION)
 
 # Container registry
@@ -89,6 +90,10 @@ controller-manager: ## Build the controller-manager.
 .PHONY: stateless-load-balancer
 stateless-load-balancer: ## Build the stateless-load-balancer.
 	VERSION=$(VERSION_SLLB) IMAGE=stateless-load-balancer $(MAKE) -s $(BUILD_STEPS)
+
+.PHONY: router
+router: ## Build the router.
+	VERSION=$(VERSION_ROUTER) IMAGE=router $(MAKE) -s $(BUILD_STEPS)
 
 ################################################################################
 ##@ Testing & Code check

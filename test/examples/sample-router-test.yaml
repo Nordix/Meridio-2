@@ -1,0 +1,181 @@
+#router-test-pod.yaml
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vlan-100
+  namespace: meridio-2-system
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "type": "vlan",
+      "master": "eth0",
+      "vlanId": 100,
+      "ipam": {
+        "type": "static",
+        "addresses": [
+          {
+            "address": "169.254.100.1/24"
+          },
+          {
+            "address": "fd00:100::1/64"
+          }
+        ]
+      }
+    }
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: kind-bridge
+  namespace: meridio-2-system
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "type": "macvlan",
+      "master": "eth0",
+      "mode": "bridge",
+      "ipam": {
+        "type": "whereabouts",
+        "range": "172.19.100.0/24"
+      }
+    }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: router-test-pod
+  namespace: meridio-2-system
+  annotations:
+    k8s.v1.cni.cncf.io/networks: '[{"name":"vlan-100","interface":"vlan-100"},{"name":"kind-bridge","interface":"net1"}]'
+spec:
+  serviceAccountName: meridio-2-controller-manager
+  securityContext:
+    fsGroup: 2000
+  initContainers:
+  - name: sysctl-init
+    image: alpine:latest
+    imagePullPolicy: IfNotPresent
+    command:
+    - /bin/sh
+    args:
+    - -c
+    - apk add --no-cache iproute2
+      ; sysctl -w net.ipv4.conf.all.forwarding=1 ; sysctl -w net.ipv4.fib_multipath_hash_policy=1
+      ; sysctl -w net.ipv4.conf.all.rp_filter=0 ; sysctl -w net.ipv4.conf.default.rp_filter=0
+      ; sysctl -w net.ipv4.ip_local_port_range='49152 65535' ; sysctl -w net.ipv6.conf.all.forwarding=1
+      ; sysctl -w net.ipv6.fib_multipath_hash_policy=1 ; sysctl -w net.ipv6.conf.all.accept_dad=0
+      ; ip addr add 40.0.0.1/32 dev lo
+      ; ip addr add 40.0.0.2/32 dev lo
+      ; ip addr add 40.0.0.3/32 dev lo
+      ; ip addr add 2001:db8::1/128 dev lo
+      ; ip addr add 2001:db8::2/128 dev lo
+    securityContext:
+      privileged: true
+  containers:
+  - name: router
+    image: localhost:5001/router
+    securityContext:
+      privileged: true
+    imagePullPolicy: IfNotPresent
+    command: ["/app/router"]
+    args:
+    - run
+    - --gateway-name=gatewayrouter-sample
+    - --gateway-namespace=meridio-2-system
+    env:
+    - name: MERIDIO_BIRD_LOG_FILE
+      value: /var/log/bird/bird.log
+    volumeMounts:
+    - name: bird-run
+      mountPath: /var/run/bird
+    - name: bird-etc
+      mountPath: /etc/bird
+    - name: bird-log
+      mountPath: /var/log/bird
+  volumes:
+  - name: bird-run
+    emptyDir: {}
+  - name: bird-etc
+    emptyDir: {}
+  - name: bird-log
+    emptyDir: {}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gatewayrouter-sample
+  namespace: meridio-2-system
+spec:
+  gatewayClassName: example-gateway-class
+  addresses:
+  - type: IPAddress
+    value: 40.0.0.1
+  listeners:
+  - name: dummy
+    protocol: TCP
+    port: 80
+status:
+  addresses:
+  - type: IPAddress
+    value: 40.0.0.1
+  - type: IPAddress
+    value: 40.0.0.2
+  - type: IPAddress
+    value: 40.0.0.3
+  - type: IPAddress
+    value: 2001:db8::1
+  - type: IPAddress
+    value: 2001:db8::2
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gatewayrouter-sample
+  namespace: meridio-2-system
+  labels:
+    app.kubernetes.io/name: meridio-2
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  gatewayRef:
+    name: gatewayrouter-sample
+  interface: "vlan-100"
+  address: "169.254.100.150"
+  bgp:
+    localASN: 8103
+    remoteASN: 4248829953
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gatewayrouter-sample-v6
+  namespace: meridio-2-system
+  labels:
+    app.kubernetes.io/name: meridio-2
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  gatewayRef:
+    name: gatewayrouter-sample
+  interface: "vlan-100"
+  address: "fd00:100::150"
+  bgp:
+    localASN: 8103
+    remoteASN: 4248829953
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3

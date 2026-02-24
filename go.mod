@@ -16,13 +16,14 @@ require (
 	sigs.k8s.io/gateway-api v1.4.1
 )
 
+require github.com/vishvananda/netns v0.0.5 // indirect
+
 require (
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.5.0 // indirect
 	github.com/networkservicemesh/sdk v1.14.5 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/vishvananda/netns v0.0.5 // indirect
 	go.opentelemetry.io/otel/exporters/prometheus v0.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.37.0 // indirect
 )

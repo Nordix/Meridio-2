@@ -1,0 +1,15 @@
+services:
+  vpn-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vpn-gateway
+    privileged: true
+    command: /init.sh 100
+    networks:
+      - kind
+
+networks:
+  kind:
+    name: kind
+    external: true

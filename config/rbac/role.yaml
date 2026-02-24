@@ -89,6 +89,7 @@ rules:
   - meridio-2.nordix.org
   resources:
   - gatewayconfigurations
+  - gatewayrouters
   - l34routes
   verbs:
   - get
