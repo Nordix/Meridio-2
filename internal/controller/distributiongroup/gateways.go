@@ -128,7 +128,7 @@ func (r *DistributionGroupReconciler) isGatewayAccepted(gw *gatewayv1.Gateway) b
 	for _, cond := range gw.Status.Conditions {
 		if cond.Type == string(gatewayv1.GatewayConditionAccepted) &&
 			cond.Status == metav1.ConditionTrue &&
-			strings.Contains(cond.Message, r.ControllerName) {
+			strings.HasSuffix(cond.Message, r.ControllerName) {
 			return true
 		}
 	}

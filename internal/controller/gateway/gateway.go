@@ -28,7 +28,7 @@ func findAcceptedConditionIndex(gw *gatewayv1.Gateway, controllerName string) in
 	for i, cond := range gw.Status.Conditions {
 		if cond.Type == string(gatewayv1.GatewayConditionAccepted) &&
 			cond.Status == metav1.ConditionTrue &&
-			strings.Contains(cond.Message, controllerName) {
+			strings.HasSuffix(cond.Message, controllerName) {
 			return i
 		}
 	}

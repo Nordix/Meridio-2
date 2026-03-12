@@ -53,28 +53,9 @@ func (r *GatewayReconciler) mapGatewayConfigToGateway(ctx context.Context, obj c
 			continue
 		}
 
-		// Only process Gateways managed by this controller
-		// On error, include Gateway to avoid missing events (reconcile will re-check)
-		shouldManage, err := r.shouldManageGateway(ctx, &gw)
-		if err != nil || shouldManage {
-			requests = append(requests, ctrl.Request{
-				NamespacedName: client.ObjectKeyFromObject(&gw),
-			})
-		}
+		requests = append(requests, ctrl.Request{
+			NamespacedName: client.ObjectKeyFromObject(&gw),
+		})
 	}
 	return requests
-}
-
-// getGatewayConfiguration fetches the GatewayConfiguration referenced by the Gateway
-func (r *GatewayReconciler) getGatewayConfiguration(ctx context.Context, gw *gatewayv1.Gateway) (*meridio2v1alpha1.GatewayConfiguration, error) {
-	if gw.Spec.Infrastructure == nil || gw.Spec.Infrastructure.ParametersRef == nil {
-		return nil, nil
-	}
-
-	ref := gw.Spec.Infrastructure.ParametersRef
-	var gwConfig meridio2v1alpha1.GatewayConfiguration
-	if err := r.Get(ctx, client.ObjectKey{Namespace: gw.Namespace, Name: ref.Name}, &gwConfig); err != nil {
-		return nil, err
-	}
-	return &gwConfig, nil
 }

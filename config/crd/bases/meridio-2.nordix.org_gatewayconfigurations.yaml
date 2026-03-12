@@ -57,6 +57,9 @@ spec:
                 - replicas
                 type: object
               networkAttachments:
+                description: |-
+                  Support multiple external interfaces per LB-FE Pod plus internal networks
+                  (e.g. dedicated internal networks per IP family).
                 items:
                   properties:
                     description:
@@ -90,7 +93,7 @@ spec:
                       DRA must not be null
                     rule: self.type == "NAD" && self.nad != null || self.type == "DRA"
                       && self.dra != null
-                maxItems: 2
+                maxItems: 10
                 type: array
               networkSubnets:
                 description: Indicates in which subnet(s) the application endpoint
@@ -110,6 +113,7 @@ spec:
                         - message: Must be a valid CIDR notation!
                           rule: isCIDR(self)
                       maxItems: 15
+                      minItems: 1
                       type: array
                   required:
                   - attachmentType

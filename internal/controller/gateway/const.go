@@ -21,6 +21,9 @@ const (
 	kindGateway              = "Gateway"
 	kindGatewayConfiguration = "GatewayConfiguration"
 
+	// Attachment types
+	attachmentTypeNAD = "NAD"
+
 	// Gateway API condition messages
 	// messageWaitingForController is the default message for Unknown status with Pending reason
 	// Matches Gateway API default: {status: "Unknown", reason:"Pending", message:"Waiting for controller"}

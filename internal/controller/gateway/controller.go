@@ -60,7 +60,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// 2. Verify no finalizers (design decision: use ownerReferences only)
+	// Verify no finalizers (design decision: use ownerReferences only)
 	if !gw.DeletionTimestamp.IsZero() {
 		err := fmt.Errorf("gateway %s/%s has DeletionTimestamp set but controller uses no finalizers (finalizers: %v) - resource may be stuck in Terminating state",
 			gw.Namespace, gw.Name, gw.Finalizers)
@@ -68,7 +68,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	// 3. Check if we should manage this Gateway (via GatewayClass)
+	// 2. Check if we should manage this Gateway (via GatewayClass)
 	shouldManage, err := r.shouldManageGateway(ctx, &gw)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -107,14 +107,28 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	// 4. Validate GatewayConfiguration (infrastructure.parametersRef)
-	// TODO: Fetch and validate GatewayConfiguration
-	// - If missing/invalid → set Accepted=False, reason: InvalidParameters
-	// - GatewayConfiguration is a mandatory reference per Gateway API conventions
-	// - Must resolve before Gateway can be accepted
+	// 3. Validate Gateway configuration (fetch GatewayConfiguration, load template, validate)
+	gwConfig, template, err := r.validateGateway(ctx, &gw)
+	if err != nil {
+		var valErr *validationError
+		var tmplErr *templateError
+		if errors.As(err, &valErr) || errors.As(err, &tmplErr) {
+			if statusErr := r.updateAcceptedStatus(ctx, &gw, metav1.ConditionFalse,
+				string(gatewayv1.GatewayReasonInvalidParameters), err.Error()); statusErr != nil {
+				if apierrors.IsConflict(statusErr) {
+					return ctrl.Result{Requeue: true}, nil
+				}
+				return ctrl.Result{}, statusErr
+			}
+			if errors.As(err, &tmplErr) {
+				return ctrl.Result{}, err // Requeue with exponential backoff (allow hot-fixing)
+			}
+			return ctrl.Result{}, nil // Validation error: don't requeue, wait for user fix
+		}
+		return ctrl.Result{}, err // Transient error: retry
+	}
 
-	// 5. Set Accepted status condition
-	// TODO: Only set Accepted=True after GatewayConfiguration validation passes
+	// 4. Set Accepted status condition
 	if err := r.updateAcceptedStatus(ctx, &gw, metav1.ConditionTrue, string(gatewayv1.GatewayReasonAccepted), r.acceptedMessage()); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true}, nil
@@ -122,7 +136,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// 6. Update status.addresses from L34Routes
+	// 5. Update status.addresses from L34Routes
 	if err := r.updateAddressesFromRoutes(ctx, &gw); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true}, nil
@@ -130,8 +144,8 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// 7. Reconcile LB Deployment
-	if err := r.reconcileLBDeployment(ctx, &gw); err != nil {
+	// 6. Reconcile LB Deployment (using pre-fetched gwConfig and template)
+	if err := r.reconcileLBDeployment(ctx, &gw, gwConfig, template); err != nil {
 		// Handle transient errors (requeue without setting Programmed=False)
 		if apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) {
 			return ctrl.Result{Requeue: true}, nil
@@ -150,7 +164,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// 8. Set Programmed status condition
+	// 7. Set Programmed=True status condition
 	if err := r.updateProgrammedStatus(ctx, &gw, metav1.ConditionTrue,
 		string(gatewayv1.GatewayReasonProgrammed), messageProgrammed); err != nil {
 		if apierrors.IsConflict(err) {

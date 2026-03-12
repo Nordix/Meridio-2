@@ -74,6 +74,37 @@ func newGateway(gatewayClassName string) *gatewayv1.Gateway {
 	}
 }
 
+func newGatewayConfiguration() *meridio2v1alpha1.GatewayConfiguration {
+	return &meridio2v1alpha1.GatewayConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-gwconfig",
+			Namespace: testNamespace,
+		},
+		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
+			NetworkSubnets: []meridio2v1alpha1.NetworkSubnet{
+				{
+					AttachmentType: "NAD",
+					CIDRs:          []string{"192.168.100.0/24"},
+				},
+			},
+			HorizontalScaling: meridio2v1alpha1.HorizontalScaling{
+				Replicas:        2,
+				EnforceReplicas: false,
+			},
+		},
+	}
+}
+
+func attachGatewayConfiguration(gw *gatewayv1.Gateway, gwConfig *meridio2v1alpha1.GatewayConfiguration) {
+	gw.Spec.Infrastructure = &gatewayv1.GatewayInfrastructure{
+		ParametersRef: &gatewayv1.LocalParametersReference{
+			Group: gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group),
+			Kind:  gatewayv1.Kind("GatewayConfiguration"),
+			Name:  gwConfig.Name,
+		},
+	}
+}
+
 func setupReconciler(objects ...client.Object) (*GatewayReconciler, client.Client) {
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(newScheme()).
@@ -112,8 +143,10 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 	t.Run("Reconcile_ManagedGateway_SetsAcceptedStatus", func(t *testing.T) {
 		gwClass := newGatewayClass(testControllerName)
 		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		attachGatewayConfiguration(gw, gwConfig)
 
-		reconciler, fakeClient := setupReconciler(gwClass, gw)
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
 
 		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
 		result, err := reconciler.Reconcile(context.Background(), request)
@@ -223,5 +256,137 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 		assert.NotNil(t, acceptedCondition)
 		assert.Equal(t, metav1.ConditionUnknown, acceptedCondition.Status)
 		assert.Equal(t, string(gatewayv1.GatewayReasonPending), acceptedCondition.Reason)
+	})
+
+	t.Run("Reconcile_InvalidGatewayConfiguration_SetsAcceptedFalse", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gw.Spec.Infrastructure = &gatewayv1.GatewayInfrastructure{
+			ParametersRef: &gatewayv1.LocalParametersReference{
+				Group: gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group),
+				Kind:  gatewayv1.Kind("GatewayConfiguration"),
+				Name:  "nonexistent",
+			},
+		}
+		reconciler, fakeClient := setupReconciler(gwClass, gw)
+
+		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		result, err := reconciler.Reconcile(context.Background(), request)
+
+		assert.NoError(t, err)
+		assert.Equal(t, ctrl.Result{}, result) // no requeue
+
+		fetched := &gatewayv1.Gateway{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}, fetched)
+		assert.NoError(t, err)
+
+		var acceptedCondition *metav1.Condition
+		for i := range fetched.Status.Conditions {
+			if fetched.Status.Conditions[i].Type == string(gatewayv1.GatewayConditionAccepted) {
+				acceptedCondition = &fetched.Status.Conditions[i]
+				break
+			}
+		}
+		assert.NotNil(t, acceptedCondition)
+		assert.Equal(t, metav1.ConditionFalse, acceptedCondition.Status)
+		assert.Equal(t, string(gatewayv1.GatewayReasonInvalidParameters), acceptedCondition.Reason)
+	})
+
+	t.Run("Reconcile_TemplateMissing_SetsAcceptedFalseAndRequeues", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		attachGatewayConfiguration(gw, gwConfig)
+
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
+		reconciler.TemplatePath = "/nonexistent/path"
+
+		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		result, err := reconciler.Reconcile(context.Background(), request)
+
+		assert.Error(t, err) // requeue with backoff
+		assert.Equal(t, ctrl.Result{}, result)
+
+		fetched := &gatewayv1.Gateway{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}, fetched)
+		assert.NoError(t, err)
+
+		var acceptedCondition *metav1.Condition
+		for i := range fetched.Status.Conditions {
+			if fetched.Status.Conditions[i].Type == string(gatewayv1.GatewayConditionAccepted) {
+				acceptedCondition = &fetched.Status.Conditions[i]
+				break
+			}
+		}
+		assert.NotNil(t, acceptedCondition)
+		assert.Equal(t, metav1.ConditionFalse, acceptedCondition.Status)
+	})
+
+	t.Run("Reconcile_DeploymentNameCollision_SetsProgrammedFalse", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		attachGatewayConfiguration(gw, gwConfig)
+
+		isController := true
+		existing := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      lbDeploymentPrefix + gw.Name,
+				Namespace: gw.Namespace,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: gatewayv1.GroupVersion.String(),
+						Kind:       kindGateway,
+						Name:       "other-gateway",
+						UID:        "other-uid",
+						Controller: &isController,
+					},
+				},
+			},
+		}
+
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig, existing)
+
+		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		result, err := reconciler.Reconcile(context.Background(), request)
+
+		assert.Error(t, err)
+		assert.Equal(t, ctrl.Result{}, result)
+
+		fetched := &gatewayv1.Gateway{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}, fetched)
+		assert.NoError(t, err)
+
+		var programmedCondition *metav1.Condition
+		for i := range fetched.Status.Conditions {
+			if fetched.Status.Conditions[i].Type == string(gatewayv1.GatewayConditionProgrammed) {
+				programmedCondition = &fetched.Status.Conditions[i]
+				break
+			}
+		}
+		assert.NotNil(t, programmedCondition)
+		assert.Equal(t, metav1.ConditionFalse, programmedCondition.Status)
+		assert.Contains(t, programmedCondition.Message, "name collision")
+	})
+
+	t.Run("Reconcile_DeletionTimestamp_SkipsReconciliation", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		now := metav1.Now()
+		gw.DeletionTimestamp = &now
+		gw.Finalizers = []string{"test-finalizer"}
+
+		reconciler, fakeClient := setupReconciler(gwClass, gw)
+
+		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		result, err := reconciler.Reconcile(context.Background(), request)
+
+		assert.NoError(t, err)
+		assert.Equal(t, ctrl.Result{}, result)
+
+		fetched := &gatewayv1.Gateway{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}, fetched)
+		assert.NoError(t, err)
+		assert.Empty(t, fetched.Status.Conditions)
 	})
 }

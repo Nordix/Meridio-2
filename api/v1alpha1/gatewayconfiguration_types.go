@@ -25,7 +25,9 @@ import (
 
 type GatewayConfigurationSpec struct {
 
-	// +kubebuilder:validation:MaxItems=2
+	// Support multiple external interfaces per LB-FE Pod plus internal networks
+	// (e.g. dedicated internal networks per IP family).
+	// +kubebuilder:validation:MaxItems=10
 	NetworkAttachments []NetworkAttachment `json:"networkAttachments"`
 
 	// +kubebuilder:validation:MinItems=1
@@ -46,6 +48,7 @@ type NetworkSubnet struct {
 	// +kubebuilder:validation:Enum=NAD;DRA
 	AttachmentType string `json:"attachmentType"`
 
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=15
 	// +kubebuilder:validation:items:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
 	CIDRs []string `json:"cidrs"`

@@ -25,7 +25,19 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
+// templateError represents a template load failure (permanent but retriable)
+type templateError struct {
+	message string
+}
+
+func (e *templateError) Error() string {
+	return e.message
+}
+
 // loadLBDeploymentTemplate loads the stateless load balancer Deployment template from ConfigMap
+// TODO: Cache parsed template and use fsnotify to invalidate on ConfigMap update.
+// Current approach re-reads from disk on every reconcile, which is fine for moderate
+// reconcile rates (OS page cache), but could be optimized for high-throughput scenarios.
 func (r *GatewayReconciler) loadLBDeploymentTemplate() (*appsv1.Deployment, error) {
 	templateFile := filepath.Join(r.TemplatePath, LBDeploymentTemplateFile)
 	file, err := os.Open(templateFile)
@@ -41,4 +53,16 @@ func (r *GatewayReconciler) loadLBDeploymentTemplate() (*appsv1.Deployment, erro
 	}
 
 	return deployment, nil
+}
+
+// loadTemplate loads the LB deployment template
+// Returns templateError for load failures (requeue with backoff)
+func (r *GatewayReconciler) loadTemplate() (*appsv1.Deployment, error) {
+	template, err := r.loadLBDeploymentTemplate()
+	if err != nil {
+		return nil, &templateError{
+			message: fmt.Sprintf("failed to load LB deployment template: %v", err),
+		}
+	}
+	return template, nil
 }
