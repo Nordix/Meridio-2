@@ -40,4 +40,6 @@ const (
 
 	// Labels
 	labelGatewayName = "gateway.networking.k8s.io/gateway-name"
+	labelManagedBy   = "app.kubernetes.io/managed-by"
+	managedByValue   = "meridio-2-controller-manager"
 )

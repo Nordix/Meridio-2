@@ -170,7 +170,7 @@ func validateNetworkSubnets(subnets []meridio2v1alpha1.NetworkSubnet) error {
 		return &validationError{message: "GatewayConfiguration must have at least one networkSubnet"}
 	}
 
-	var allNets []*net.IPNet
+	allNets := make([]*net.IPNet, 0, 2) // typically one IPv4 + one IPv6
 	for _, subnet := range subnets {
 		if subnet.AttachmentType != attachmentTypeNAD {
 			return &validationError{

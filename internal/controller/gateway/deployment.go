@@ -206,6 +206,7 @@ func setControllerLabels(meta *metav1.ObjectMeta, deploymentName, gatewayName st
 	}
 	meta.Labels["app"] = deploymentName
 	meta.Labels[labelGatewayName] = gatewayName
+	meta.Labels[labelManagedBy] = managedByValue
 }
 
 // mergeInfrastructureMetadata merges Gateway.spec.infrastructure labels/annotations
@@ -433,7 +434,7 @@ func parseNetworkAnnotation(annotation string) []*netdefv1.NetworkSelectionEleme
 	}
 
 	// Try JSON first
-	elements := make([]*netdefv1.NetworkSelectionElement, 0)
+	elements := make([]*netdefv1.NetworkSelectionElement, 0, 2)
 	if json.Unmarshal([]byte(annotation), &elements) == nil {
 		return elements
 	}

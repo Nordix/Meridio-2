@@ -978,38 +978,44 @@ kubectl delete net-attach-def vlan-100 macvlan-net1 -n meridio-2 --ignore-not-fo
 
 ### Gateway API Standard Labels
 
-**Current state:** LB Deployment uses minimal labels:
+**Current state:** LB Deployment and Pod template include:
 ```yaml
 metadata:
   labels:
     gateway.networking.k8s.io/gateway-name: <gateway-name>  # Gateway API standard
     app: sllb-<gateway-name>                                # Deployment selector
+    app.kubernetes.io/managed-by: meridio-2-controller-manager  # Operator identity
 ```
 
-**Enhancement:** Add recommended labels per [GEP-2659 (Gateway API Label Conventions)](https://gateway-api.sigs.k8s.io/geps/gep-2659/):
+The `app.kubernetes.io/managed-by` label identifies all LB Pods as infrastructure managed by the
+Meridio-2 controller manager, regardless of which Gateway they belong to. This enables:
+- **Pod watchers** (e.g., Endpoint Network Configurator) to select all LB Pods via a single label selector
+- **Operational tooling** (`kubectl get pods -l app.kubernetes.io/managed-by=meridio-2-controller-manager`)
+- **Lifecycle clarity**: `managed-by: meridio-2-controller-manager` indicates the higher-level controller responsible for the Deployment lifecycle (even though Kubernetes' Deployment controller manages the Pods)
+
+The value is a static constant (`meridio-2-controller-manager`), not derived from `--controller-name`.
+The controller-name flag identifies which GatewayClass this controller manages (Gateway API protocol concern),
+while managed-by identifies which operator created the resource (operational concern).
+
+**Enhancement:** Add remaining recommended labels per [GEP-2659 (Gateway API Label Conventions)](https://gateway-api.sigs.k8s.io/geps/gep-2659/):
 ```yaml
 metadata:
   labels:
-    # Existing (keep)
+    # Existing (implemented)
     gateway.networking.k8s.io/gateway-name: <gateway-name>
     app: sllb-<gateway-name>
+    app.kubernetes.io/managed-by: meridio-2-controller-manager
     
     # Add for better compliance
     app.kubernetes.io/name: meridio-2
     app.kubernetes.io/instance: <gateway-name>
     app.kubernetes.io/component: gateway
-    app.kubernetes.io/managed-by: meridio-2-controller
 ```
 
-**Why add these labels:**
+**Why add remaining labels:**
 - **Discoverability**: Standard labels enable filtering (`kubectl get deployments -l app.kubernetes.io/component=gateway`)
 - **Observability**: Monitoring tools recognize standard labels for resource attribution
 - **Interoperability**: Other Gateway API tools expect these labels
-- **Lifecycle clarity**: `managed-by: meridio-2-controller` indicates the higher-level controller responsible for the Deployment lifecycle (even though Kubernetes' Deployment controller manages the Pods)
-
-**Implementation notes:**
-- Apply to both Deployment and Pod template labels
-- `app.kubernetes.io/managed-by` refers to the Gateway controller, not the Deployment controller
 - Follows pattern used by Istio, Kong, and other Gateway API implementations
 
 ### Vertical Scaling: In-place Pod Resize

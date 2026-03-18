@@ -51,6 +51,7 @@ func TestSetControllerLabels(t *testing.T) {
 
 		assert.Equal(t, "sllb-test", meta.Labels["app"])
 		assert.Equal(t, "test-gw", meta.Labels[labelGatewayName])
+		assert.Equal(t, managedByValue, meta.Labels[labelManagedBy])
 	})
 
 	t.Run("InitializesLabelsMapIfNil", func(t *testing.T) {
@@ -59,7 +60,7 @@ func TestSetControllerLabels(t *testing.T) {
 		setControllerLabels(meta, "sllb-test", "test-gw")
 
 		assert.NotNil(t, meta.Labels)
-		assert.Len(t, meta.Labels, 2)
+		assert.Len(t, meta.Labels, 3)
 	})
 
 	t.Run("PreservesExistingLabels", func(t *testing.T) {
@@ -70,7 +71,7 @@ func TestSetControllerLabels(t *testing.T) {
 		setControllerLabels(meta, "sllb-test", "test-gw")
 
 		assert.Equal(t, "label", meta.Labels["existing"])
-		assert.Len(t, meta.Labels, 3)
+		assert.Len(t, meta.Labels, 4)
 	})
 }
 
