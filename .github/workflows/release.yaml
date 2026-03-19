@@ -1,0 +1,90 @@
+---
+name: release
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types:
+      - completed
+    branches:
+      - "release/**"
+
+jobs:
+  get-tag:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Get tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get-tag-step.outputs.tag }}
+    steps:
+      - name: Get tag
+        id: get-tag-step
+        run: |
+          branch=${{ github.event.workflow_run.head_branch }}
+          echo "tag=${branch#release/}" >> $GITHUB_OUTPUT
+
+  get-release-notes:
+    name: Get release notes
+    needs: get-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate release notes
+        id: generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREVIOUS_TAG=$(gh release list --repo ${{ github.repository }} --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            NOTES=$(gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="${{ needs.get-tag.outputs.tag }}" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              --jq '.body')
+          else
+            NOTES=$(gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="${{ needs.get-tag.outputs.tag }}" \
+              --jq '.body')
+          fi
+
+          echo "$NOTES" > notes.txt
+      - name: Upload release notes
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-notes
+          path: notes.txt
+
+  create-release:
+    name: Create release
+    needs: [get-tag, get-release-notes]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+      - name: Push tag
+        run: |
+          git tag ${{ needs.get-tag.outputs.tag }}
+          git push origin ${{ needs.get-tag.outputs.tag }}
+      - name: Download release notes
+        uses: actions/download-artifact@v7
+        with:
+          name: release-notes
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ needs.get-tag.outputs.tag }} \
+            --title ${{ needs.get-tag.outputs.tag }} \
+            --target ${{ github.event.workflow_run.head_branch }} \
+            --notes-file notes.txt

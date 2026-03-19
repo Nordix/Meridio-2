@@ -7,7 +7,7 @@ all: default
 
 .PHONY: help
 help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } END { printf "\n" }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } END { printf "\n" }' $(MAKEFILE_LIST)
 
 ################################################################################
 # Variables
@@ -79,7 +79,7 @@ push:
 	docker push $(REGISTRY)/$(IMAGE):$(VERSION)
 
 ################################################################################
-##@ Component (Build, tag, push): Use VERSION to set the version. Use BUILD_STEPS to set the build steps (build, tag, push).
+##@ Components (Build, tag, push): Use VERSION to set the version. Use BUILD_STEPS to set the build steps (build, tag, push).
 ################################################################################
 
 .PHONY: controller-manager
@@ -122,7 +122,7 @@ install-hooks: ## Install git pre-commit hook to run 'make check' before commits
 	@echo "Installing git pre-commit hook..."
 	@cp scripts/pre-commit .git/hooks/pre-commit
 	@chmod +x .git/hooks/pre-commit
-	@echo "✅ Pre-commit hook installed. Run 'make check' will now run automatically before commits."
+	@echo "   Pre-commit hook installed. Run 'make check' will now run automatically before commits."
 	@echo "   To skip the check, use: git commit --no-verify"
 
 ################################################################################

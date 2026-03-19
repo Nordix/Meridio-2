@@ -1,0 +1,46 @@
+---
+name: e2e
+
+on:
+  workflow_call:
+
+  workflow_dispatch: # manual runs
+
+env:
+  KIND_VERSION: v0.27.0
+
+jobs:
+  kind:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - v1.32.2@sha256:f226345927d7e348497136874b6d207e0b32cc52154ad8323129352923a3142f
+          - v1.31.6@sha256:28b7cbb993dfe093c76641a0c95807637213c9109b761f1d422c2400e22b8e87
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          version: ${{ env.KIND_VERSION }}
+          node_image: kindest/node:${{ matrix.image }}
+          cluster_name: kind
+      - name: Check cluster
+        run: |
+          kubectl version
+          kubectl cluster-info
+      - name: Build and tag image
+        run: make controller-manager VERSION_CONTROLLER_MANAGER=e2e BUILD_STEPS="build tag"
+      - name: Load into kind
+        run: kind load docker-image localhost:5001/controller-manager:e2e --name kind
+      - name: Deploy
+        run: make deploy VERSION_CONTROLLER_MANAGER=e2e
+      - name: Wait for controller-manager
+        run: kubectl wait --for=condition=Ready --timeout=300s -n meridio-2 pod -l control-plane=controller-manager
+      - name: List pods
+        run: kubectl get pods -A
