@@ -10,8 +10,51 @@ env:
   KIND_VERSION: v0.27.0
 
 jobs:
+  get-tag:
+    name: Get tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get-tag-step.outputs.tag }}
+    steps:
+      - name: Get tag
+        id: get-tag-step
+        run: |
+          branch="${{ github.ref_name }}"
+
+          if [[ "$branch" == release/* ]]; then
+            tag="${branch#release/}"
+          elif [[ "$branch" == "master" ]]; then
+            tag="latest"
+          else
+            tag="$branch"
+          fi
+
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "Using tag: $tag"
+
+  build-and-push:
+    name: Build and push ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: get-tag
+    strategy:
+      matrix:
+        image:
+          - controller-manager
+          - stateless-load-balancer
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+      - run: make ${{ matrix.image }} REGISTRY=${{ secrets.HARBOR_REGISTRY }} VERSION=${{ needs.get-tag.outputs.tag }} BUILD_STEPS="build tag" # Add `push` to BUILD_STEPS to start pushing images
+      - name: Show built images # Remove when added `push` to BUILD_STEPS
+        run: docker images | grep ${{ matrix.image }}
+
   kind:
     runs-on: ubuntu-latest
+    needs: build-and-push
     strategy:
       fail-fast: false
       matrix:
