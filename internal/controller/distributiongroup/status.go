@@ -28,16 +28,15 @@ import (
 
 // updateStatus updates DistributionGroup status conditions
 func (r *DistributionGroupReconciler) updateStatus(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup, hasEndpoints bool, capacityInfo *maglevCapacityInfo, message string) error {
-	now := metav1.Now()
 	changed := false
 
 	// Set Ready condition
-	readyCondition := buildReadyCondition(hasEndpoints, dg.Generation, now, message)
+	readyCondition := buildReadyCondition(hasEndpoints, dg.Generation, message)
 	changed = meta.SetStatusCondition(&dg.Status.Conditions, readyCondition) || changed
 
 	// Handle CapacityExceeded condition (Maglev only)
 	if capacityInfo != nil && len(capacityInfo.networkIssues) > 0 {
-		capacityCondition := buildCapacityCondition(capacityInfo.networkIssues, dg.Generation, now)
+		capacityCondition := buildCapacityCondition(capacityInfo.networkIssues, dg.Generation)
 		changed = meta.SetStatusCondition(&dg.Status.Conditions, capacityCondition) || changed
 	} else {
 		changed = meta.RemoveStatusCondition(&dg.Status.Conditions, conditionTypeCapacityExceeded) || changed
@@ -50,11 +49,10 @@ func (r *DistributionGroupReconciler) updateStatus(ctx context.Context, dg *meri
 }
 
 // buildReadyCondition creates the Ready condition based on endpoint availability
-func buildReadyCondition(hasEndpoints bool, generation int64, now metav1.Time, message string) metav1.Condition {
+func buildReadyCondition(hasEndpoints bool, generation int64, message string) metav1.Condition {
 	condition := metav1.Condition{
 		Type:               conditionTypeReady,
 		ObservedGeneration: generation,
-		LastTransitionTime: now,
 	}
 
 	if hasEndpoints {
@@ -75,12 +73,11 @@ func buildReadyCondition(hasEndpoints bool, generation int64, now metav1.Time, m
 }
 
 // buildCapacityCondition creates the CapacityExceeded condition
-func buildCapacityCondition(issues map[string]struct{ excluded, total int32 }, generation int64, now metav1.Time) metav1.Condition {
+func buildCapacityCondition(issues map[string]struct{ excluded, total int32 }, generation int64) metav1.Condition {
 	return metav1.Condition{
 		Type:               conditionTypeCapacityExceeded,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: generation,
-		LastTransitionTime: now,
 		Reason:             reasonMaglevCapacityExceeded,
 		Message:            buildCapacityMessage(issues),
 	}

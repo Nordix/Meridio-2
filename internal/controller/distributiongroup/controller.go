@@ -166,6 +166,9 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// 10. Reconcile EndpointSlices (create/update/delete)
 	if err := r.reconcileSlices(ctx, &dg, desiredSlices, existingSlices); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
 		log.Error(err, "failed to reconcile endpointslices")
 		return ctrl.Result{}, err
 	}

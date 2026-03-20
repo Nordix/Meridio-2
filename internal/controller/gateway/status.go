@@ -31,7 +31,6 @@ func (r *GatewayReconciler) updateAcceptedStatus(ctx context.Context, gw *gatewa
 		Type:               string(gatewayv1.GatewayConditionAccepted),
 		Status:             status,
 		ObservedGeneration: gw.Generation,
-		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
 	}
@@ -49,7 +48,6 @@ func (r *GatewayReconciler) updateProgrammedStatus(ctx context.Context, gw *gate
 		Type:               string(gatewayv1.GatewayConditionProgrammed),
 		Status:             status,
 		ObservedGeneration: gw.Generation,
-		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
 	}
