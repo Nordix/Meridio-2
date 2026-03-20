@@ -3,6 +3,13 @@ name: e2e
 
 on:
   workflow_call:
+    secrets:
+      HARBOR_REGISTRY:
+        required: true
+      HARBOR_USERNAME:
+        required: true
+      HARBOR_PASSWORD:
+        required: true
 
   workflow_dispatch:
 

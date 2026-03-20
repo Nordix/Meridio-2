@@ -86,3 +86,4 @@ jobs:
     needs: [unit-tests, build]
     if: github.event_name == 'push'
     uses: ./.github/workflows/e2e.yaml
+    secrets: inherit
