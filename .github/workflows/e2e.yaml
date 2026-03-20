@@ -55,7 +55,7 @@ jobs:
           registry: ${{ secrets.HARBOR_REGISTRY }}
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
-      - run: make ${{ matrix.image }} REGISTRY=${{ secrets.HARBOR_REGISTRY }} VERSION=${{ needs.get-tag.outputs.tag }} BUILD_STEPS="build tag push"
+      - run: make ${{ matrix.image }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }} BUILD_STEPS="build tag push"
 
   kind:
     runs-on: ubuntu-latest
@@ -88,7 +88,7 @@ jobs:
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
       - name: Deploy
-        run: make deploy REGISTRY=${{ secrets.HARBOR_REGISTRY }} VERSION_CONTROLLER_MANAGER=${{ needs.get-tag.outputs.tag }}
+        run: make deploy REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION_CONTROLLER_MANAGER=${{ needs.get-tag.outputs.tag }}
       - name: Wait for controller-manager
         run: kubectl wait --for=condition=Ready --timeout=300s -n meridio-2 pod -l control-plane=controller-manager
       - name: List pods
