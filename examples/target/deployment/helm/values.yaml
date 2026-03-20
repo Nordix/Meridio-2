@@ -1,0 +1,31 @@
+---
+registry: registry.nordix.org/cloud-native/meridio-2
+pullPolicy: IfNotPresent
+
+applicationName: target-a
+replicas: 4
+
+exampleTarget:
+  image: example-target
+  version: latest
+
+networkSidecar:
+  image: network-sidecar
+  version: latest
+  minTableID: 50000
+  maxTableID: 55000
+
+# NAD annotation — no IPs, VIPs are managed by the sidecar via ENC.
+# Override to match your cluster's NAD names and interface names.
+# Leave namespace empty to default to the release namespace.
+#
+# Example: setting a custom NAD namespace for all entries:
+#   helm install target-a examples/target/deployment/helm -n meridio-test \
+#     --set-json 'networks=[{"name":"macvlan-nad-1","namespace":"infra-ns","interface":"net1"},{"name":"macvlan-nad-2","namespace":"infra-ns","interface":"net2"}]'
+networks:
+  - name: macvlan-nad-1
+    namespace: ""
+    interface: net1
+  - name: macvlan-nad-2
+    namespace: ""
+    interface: net2

@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: network-sidecar-sa
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: network-sidecar-role
+  namespace: {{ .Release.Namespace }}
+rules:
+- apiGroups: ["meridio-2.nordix.org"]
+  resources: ["endpointnetworkconfigurations"]
+  verbs: ["get", "watch", "list"]
+- apiGroups: ["meridio-2.nordix.org"]
+  resources: ["endpointnetworkconfigurations/status"]
+  verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: network-sidecar-binding
+  namespace: {{ .Release.Namespace }}
+subjects:
+- kind: ServiceAccount
+  name: network-sidecar-sa
+roleRef:
+  kind: Role
+  name: network-sidecar-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.applicationName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.applicationName }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.applicationName }}
+  replicas: {{ .Values.replicas }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.applicationName }}
+      annotations:
+        {{- $nadNs := .Release.Namespace }}
+        {{- $nets := list }}
+        {{- range .Values.networks }}
+        {{- $ns := .namespace | default $nadNs }}
+        {{- $nets = append $nets (dict "name" .name "namespace" $ns "interface" .interface) }}
+        {{- end }}
+        k8s.v1.cni.cncf.io/networks: '{{ $nets | toJson }}'
+    spec:
+      serviceAccountName: network-sidecar-sa
+      containers:
+        - name: example-target
+          image: {{ .Values.registry }}/{{ .Values.exampleTarget.image }}:{{ .Values.exampleTarget.version }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+          args:
+            - screen -d -m bash -c "./mconnect -server -address [::]:4000" ;
+              screen -d -m bash -c "./mconnect -server -address [::]:4001" ;
+              screen -d -m bash -c "./mconnect -server -address [::]:4002" ;
+              screen -d -m bash -c "./mconnect -server -udp -address [::]:4100" ;
+              screen -d -m bash -c "./mconnect -server -udp -address [::]:4101" ;
+              screen -d -m bash -c "./ctraffic -server -address [::]:5000" ;
+              screen -d -m bash -c "./ctraffic -server -address [::]:5001" ;
+              screen -d -m bash -c "./ctraffic -server -address [::]:5002" ;
+              screen -d -m bash -c "./ctraffic -server -udp -address [::]:5100" ;
+              screen -d -m bash -c "./ctraffic -server -udp -address [::]:5101" ;
+              tail -f /dev/null
+          securityContext:
+            runAsNonRoot: true
+            capabilities:
+              drop:
+              - ALL
+              add:
+              - DAC_OVERRIDE
+              - NET_RAW
+              - SYS_PTRACE
+        - name: network-sidecar
+          image: {{ .Values.registry }}/{{ .Values.networkSidecar.image }}:{{ .Values.networkSidecar.version }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          args:
+            - run
+            - --min-table-id={{ .Values.networkSidecar.minTableID }}
+            - --max-table-id={{ .Values.networkSidecar.maxTableID }}
+          env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+              add:
+              - NET_ADMIN
+            seccompProfile:
+              type: RuntimeDefault

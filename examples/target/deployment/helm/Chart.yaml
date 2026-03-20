@@ -1,0 +1,4 @@
+apiVersion: v2
+name: example-target
+description: Example target application with network-sidecar
+version: 0.1.0
