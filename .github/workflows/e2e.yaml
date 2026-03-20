@@ -4,7 +4,7 @@ name: e2e
 on:
   workflow_call:
 
-  workflow_dispatch: # manual runs
+  workflow_dispatch:
 
 env:
   KIND_VERSION: v0.27.0
@@ -48,9 +48,7 @@ jobs:
           registry: ${{ secrets.HARBOR_REGISTRY }}
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
-      - run: make ${{ matrix.image }} REGISTRY=${{ secrets.HARBOR_REGISTRY }} VERSION=${{ needs.get-tag.outputs.tag }} BUILD_STEPS="build tag" # Add `push` to BUILD_STEPS to start pushing images
-      - name: Show built images # Remove when added `push` to BUILD_STEPS
-        run: docker images | grep ${{ matrix.image }}
+      - run: make ${{ matrix.image }} REGISTRY=${{ secrets.HARBOR_REGISTRY }} VERSION=${{ needs.get-tag.outputs.tag }} BUILD_STEPS="build tag push"
 
   kind:
     runs-on: ubuntu-latest
@@ -77,12 +75,13 @@ jobs:
         run: |
           kubectl version
           kubectl cluster-info
-      - name: Build and tag image
-        run: make controller-manager VERSION_CONTROLLER_MANAGER=e2e BUILD_STEPS="build tag"
-      - name: Load into kind
-        run: kind load docker-image localhost:5001/controller-manager:e2e --name kind
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
       - name: Deploy
-        run: make deploy VERSION_CONTROLLER_MANAGER=e2e
+        run: make deploy REGISTRY=${{ secrets.HARBOR_REGISTRY }} VERSION_CONTROLLER_MANAGER=${{ needs.get-tag.outputs.tag }}
       - name: Wait for controller-manager
         run: kubectl wait --for=condition=Ready --timeout=300s -n meridio-2 pod -l control-plane=controller-manager
       - name: List pods
