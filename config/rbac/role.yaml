@@ -19,7 +19,6 @@ rules:
   - deployments
   verbs:
   - create
-  - delete
   - get
   - list
   - patch
@@ -41,21 +40,10 @@ rules:
   - gateway.networking.k8s.io
   resources:
   - gatewayclasses
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - gateway.networking.k8s.io
-  resources:
   - gateways
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - gateway.networking.k8s.io
@@ -69,13 +57,11 @@ rules:
   - meridio-2.nordix.org
   resources:
   - distributiongroups
+  - gatewayconfigurations
+  - l34routes
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - meridio-2.nordix.org
@@ -85,13 +71,3 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - meridio-2.nordix.org
-  resources:
-  - gatewayconfigurations
-  - gatewayrouters
-  - l34routes
-  verbs:
-  - get
-  - list
-  - watch

@@ -77,7 +77,7 @@ type DistributionGroupReconciler struct {
 // - ClusterRole: gateways, nodes
 // This allows principle of least privilege for namespace-scoped deployments.
 //
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=distributiongroups,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=distributiongroups,verbs=get;list;watch
 // +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=distributiongroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch

@@ -45,8 +45,8 @@ type RouterReconciler struct {
 	Bird bird.BirdInterface
 }
 
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=gatewayrouters,verbs=get;list;watch
-// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch
+// RBAC for the router controller is managed via config/rbac/lb-serviceaccount.yaml
+// (dedicated ServiceAccount/Role for LB Pods). No kubebuilder:rbac markers here.
 
 // Reconcile implements the reconciliation of the Gateway for the router.
 // This function is triggered by any change (create/update/delete) in any resource related
