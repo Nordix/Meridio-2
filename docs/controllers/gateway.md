@@ -468,7 +468,7 @@ networkAttachments:
 
 **`--controller-name`**: 
 - Used to match GatewayClass.spec.controllerName
-- Default: `registry.nordix.org/cloud-native/meridio-2/gateway-controller`
+- Default: `meridio-2.nordix.org/gateway-controller`
 
 **`--template-path`**:
 - Path to template directory containing `lb-deployment.yaml`
@@ -568,7 +568,7 @@ kind: GatewayClass
 metadata:
   name: meridio-2
 spec:
-  controllerName: registry.nordix.org/cloud-native/meridio-2/gateway-controller
+  controllerName: meridio-2.nordix.org/gateway-controller
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayConfiguration
@@ -984,16 +984,16 @@ metadata:
   labels:
     gateway.networking.k8s.io/gateway-name: <gateway-name>  # Gateway API standard
     app: sllb-<gateway-name>                                # Deployment selector
-    app.kubernetes.io/managed-by: meridio-2-controller-manager  # Operator identity
+    app.kubernetes.io/managed-by: gateway-controller.meridio-2.nordix.org  # Operator identity
 ```
 
 The `app.kubernetes.io/managed-by` label identifies all LB Pods as infrastructure managed by the
-Meridio-2 controller manager, regardless of which Gateway they belong to. This enables:
+Meridio-2 gateway controller, regardless of which Gateway they belong to. This enables:
 - **Pod watchers** (e.g., Endpoint Network Configurator) to select all LB Pods via a single label selector
-- **Operational tooling** (`kubectl get pods -l app.kubernetes.io/managed-by=meridio-2-controller-manager`)
-- **Lifecycle clarity**: `managed-by: meridio-2-controller-manager` indicates the higher-level controller responsible for the Deployment lifecycle (even though Kubernetes' Deployment controller manages the Pods)
+- **Operational tooling** (`kubectl get pods -l app.kubernetes.io/managed-by=gateway-controller.meridio-2.nordix.org`)
+- **Lifecycle clarity**: `managed-by: gateway-controller.meridio-2.nordix.org` indicates the higher-level controller responsible for the Deployment lifecycle (even though Kubernetes' Deployment controller manages the Pods)
 
-The value is a static constant (`meridio-2-controller-manager`), not derived from `--controller-name`.
+The value is a static constant (`gateway-controller.meridio-2.nordix.org`), not derived from `--controller-name`.
 The controller-name flag identifies which GatewayClass this controller manages (Gateway API protocol concern),
 while managed-by identifies which operator created the resource (operational concern).
 
@@ -1004,7 +1004,7 @@ metadata:
     # Existing (implemented)
     gateway.networking.k8s.io/gateway-name: <gateway-name>
     app: sllb-<gateway-name>
-    app.kubernetes.io/managed-by: meridio-2-controller-manager
+    app.kubernetes.io/managed-by: gateway-controller.meridio-2.nordix.org
     
     # Add for better compliance
     app.kubernetes.io/name: meridio-2

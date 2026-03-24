@@ -63,7 +63,7 @@ spec:
         args:
           - run
           - --leader-elect
-          - --controller-name=registry.nordix.org/cloud-native/meridio-2/gateway-controller
+          - --controller-name=meridio-2.nordix.org/gateway-controller
           - --health-probe-bind-address=:8081
         image: controller-manager:latest
         name: manager

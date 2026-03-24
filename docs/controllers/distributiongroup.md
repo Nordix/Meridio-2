@@ -405,7 +405,7 @@ kind: GatewayClass
 metadata:
   name: meridio-2
 spec:
-  controllerName: registry.nordix.org/cloud-native/meridio-2/gateway-controller
+  controllerName: meridio-2.nordix.org/gateway-controller
 ---
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
@@ -517,7 +517,7 @@ kubectl patch gateway test-gateway -n meridio-2 --type=merge --subresource=statu
         "type": "Accepted",
         "status": "True",
         "reason": "Accepted",
-        "message": "Gateway accepted by registry.nordix.org/cloud-native/meridio-2/gateway-controller",
+        "message": "Gateway accepted by meridio-2.nordix.org/gateway-controller",
         "lastTransitionTime": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"
       }
     ]

@@ -57,7 +57,7 @@ type ManagerConfig struct {
 func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&c.Namespace, "namespace", "",
 		"Namespace to watch for resources. If empty, watches all namespaces.")
-	fs.StringVar(&c.ControllerName, "controller-name", "registry.nordix.org/cloud-native/meridio-2/gateway-controller",
+	fs.StringVar(&c.ControllerName, "controller-name", "meridio-2.nordix.org/gateway-controller",
 		"The controller name to match in GatewayClass.spec.controllerName")
 	fs.StringVar(&c.MetricsAddr, "metrics-bind-address", "0",
 		"The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable.")

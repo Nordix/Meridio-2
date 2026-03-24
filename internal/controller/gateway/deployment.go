@@ -429,6 +429,8 @@ func networkAttachmentsEqual(a, b []*netdefv1.NetworkSelectionElement, defaultNa
 // Supports both JSON and shorthand formats (ns/name@interface or name@interface)
 // Does NOT modify the parsed elements (preserves original format)
 func parseNetworkAnnotation(annotation string) []*netdefv1.NetworkSelectionElement {
+	log := ctrl.Log.WithName("parseNetworkAnnotation")
+
 	if annotation == "" {
 		return nil
 	}
@@ -451,7 +453,8 @@ func parseNetworkAnnotation(annotation string) []*netdefv1.NetworkSelectionEleme
 		// Split by @ for interface: expect at most one @
 		parts := strings.SplitN(item, "@", 3)
 		if len(parts) == 3 || (len(parts) == 2 && (parts[0] == "" || parts[1] == "")) {
-			continue // malformed
+			log.V(1).Info("skipping malformed network annotation item", "item", item)
+			continue
 		}
 		namespacedName := parts[0]
 		if len(parts) == 2 {
@@ -461,7 +464,8 @@ func parseNetworkAnnotation(annotation string) []*netdefv1.NetworkSelectionEleme
 		// Split by / for namespace: expect at most one /
 		nsParts := strings.SplitN(namespacedName, "/", 3)
 		if len(nsParts) == 3 || (len(nsParts) == 2 && (nsParts[0] == "" || nsParts[1] == "")) {
-			continue // malformed
+			log.V(1).Info("skipping malformed network annotation item", "item", item)
+			continue
 		}
 		if len(nsParts) == 2 {
 			elem.Namespace = nsParts[0]
