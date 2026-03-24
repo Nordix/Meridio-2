@@ -27,12 +27,6 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
               -X github.com/nordix/meridio-2/internal/common/version.BuildDate=${BUILD_DATE}" \
     -a -o router ./cmd/router
 
-# Build ctraffic
-RUN mkdir -p /tmp/ctraffic && \
-    curl -L https://github.com/Nordix/ctraffic/archive/refs/tags/v1.10.1.tar.gz | tar -xz --strip-components=1 -C /tmp/ctraffic && \
-    cd /tmp/ctraffic && \
-    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o ctraffic ./cmd/ctraffic
-
 FROM alpine
 ARG USER
 ARG UID
@@ -51,7 +45,6 @@ RUN addgroup --gid $UID $USER \
 WORKDIR $HOME
 
 COPY --from=builder /workspace/router .
-COPY --from=builder /tmp/ctraffic/ctraffic /opt/ctraffic
 
 RUN setcap 'cap_net_admin+ep' ./router \
   && setcap 'cap_net_admin,cap_net_bind_service,cap_net_raw+ep' /usr/sbin/bird

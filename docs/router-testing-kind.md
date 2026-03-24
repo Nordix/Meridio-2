@@ -190,6 +190,9 @@ Should see rules like:
 
 ## Step 14: Test VIP Traffic (Optional)
 
+**Prerequisites:** This step requires [ctraffic](https://github.com/Nordix/ctraffic) to be available
+in the router image at `/opt/ctraffic`. It is not included by default — add it to `build/router/Dockerfile` if needed.
+
 VIPs should already be assigned to loopback by the init container. Verify:
 
 ```bash
