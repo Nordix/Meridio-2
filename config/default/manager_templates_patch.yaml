@@ -1,0 +1,18 @@
+# This patch mounts the LB deployment template ConfigMap into the manager container.
+# The controller-manager reads the template at startup via --template-path=/templates.
+
+# Add the volumeMount for the LB deployment templates
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    mountPath: /templates
+    name: lb-templates
+    readOnly: true
+
+# Add the volume for the LB deployment templates ConfigMap
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: lb-templates
+    configMap:
+      name: stateless-load-balancer-templates

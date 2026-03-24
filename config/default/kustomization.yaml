@@ -18,6 +18,7 @@ resources:
 - ../crd
 - ../rbac
 - ../controller-manager
+- ../templates
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 - ../webhook
@@ -42,6 +43,10 @@ patches:
     kind: Deployment
 # [ENV] Inject runtime environment variables via Downward API
 - path: manager_env_patch.yaml
+  target:
+    kind: Deployment
+# [TEMPLATE] Mount ConfigMap that contains lb-deployment template
+- path: manager_templates_patch.yaml
   target:
     kind: Deployment
 

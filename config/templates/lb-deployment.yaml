@@ -30,11 +30,9 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - name: loadbalancer
-        # TODO: Replace with actual image when loadbalancer controller is implemented
-        # image: registry.nordix.org/cloud-native/meridio-2/loadbalancer:latest
-        image: registry.k8s.io/pause:3.9
-        # args:
-        # - run
+        image: registry.nordix.org/cloud-native/meridio-2/stateless-load-balancer:latest
+        args:
+          - run
         env:
         - name: MERIDIO_GATEWAY_NAME
           value:  # to be filled by operator
@@ -49,6 +47,13 @@ spec:
           capabilities:
             drop:
             - ALL
+            add:
+            - NET_ADMIN  # nftables, netlink routing rules
+            - IPC_LOCK   # NFQLB shared memory (mmap MAP_LOCKED)
+            - IPC_OWNER  # NFQLB shared memory lifecycle
+        volumeMounts:
+        - name: lb-run
+          mountPath: /var/run/meridio
         resources:
           requests:
             cpu: 100m
@@ -57,11 +62,9 @@ spec:
             cpu: 500m
             memory: 512Mi
       - name: router
-        # TODO: Replace with actual image when router controller is implemented
-        # image: registry.nordix.org/cloud-native/meridio-2/router:latest
-        image: registry.k8s.io/pause:3.9
-        # args:
-        # - run
+        image: registry.nordix.org/cloud-native/meridio-2/router:latest
+        args:
+          - run
         env:
         - name: MERIDIO_GATEWAY_NAME
           value:  # to be filled by operator
@@ -69,6 +72,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: MERIDIO_BIRD_LOG_FILE
+          value: /var/log/bird/bird.log
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -76,6 +81,17 @@ spec:
           capabilities:
             drop:
             - ALL
+            add:
+            - NET_ADMIN       # netlink operations (routes, rules)
+            - NET_BIND_SERVICE # BIRD binding to BGP port 179
+            - NET_RAW          # BIRD SO_BINDTODEVICE socket option
+        volumeMounts:
+        - name: bird-run
+          mountPath: /var/run/bird
+        - name: bird-etc
+          mountPath: /etc/bird
+        - name: bird-log
+          mountPath: /var/log/bird
         resources:
           requests:
             cpu: 100m
@@ -83,3 +99,17 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
+      volumes:
+      - name: lb-run
+        emptyDir:
+          medium: Memory
+      - name: bird-run
+        emptyDir:
+          medium: Memory
+      - name: bird-etc
+        emptyDir:
+          medium: Memory
+      - name: bird-log
+        emptyDir:
+          medium: Memory
+          sizeLimit: 300Mi # TODO: Configure BIRD's own log rotation and size limit

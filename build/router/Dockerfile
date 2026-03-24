@@ -50,4 +50,4 @@ RUN setcap 'cap_net_admin+ep' ./router \
   && setcap 'cap_net_admin,cap_net_bind_service,cap_net_raw+ep' /usr/sbin/bird
 USER ${UID}:${UID}
 
-CMD ["./router"]
+ENTRYPOINT ["./router", "run"]
