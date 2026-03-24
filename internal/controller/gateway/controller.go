@@ -43,12 +43,15 @@ type GatewayReconciler struct {
 	LBServiceAccount string // ServiceAccount name for LB Deployment pods
 }
 
-// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch;create;update;patch;delete
+// TODO(RBAC): Split into namespace-scoped Role and cluster-scoped ClusterRole
+// This allows principle of least privilege for namespace-scoped deployments.
+//
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gatewayclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=l34routes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=gatewayconfigurations,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch
 
 // Reconcile manages Gateway lifecycle
 func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
