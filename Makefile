@@ -177,7 +177,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	if [ -n "$$out" ]; then echo "$$out" | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
 
 .PHONY: deploy
-deploy: manifests kustomize cert-manager ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests kustomize cert-manager gateway-api ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/controller-manager && "$(KUSTOMIZE)" edit set image controller-manager=$(REGISTRY)/controller-manager:$(VERSION_CONTROLLER_MANAGER)
 	cd config/default && "$(KUSTOMIZE)" edit set namespace $(NAMESPACE)
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
@@ -244,6 +244,13 @@ cert-manager: # Install cert-manager if not present
 		kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager; \
 		kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager-webhook; \
 		kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager-cainjector; \
+	}
+
+.PHONY: gateway-api
+gateway-api: # Install Gateway API CRDs if not present
+	@kubectl get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1 || { \
+		echo "Installing Gateway API CRDs..."; \
+		kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml; \
 	}
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist

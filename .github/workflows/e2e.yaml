@@ -48,6 +48,8 @@ jobs:
         image:
           - controller-manager
           - stateless-load-balancer
+          - router
+          - network-sidecar
     steps:
       - uses: actions/checkout@v6
       - uses: docker/login-action@v4
@@ -59,7 +61,7 @@ jobs:
 
   kind:
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [get-tag, build-and-push]
     strategy:
       fail-fast: false
       matrix:
