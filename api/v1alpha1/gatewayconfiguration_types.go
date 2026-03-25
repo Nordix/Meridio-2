@@ -21,97 +21,136 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GatewayConfigurationSpec defines the desired state of GatewayConfiguration
-
+// GatewayConfigurationSpec defines the desired state of GatewayConfiguration.
+// Referenced by Gateway.spec.infrastructure.parametersRef to configure the
+// LB Deployment that the gateway controller creates for each Gateway.
 type GatewayConfigurationSpec struct {
 
-	// Support multiple external interfaces per LB-FE Pod plus internal networks
-	// (e.g. dedicated internal networks per IP family).
+	// networkAttachments defines the secondary network interfaces for the LB
+	// Deployment managed by the gateway controller. These only affect the LB Pods
+	// and have no relation to network attachments on user application Pods.
 	// +kubebuilder:validation:MaxItems=10
 	NetworkAttachments []NetworkAttachment `json:"networkAttachments"`
 
+	// networkSubnets identifies the subnet(s) where application endpoint IPs reside.
+	// Used by the ENC controller to match secondary interfaces in application Pods
+	// and to determine IP family (IPv4/IPv6) for VIP and next-hop assignment.
+	// Typically one entry per IP family for dual-stack deployments.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=2
-
-	// Indicates in which subnet(s) the application endpoint IP(s) are, is distinc for each type of network
 	NetworkSubnets []NetworkSubnet `json:"networkSubnets"`
 
+	// horizontalScaling controls the replica count of the LB Deployment.
+	// For further details on horizontal scaling, see the Kubernetes documentation:
+	// https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/
 	HorizontalScaling HorizontalScaling `json:"horizontalScaling"`
 
+	// verticalScaling configures per-container resource requests, limits, and resize
+	// policies for the LB Deployment. When omitted, containers use the resources
+	// defined in the LB Deployment template.
 	// +optional
 	VerticalScaling *VerticalScaling `json:"verticalScaling,omitempty"`
 }
 
+// NetworkSubnet identifies a network segment where application endpoints are reachable.
 type NetworkSubnet struct {
 
+	// attachmentType specifies how the network is attached to Pods.
+	// Currently only NAD (NetworkAttachmentDefinition) is supported.
 	// +kubebuilder:default=NAD
 	// +kubebuilder:validation:Enum=NAD;DRA
 	AttachmentType string `json:"attachmentType"`
 
+	// cidrs lists the subnet CIDRs for this network segment (e.g. "192.168.100.0/24").
+	// Must not overlap with CIDRs in other NetworkSubnets. Default routes (0.0.0.0/0,
+	// ::/0) and IPv6 link-local addresses (fe80::/10) are not allowed.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=15
 	// +kubebuilder:validation:items:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
 	CIDRs []string `json:"cidrs"`
 }
 
+// NetworkAttachment defines a secondary network interface for the LB Deployment Pods.
 // +kubebuilder:validation:XValidation:rule=self.type == "NAD" && self.nad != null || self.type == "DRA" && self.dra != null,message="If type is NAD, field NAD must not be null, otherwise DRA must not be null"
 type NetworkAttachment struct {
 
+	// description is a human-readable description of this network attachment.
 	// +optional
 	Description string `json:"description"`
 
+	// type specifies the attachment mechanism. Currently only NAD is supported.
 	// +kubebuilder:default=NAD
 	// +kubebuilder:validation:Enum=NAD;DRA
 	Type string `json:"type"`
 
+	// nad specifies the NetworkAttachmentDefinition reference and interface name.
+	// Required when type is NAD.
 	// +optional
 	NAD *NAD `json:"nad,omitempty"`
 
+	// dra specifies Dynamic Resource Allocation parameters. Not yet implemented.
 	// +optional
 	DRA *DRA `json:"dra,omitempty"`
 }
 
+// NAD references a Multus NetworkAttachmentDefinition and the interface name
+// to request on the Pod.
 type NAD struct {
+	// interface is the name to assign to the network interface inside the Pod (e.g. "net1").
 	Interface string `json:"interface"`
-	Name      string `json:"name"`
+	// name is the name of the NetworkAttachmentDefinition resource.
+	Name string `json:"name"`
+	// namespace is the namespace of the NetworkAttachmentDefinition resource.
+	// Defaults to the GatewayConfiguration's namespace if empty.
 	Namespace string `json:"namespace"`
 }
 
-// TODO implement
+// DRA specifies Dynamic Resource Allocation parameters.
+// TODO: implement DRA support.
 type DRA struct { /* ... */
 }
 
+// HorizontalScaling controls the replica count of the LB Deployment.
 type HorizontalScaling struct {
 
+	// replicas is the desired number of LB Deployment Pods.
 	// +kubebuilder:default=2
 	// +kubebuilder:validation:Minimum=1
-
 	Replicas uint `json:"replicas"`
 
+	// enforceReplicas controls whether the controller manages the replica count.
+	// If true, the controller enforces the replicas value on every reconcile.
+	// If false, the controller only sets replicas on initial creation, allowing
+	// HPA or other autoscalers to manage the count afterward.
 	// +kubebuilder:default=false
-	// Control Knob: If true, the controller enforces 'replicas'.
-	// If false, the controller steps aside, allowing HPA to control the Deployment.
 	EnforceReplicas bool `json:"enforceReplicas"`
 }
 
+// VerticalScaling configures per-container resource requirements for the LB Deployment.
 type VerticalScaling struct {
+	// containers lists per-container resource overrides. Each entry targets a
+	// container by name in the LB Deployment template.
 	// +optional
 	Containers []ContainerArgs `json:"containers,omitempty"`
 }
 
+// ContainerArgs defines resource requirements and resize policy for a single container.
 type ContainerArgs struct {
+	// name is the container name in the LB Deployment template to configure.
 	Name string `json:"name"`
 
+	// resources specifies the CPU and memory requests and limits for this container.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
+	// enforceResources controls whether the controller manages this container's resources.
+	// If true, the controller enforces the resources value on every reconcile.
+	// If false, the controller only sets resources on initial creation, allowing
+	// VPA or other tools to manage resources afterward.
 	// +kubebuilder:default=false
-
-	// Control Knob for VPA Deferral for THIS container
-	// If true, controller enforces 'resources' via patch/template.
-	// If false, controller ignores 'resources', deferring to VPA/other external tool.
 	EnforceResources bool `json:"enforceResources"`
 
+	// resizePolicy specifies the restart policy for in-place resource resizing per resource type.
 	// +optional
 	ResizePolicy []corev1.ContainerResizePolicy `json:"resizePolicy,omitempty"`
 }
