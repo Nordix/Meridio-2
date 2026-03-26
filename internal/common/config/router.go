@@ -33,6 +33,7 @@ type RouterConfig struct {
 	MetricsCertKey   string
 	EnableHTTP2      bool
 	BirdLogFile      string
+	BirdLogFileSize  int
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -60,6 +61,8 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	fs.StringVar(&c.BirdLogFile, "bird-log-file", "/var/log/bird/bird.log",
 		"Path to BIRD log file. BIRD writes protocol and routing events here.")
+	fs.IntVar(&c.BirdLogFileSize, "bird-log-file-size", 0,
+		"Max BIRD log file size in bytes. If >0, enables log rotation with 1 backup file.")
 }
 
 // BindEnv binds environment variables to configuration fields
@@ -77,4 +80,5 @@ func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
 	bindString(fs, "bird-log-file", "MERIDIO_BIRD_LOG_FILE", &c.BirdLogFile)
+	bindInt(fs, "bird-log-file-size", "MERIDIO_BIRD_LOG_FILE_SIZE", &c.BirdLogFileSize)
 }
