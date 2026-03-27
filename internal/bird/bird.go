@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -158,13 +160,26 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 		}
 	}
 
+	slices.SortFunc(routers, func(a, b *meridio2v1alpha1.GatewayRouter) int {
+		if a.Name < b.Name {
+			return -1
+		}
+		if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
+
+	ifset := make(map[string]bool)
 	for _, r := range routers {
 		rd, err := toRouterData(r)
 		if err != nil {
 			return "", err
 		}
 		data.Routers = append(data.Routers, rd)
+		ifset[r.Spec.Interface] = true
 	}
+	data.BGPInterfaces = slices.Sorted(maps.Keys(ifset))
 
 	var buf strings.Builder
 	if err := birdConfigTmpl.Execute(&buf, data); err != nil {
