@@ -36,6 +36,8 @@ FROM alpine:3.22
 ARG USER
 ARG UID
 ARG HOME=/home/${USER}
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 RUN addgroup -g ${UID} ${USER} \
   && adduser -D -h ${HOME} -u ${UID} -G ${USER} ${USER} \
@@ -44,5 +46,8 @@ RUN addgroup -g ${UID} ${USER} \
 WORKDIR ${HOME}
 COPY --from=builder /workspace/manager .
 USER ${UID}:${UID}
+
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 ENTRYPOINT ["./manager", "run"]

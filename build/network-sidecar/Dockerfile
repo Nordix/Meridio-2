@@ -36,6 +36,8 @@ FROM alpine:3.22
 ARG USER
 ARG UID
 ARG HOME=/home/${USER}
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 RUN apk add --no-cache libcap \
   && addgroup -g ${UID} ${USER} \
@@ -47,5 +49,8 @@ COPY --from=builder /workspace/network-sidecar .
 RUN setcap 'cap_net_admin+ep' ./network-sidecar
 
 USER ${UID}:${UID}
+
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 ENTRYPOINT ["./network-sidecar", "run"]

@@ -27,10 +27,13 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
               -X github.com/nordix/meridio-2/internal/common/version.BuildDate=${BUILD_DATE}" \
     -a -o router ./cmd/router
 
+# Runtime stage
 FROM alpine
 ARG USER
 ARG UID
 ARG HOME
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 RUN apk update && apk add iproute2 tcpdump nftables bird iputils net-tools libcap \
   && setcap 'cap_sys_ptrace,cap_dac_override+ep' /sbin/ss \
@@ -49,5 +52,8 @@ COPY --from=builder /workspace/router .
 RUN setcap 'cap_net_admin+ep' ./router \
   && setcap 'cap_net_admin,cap_net_bind_service,cap_net_raw+ep' /usr/sbin/bird
 USER ${UID}:${UID}
+
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 ENTRYPOINT ["./router", "run"]

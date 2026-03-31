@@ -51,6 +51,8 @@ RUN curl -L https://netfilter.org/projects/libmnl/files/libmnl-1.0.4.tar.bz2 > /
 FROM alpine:3.22
 ARG USER
 ARG UID
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 RUN apk update && apk add iproute2 tcpdump nftables libcap
 
@@ -67,5 +69,8 @@ RUN setcap 'cap_net_admin+ep' /app/stateless-load-balancer \
   && setcap 'cap_net_admin+ep' /usr/sbin/nft
 
 USER ${UID}:${UID}
+
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 ENTRYPOINT ["/app/stateless-load-balancer", "run"]
