@@ -122,7 +122,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		return err
 	}
 
-	birdInstance := bird.New(bird.WithLogFile(cfg.BirdLogFile), bird.WithLogFileSize(cfg.BirdLogFileSize))
+	birdInstance := bird.New(bird.WithLogParams(cfg.BirdLogs))
 
 	if err = (&router.RouterReconciler{
 		Client:           mgr.GetClient(),
