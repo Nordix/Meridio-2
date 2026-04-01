@@ -17,6 +17,10 @@ limitations under the License.
 package config
 
 import (
+	"os"
+	"strings"
+
+	"github.com/nordix/meridio-2/internal/bird"
 	"github.com/spf13/pflag"
 )
 
@@ -32,8 +36,7 @@ type RouterConfig struct {
 	MetricsCertName  string
 	MetricsCertKey   string
 	EnableHTTP2      bool
-	BirdLogFile      string
-	BirdLogFileSize  int
+	BirdLogs         bird.BirdLogParams
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -59,10 +62,24 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"The name of the metrics server key file.")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	fs.StringVar(&c.BirdLogFile, "bird-log-file", "/var/log/bird/bird.log",
-		"Path to BIRD log file. BIRD writes protocol and routing events here.")
-	fs.IntVar(&c.BirdLogFileSize, "bird-log-file-size", 0,
-		"Max BIRD log file size in bytes. If >0, enables log rotation with 1 backup file.")
+	fs.Var(&c.BirdLogs, "bird-log",
+		"BIRD log destination (repeatable).\n"+
+			"Format: type:params:classes\n"+
+			"Types:\n"+
+			"  stderr:classes\n"+
+			"  file:path:classes                    (no rotation)\n"+
+			"  file:path:size:backup:classes         (with rotation, size in bytes)\n"+
+			"  fixed:path:size:classes               (ring buffer, size in bytes)\n"+
+			"  syslog:name:classes\n"+
+			"  udp:address:port:classes              (IPv4)\n"+
+			"  udp:[address]:port:classes            (IPv6)\n"+
+			"Classes: all, or comma-separated subset: debug,trace,info,remote,auth,warning,error,bug,fatal\n"+
+			"Examples:\n"+
+			"  --bird-log stderr:all\n"+
+			"  --bird-log file:/var/log/bird.log:info,warning,error\n"+
+			"  --bird-log file:/var/log/bird.log:1048576:/var/log/bird.log.1:all\n"+
+			"  --bird-log udp:10.0.0.1:514:all\n"+
+			"  --bird-log 'udp:[fd00::1]:514:all'")
 }
 
 // BindEnv binds environment variables to configuration fields
@@ -79,6 +96,21 @@ func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
-	bindString(fs, "bird-log-file", "MERIDIO_BIRD_LOG_FILE", &c.BirdLogFile)
-	bindInt(fs, "bird-log-file-size", "MERIDIO_BIRD_LOG_FILE_SIZE", &c.BirdLogFileSize)
+	bindBirdLogs(fs, "bird-log", "MERIDIO_BIRD_LOG", &c.BirdLogs)
+}
+
+// bindBirdLogs binds a semicolon-separated environment variable to a BirdLogParams.
+// Each entry is parsed as a bird log spec (e.g. "stderr:all;file:/var/log/bird.log:all").
+// Only applies if the corresponding flag was not explicitly set.
+func bindBirdLogs(fs *pflag.FlagSet, flagName, envName string, target *bird.BirdLogParams) {
+	if !fs.Changed(flagName) {
+		if val := os.Getenv(envName); val != "" {
+			for entry := range strings.SplitSeq(val, ";") {
+				entry = strings.TrimSpace(entry)
+				if entry != "" {
+					_ = target.Set(entry)
+				}
+			}
+		}
+	}
 }

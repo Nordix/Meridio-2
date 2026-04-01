@@ -72,10 +72,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        - name: MERIDIO_BIRD_LOG_FILE
-          value: /var/log/bird/bird.log
-        - name: MERIDIO_BIRD_LOG_FILE_SIZE
-          value: "104857600"  # 100 MiB
+        - name: MERIDIO_BIRD_LOG
+          value: "file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
