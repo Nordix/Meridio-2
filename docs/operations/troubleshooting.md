@@ -550,7 +550,9 @@ Two condition types are used (per Gateway API GEP-1364):
 **`Accepted`** — indicates whether the Gateway configuration is valid:
 - `Accepted=True`, reason `Accepted` — GatewayClass matches the controller and GatewayConfiguration is valid. Message: `"Gateway accepted by <controller-name>"`.
 - `Accepted=False`, reason `InvalidParameters` — validation failed. The message describes the specific issue (e.g., missing GatewayConfiguration, invalid template, bad network attachment config).
-- `Accepted=Unknown`, reason `Pending` — the Gateway is not currently managed by this controller. Message: `"Waiting for controller"`. This is set when the controller releases a Gateway (e.g., GatewayClass changed).
+- `Accepted=Unknown`, reason `Pending` — the Gateway is not managed by any controller. Message: `"Waiting for controller"`. Common causes:
+  - No GatewayClass exists with `spec.controllerName` matching the controller-manager's `--controller-name` (default: `meridio-2.nordix.org/gateway-controller`). The Gateway's `spec.gatewayClassName` must reference a GatewayClass whose `controllerName` matches. Without a matching GatewayClass, no controller will claim the Gateway.
+  - The controller released a previously managed Gateway (e.g., `gatewayClassName` was changed to a different GatewayClass).
 
 **`Programmed`** — indicates whether the LB Deployment has been reconciled:
 - `Programmed=True`, reason `Programmed` — LB Deployment has been created or updated successfully. Message: `"LB Deployment reconciled"`.
