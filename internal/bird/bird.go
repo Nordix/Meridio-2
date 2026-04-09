@@ -33,8 +33,6 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-var errBirdRunning = errors.New("bird is already running")
-
 // BirdInterface defines the interface for BIRD operations
 type BirdInterface interface {
 	Run(ctx context.Context) error
@@ -78,7 +76,7 @@ func (b *Bird) Run(ctx context.Context) error {
 	b.mu.Lock()
 	if b.running {
 		b.mu.Unlock()
-		return errBirdRunning
+		return fmt.Errorf("BIRD is already running")
 	}
 
 	if _, err := os.Stat(b.ConfigFile); errors.Is(err, os.ErrNotExist) {
@@ -95,7 +93,7 @@ func (b *Bird) Run(ctx context.Context) error {
 	cmd.WaitDelay = 3 * time.Second
 	if err := cmd.Start(); err != nil {
 		b.mu.Unlock()
-		return fmt.Errorf("bird failed to start: %w", err)
+		return fmt.Errorf("BIRD failed to start: %w", err)
 	}
 
 	b.running = true
@@ -105,7 +103,7 @@ func (b *Bird) Run(ctx context.Context) error {
 		b.mu.Lock()
 		b.running = false
 		b.mu.Unlock()
-		return fmt.Errorf("bird failed: %w", err)
+		return fmt.Errorf("BIRD failed: %w", err)
 	}
 	return nil
 }
