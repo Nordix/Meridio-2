@@ -19,6 +19,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/pflag"
 )
@@ -53,6 +54,16 @@ func bindInt(fs *pflag.FlagSet, flagName, envName string, target *int) {
 			if parsed, err := strconv.Atoi(val); err == nil {
 				*target = parsed
 			}
+		}
+	}
+}
+
+// bindStringSlice binds a comma-separated environment variable to a string slice configuration field
+// Only applies if the corresponding flag was not explicitly set
+func bindStringSlice(fs *pflag.FlagSet, flagName, envName string, target *[]string) {
+	if !fs.Changed(flagName) {
+		if val := os.Getenv(envName); val != "" {
+			*target = strings.Split(val, ",")
 		}
 	}
 }

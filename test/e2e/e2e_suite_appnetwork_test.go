@@ -222,6 +222,17 @@ var _ = Describe("E2E Test Suites", func() {
 					}
 				})
 
+				Context("ICMP large packet (PMTU path)", func() {
+					for _, gw := range suite.gateways {
+						gw := gw
+						It("handles 1400-byte ping on "+gw.name+" VIP", func() {
+							// 1400 bytes fits within standard 1500 MTU (1400 + 28 ICMP/IP headers = 1428)
+							// Exercises the output chain ICMP → nfqueue path
+							Expect(e2eutils.PingLargePacket(gw.vip, 1400)).To(Succeed())
+						})
+					}
+				})
+
 				Context("TCP load balancing", func() {
 					for _, gw := range suite.gateways {
 						gw := gw

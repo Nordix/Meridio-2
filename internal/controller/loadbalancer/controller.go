@@ -58,14 +58,15 @@ import (
 // - VIPs from Gateway: Gateway.status.addresses provides dynamic VIP set
 type Controller struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	GatewayName       string
-	GatewayNamespace  string
-	LBFactory         types.NFQueueLoadBalancerFactory
-	NFTConn           *nftables.Conn
-	NFTTable          *nftables.Table
-	NFTChain          *nftables.Chain
-	NftManagerFactory func(queueNum, queueTotal uint16) (nftablesManager, error)
+	Scheme                   *runtime.Scheme
+	GatewayName              string
+	GatewayNamespace         string
+	LBFactory                types.NFQueueLoadBalancerFactory
+	NFTConn                  *nftables.Conn
+	NFTTable                 *nftables.Table
+	NFTChain                 *nftables.Chain
+	NftManagerFactory        func(queueNum, queueTotal uint16) (nftablesManager, error)
+	DefragExcludedIfPrefixes []string
 
 	mu             sync.Mutex
 	instances      map[string]types.NFQueueLoadBalancer             // key: DistributionGroup name
@@ -280,7 +281,7 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	if c.NftManagerFactory != nil {
 		c.nftManager, err = c.NftManagerFactory(0, 4)
 	} else {
-		c.nftManager, err = nftablesmanager.NewManager(0, 4)
+		c.nftManager, err = nftablesmanager.NewManager(0, 4, c.DefragExcludedIfPrefixes...)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create nftables manager: %w", err)

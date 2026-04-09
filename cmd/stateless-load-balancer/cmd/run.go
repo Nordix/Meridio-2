@@ -171,14 +171,15 @@ func runLoadBalancer(ctx context.Context, cfg *config.LoadBalancerConfig) error 
 
 	// Setup LoadBalancer controller
 	if err := (&loadbalancer.Controller{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		GatewayName:      cfg.GatewayName,
-		GatewayNamespace: cfg.GatewayNamespace,
-		LBFactory:        lbFactory,
-		NFTConn:          nftConn,
-		NFTTable:         nftTable,
-		NFTChain:         nftChain,
+		Client:                   mgr.GetClient(),
+		Scheme:                   mgr.GetScheme(),
+		GatewayName:              cfg.GatewayName,
+		GatewayNamespace:         cfg.GatewayNamespace,
+		LBFactory:                lbFactory,
+		NFTConn:                  nftConn,
+		NFTTable:                 nftTable,
+		NFTChain:                 nftChain,
+		DefragExcludedIfPrefixes: cfg.DefragExcludedIfPrefixes,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to setup controller")
 		return err

@@ -22,17 +22,18 @@ import (
 
 // LoadBalancerConfig holds configuration for the stateless-load-balancer
 type LoadBalancerConfig struct {
-	GatewayName      string
-	GatewayNamespace string
-	NFQueue          string
-	ProbeAddr        string
-	LogLevel         string
-	MetricsAddr      string
-	SecureMetrics    bool
-	MetricsCertPath  string
-	MetricsCertName  string
-	MetricsCertKey   string
-	EnableHTTP2      bool
+	GatewayName              string
+	GatewayNamespace         string
+	NFQueue                  string
+	DefragExcludedIfPrefixes []string
+	ProbeAddr                string
+	LogLevel                 string
+	MetricsAddr              string
+	SecureMetrics            bool
+	MetricsCertPath          string
+	MetricsCertName          string
+	MetricsCertKey           string
+	EnableHTTP2              bool
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -43,6 +44,8 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Namespace of the Gateway")
 	fs.StringVar(&c.NFQueue, "nfqueue", "0:3",
 		"Netfilter queue(s) to be used by NFQLB")
+	fs.StringSliceVar(&c.DefragExcludedIfPrefixes, "defrag-excluded-if-prefixes", nil,
+		"Interface name prefixes excluded from defragmentation (target-facing interfaces, to preserve PMTU info in outbound packets)")
 	fs.StringVar(&c.ProbeAddr, "health-probe-bind-address", ":8081",
 		"The address the probe endpoint binds to")
 	fs.StringVar(&c.LogLevel, "log-level", "info",
@@ -65,6 +68,7 @@ func (c *LoadBalancerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "gateway-name", "MERIDIO_GATEWAY_NAME", &c.GatewayName)
 	bindString(fs, "gateway-namespace", "MERIDIO_GATEWAY_NAMESPACE", &c.GatewayNamespace)
 	bindString(fs, "nfqueue", "MERIDIO_NFQUEUE", &c.NFQueue)
+	bindStringSlice(fs, "defrag-excluded-if-prefixes", "MERIDIO_DEFRAG_EXCLUDED_IF_PREFIXES", &c.DefragExcludedIfPrefixes)
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)

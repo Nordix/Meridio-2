@@ -51,6 +51,29 @@ func Ping(vip string) error {
 	return nil
 }
 
+// PingLargePacket sends a large ICMP echo with DF bit set from the VPN gateway.
+// Used to test PMTU discovery: if the packet exceeds the internal network MTU,
+// the LB should return an ICMP Frag Needed / Packet Too Big with the VIP as source.
+// size is the ICMP payload size in bytes (total packet = size + IP/ICMP headers).
+func PingLargePacket(vip string, size int) error {
+	pingCmd := "ping"
+	// -M do = set DF bit (prohibit fragmentation)
+	// -s = payload size
+	sizeFlag := fmt.Sprintf("-s %d -M do", size)
+	if strings.Contains(vip, ":") {
+		pingCmd = "ping6"
+		// IPv6 always has DF equivalent (no fragmentation by routers)
+		sizeFlag = fmt.Sprintf("-s %d", size)
+	}
+	cmdStr := fmt.Sprintf("docker exec vpn-gateway %s %s -c 3 -W 5 %s", pingCmd, sizeFlag, vip)
+	cmd := exec.Command("/bin/sh", "-c", cmdStr)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s (size=%d) failed: %w\noutput: %s", pingCmd, size, err, string(out))
+	}
+	return nil
+}
+
 // ctrafficResult represents the relevant fields from ctraffic JSON output.
 type ctrafficResult struct {
 	FailedConnects int `json:"FailedConnects"`
