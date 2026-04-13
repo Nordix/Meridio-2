@@ -7,16 +7,31 @@
 #
 # Or run: make install-hooks
 
+# Check for modified kustomization files
+KUSTOM_FILES=$(git diff --cached --name-only | grep -E 'kustomization\.ya?ml$')
+
+if [ -n "$KUSTOM_FILES" ]; then
+    echo ""
+    echo "⚠ WARNING: You have modified kustomization files:"
+    echo "$KUSTOM_FILES"
+    echo ""
+    echo "Make sure these changes are not for local testing only!"
+    echo "If they are, please revert them before pushing."
+    echo ""
+fi
+
+echo ""
 echo "Running 'make check' before commit..."
 
 make check
 
 if [ $? -ne 0 ]; then
     echo ""
-    echo "❌ 'make check' failed. Commit aborted."
+    echo "✗ 'make check' failed. Commit aborted."
     echo "Fix the issues and try again, or use 'git commit --no-verify' to skip this check."
     exit 1
 fi
 
-echo "✅ 'make check' passed. Proceeding with commit."
+echo "✓ 'make check' passed. Proceeding with commit."
+echo ""
 exit 0

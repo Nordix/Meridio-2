@@ -1,11 +1,14 @@
+name: meridio-vpn-gateway
+
 services:
   vpn-gateway:
+    image: vpn-gateway:latest
     build:
       context: .
       dockerfile: Dockerfile
     container_name: vpn-gateway
     privileged: true
-    command: /init.sh 100
+    command: /init.sh
     networks:
       - kind
 

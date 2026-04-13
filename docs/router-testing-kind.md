@@ -332,14 +332,14 @@ kind delete cluster --name meridio-test
 ## Configuration Details
 
 ### VPN Gateway BGP Settings
-- ASN: 4248829953
+- ASN: 4200000000
 - IPv4: 169.254.100.150:10179
 - IPv6: fd00:100::150:10179
 - Hold time: 24s
 - BFD: enabled (300ms intervals, multiplier 3)
 
 ### Router BGP Settings
-- ASN: 8103
+- ASN: 64512
 - IPv4: 169.254.100.1:10179
 - IPv6: fd00:100::1:10179
 - Hold time: 24s

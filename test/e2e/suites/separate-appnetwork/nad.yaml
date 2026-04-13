@@ -1,0 +1,116 @@
+---
+# Sysctl tuning NAD
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: sysctl-tuning
+spec:
+  config: '{
+      "cniVersion": "0.4.0",
+      "name": "sysctl-tuning",
+      "plugins": [
+        {
+          "type": "tuning",
+          "prevResult": {},
+          "sysctl": {
+            "net.ipv4.conf.all.forwarding": "1",
+            "net.ipv6.conf.all.forwarding": "1",
+            "net.ipv4.fib_multipath_hash_policy": "1",
+            "net.ipv6.fib_multipath_hash_policy": "1",
+            "net.ipv4.conf.all.rp_filter": "0",
+            "net.ipv4.conf.default.rp_filter": "0",
+            "net.ipv6.conf.all.accept_dad": "0"
+          }
+        }
+      ]
+  }'
+---
+# VLAN 100 NAD for gw-a1 BGP peering
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vlan-100
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "type": "vlan",
+      "master": "eth0",
+      "vlanId": 100,
+      "ipam": {
+        "type": "whereabouts",
+        "ipRanges": [
+          { "range": "169.254.100.0/24", "exclude": ["169.254.100.150/32"] }
+        ]
+      }
+    }
+---
+# VLAN 200 NAD for gw-a2 BGP peering
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vlan-200
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "type": "vlan",
+      "master": "eth0",
+      "vlanId": 200,
+      "ipam": {
+        "type": "whereabouts",
+        "ipRanges": [
+          { "range": "169.254.200.0/24", "exclude": ["169.254.200.150/32"] }
+        ]
+      }
+    }
+---
+# App network for gw-a1 (SLLBR ↔ app Pods)
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: app-net-a1
+spec:
+  config: |
+    {
+      "cniVersion": "1.0.0",
+      "name": "app-net-a1",
+      "plugins": [
+        {
+          "type": "macvlan",
+          "master": "eth0",
+          "mode": "bridge",
+          "ipam": {
+            "type": "whereabouts",
+            "ipRanges": [
+              { "range": "169.111.100.0/24" }
+            ]
+          }
+        }
+      ]
+    }
+---
+# App network for gw-a2 (separate from gw-a1)
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: app-net-a2
+spec:
+  config: |
+    {
+      "cniVersion": "1.0.0",
+      "name": "app-net-a2",
+      "plugins": [
+        {
+          "type": "macvlan",
+          "master": "eth0",
+          "mode": "bridge",
+          "ipam": {
+            "type": "whereabouts",
+            "ipRanges": [
+              { "range": "169.111.200.0/24" }
+            ]
+          }
+        }
+      ]
+    }

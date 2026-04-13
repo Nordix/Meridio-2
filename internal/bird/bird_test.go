@@ -88,8 +88,8 @@ func TestGenerateConfig(t *testing.T) {
 				Interface: "vlan-100",
 				Address:   "169.254.100.150",
 				BGP: meridio2v1alpha1.BgpSpec{
-					RemoteASN:  4248829953,
-					LocalASN:   8103,
+					RemoteASN:  4200000000,
+					LocalASN:   64512,
 					LocalPort:  uint16Ptr(10179),
 					RemotePort: uint16Ptr(10179),
 					HoldTime:   "3s",
@@ -176,8 +176,8 @@ protocol static VIP4 {
 
 protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 	interface "vlan-100";
-	local port 10179 as 8103;
-	neighbor 169.254.100.150 port 10179 as 4248829953;
+	local port 10179 as 64512;
+	neighbor 169.254.100.150 port 10179 as 4200000000;
 	bfd {
 		min rx interval 300ms;
 		min tx interval 300ms;
