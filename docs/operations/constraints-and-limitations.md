@@ -10,9 +10,9 @@ Items marked *(architectural constraint)* reflect deliberate design decisions th
 
 The DistributionGroup controller assigns Maglev IDs independently per network/IP family, while the LB controller uses a single NFQLB hash table per DG. Using both IPv4 and IPv6 CIDRs in `GatewayConfiguration.spec.networkSubnets` simultaneously causes identifier collisions across EndpointSlices, leading to incorrect traffic distribution and broken target removal. Workaround: use only IPv4 or only IPv6 for internal networking within a Gateway.
 
-**2. RBAC uses ClusterRole instead of namespace-scoped Roles (controller-manager)**
+**2. ~~RBAC uses ClusterRole instead of namespace-scoped Roles (controller-manager)~~ (Resolved)**
 
-The controller-manager's RBAC is a single ClusterRole granting cluster-wide access to namespace-scoped resources. Should be split into a namespace-scoped Role for namespace-scoped resources and a minimal ClusterRole for GatewayClass only.
+The controller-manager's RBAC is now split into a namespace-scoped Role (`manager-role.yaml`) for namespace-scoped resources and a minimal ClusterRole (`manager-clusterrole.yaml`) for cluster-scoped resources (GatewayClass).
 
 **3. IP scraping relies on Multus network-status annotation, not kernel state** *(architectural constraint)*
 

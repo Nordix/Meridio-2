@@ -23,7 +23,7 @@ The Sidecar controller runs as a container in each application Pod, configuring 
 - **Separate error semantics**: ENC content errors (invalid VIP, bad CIDR) don't requeue — wait for user fix. Interface-not-found is transient (interface may appear) — requeue with backoff. Netlink errors (transient) also requeue.
 - **No finalizers**: ENC deletion triggers `cleanupAll` via the NotFound path. No external resources to clean up beyond the Pod's own network namespace.
 - **OwnerReference validation**: The sidecar verifies the ENC's ownerReference points to its own Pod UID before acting. Prevents applying stale config from a previous Pod incarnation that shared the same name.
-- **Separate ServiceAccount**: Uses its own ServiceAccount, distinct from controller-manager and stateless-load-balancer. No kubebuilder RBAC markers (would pollute shared `role.yaml` via `make manifests`).
+- **Separate ServiceAccount**: Uses its own ServiceAccount, distinct from controller-manager and stateless-load-balancer. RBAC is hand-maintained separately from the controller-manager's Role/ClusterRole.
 
 ### Resource Relationships
 
