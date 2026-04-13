@@ -19,6 +19,7 @@ package loadbalancer
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 
 	"github.com/google/nftables"
@@ -58,15 +59,15 @@ import (
 // - VIPs from Gateway: Gateway.status.addresses provides dynamic VIP set
 type Controller struct {
 	client.Client
-	Scheme                   *runtime.Scheme
-	GatewayName              string
-	GatewayNamespace         string
-	LBFactory                types.NFQueueLoadBalancerFactory
-	NFTConn                  *nftables.Conn
-	NFTTable                 *nftables.Table
-	NFTChain                 *nftables.Chain
-	NftManagerFactory        func(queueNum, queueTotal uint16) (nftablesManager, error)
-	DefragExcludedIfPrefixes []string
+	Scheme             *runtime.Scheme
+	GatewayName        string
+	GatewayNamespace   string
+	LBFactory          types.NFQueueLoadBalancerFactory
+	NFTConn            *nftables.Conn
+	NFTTable           *nftables.Table
+	NFTChain           *nftables.Chain
+	NftManagerFactory  func(queueNum, queueTotal uint16) (nftablesManager, error)
+	NetworkSubnetCIDRs []string // App-facing CIDRs for defrag interface discovery
 
 	mu             sync.Mutex
 	instances      map[string]types.NFQueueLoadBalancer             // key: DistributionGroup name
@@ -276,12 +277,15 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	// Initialize routing manager
 	c.routingManager = NewRoutingManager()
 
+	// Discover app-facing interfaces from local network state + configured subnet CIDRs
+	defragExcluded := discoverInterfacesBySubnets(c.NetworkSubnetCIDRs)
+
 	// Initialize shared nftables manager
 	var err error
 	if c.NftManagerFactory != nil {
 		c.nftManager, err = c.NftManagerFactory(0, 4)
 	} else {
-		c.nftManager, err = nftablesmanager.NewManager(0, 4, c.DefragExcludedIfPrefixes...)
+		c.nftManager, err = nftablesmanager.NewManager(0, 4, defragExcluded...)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create nftables manager: %w", err)
@@ -378,4 +382,57 @@ func (c *Controller) l34RouteEnqueue(ctx context.Context, obj client.Object) []c
 	}
 
 	return requests
+}
+
+// discoverInterfacesBySubnets scans local network interfaces and returns the names
+// of interfaces that have an IP address within any of the given subnet CIDRs.
+// These are the app-facing (target-facing) interfaces that should be excluded from
+// defragmentation to preserve PMTU information in outbound packets.
+func discoverInterfacesBySubnets(cidrs []string) []string {
+	if len(cidrs) == 0 {
+		return nil
+	}
+
+	subnets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		subnets = append(subnets, ipnet)
+	}
+	if len(subnets) == 0 {
+		return nil
+	}
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+
+	var names []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			for _, subnet := range subnets {
+				if subnet.Contains(ipnet.IP) {
+					names = append(names, iface.Name)
+					goto nextIface
+				}
+			}
+		}
+	nextIface:
+	}
+
+	return names
 }

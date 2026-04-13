@@ -166,6 +166,11 @@ func reconcileDeploymentSpec(base, template *appsv1.Deployment, gw *gatewayv1.Ga
 	// Inject Gateway name into container environment variables
 	injectGatewayEnvVars(desired, gw.Name)
 
+	// Inject network subnet CIDRs for LB defrag interface discovery
+	if gwConfig != nil {
+		injectNetworkSubnetCIDRs(desired, gwConfig)
+	}
+
 	// Apply GatewayConfiguration (replicas, resources, etc.) - after labels/annotations
 	if gwConfig != nil {
 		// Extract template NAD annotation (from loaded YAML file)
@@ -259,6 +264,27 @@ func injectGatewayEnvVars(deployment *appsv1.Deployment, gatewayName string) {
 		for j := range container.Env {
 			if container.Env[j].Name == "MERIDIO_GATEWAY_NAME" {
 				container.Env[j].Value = gatewayName
+				break
+			}
+		}
+	}
+}
+
+// injectNetworkSubnetCIDRs fills the MERIDIO_NETWORK_SUBNET_CIDRS env var placeholder
+// with comma-separated CIDRs from GatewayConfiguration.spec.networkSubnets.
+// The LB controller uses these at startup to discover app-facing interfaces for defrag exclusion.
+func injectNetworkSubnetCIDRs(deployment *appsv1.Deployment, gwConfig *meridio2v1alpha1.GatewayConfiguration) {
+	var cidrs []string
+	for _, subnet := range gwConfig.Spec.NetworkSubnets {
+		cidrs = append(cidrs, subnet.CIDRs...)
+	}
+	value := strings.Join(cidrs, ",")
+
+	for i := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[i]
+		for j := range container.Env {
+			if container.Env[j].Name == "MERIDIO_NETWORK_SUBNET_CIDRS" {
+				container.Env[j].Value = value
 				break
 			}
 		}
