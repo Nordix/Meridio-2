@@ -28,6 +28,7 @@ import (
 	"time"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/vishvananda/netlink"
 )
 
 var errBirdRunning = errors.New("bird is already running")
@@ -44,7 +45,7 @@ type Bird struct {
 	ConfigFile  string
 	LogFile     string
 	LogFileSize int // bytes; if >0, enables rotation with 1 backup file
-	nl          routingOps
+	nl          abstractNetlink
 	running     bool
 	mu          sync.Mutex
 }
@@ -63,7 +64,7 @@ func New(opts ...Option) *Bird {
 	b := &Bird{
 		SocketPath: "/var/run/bird/bird.ctl",
 		ConfigFile: "/etc/bird/bird.conf",
-		nl:         defaultRoutingOps{},
+		nl:         &netlink.Handle{},
 	}
 	for _, o := range opts {
 		o(b)

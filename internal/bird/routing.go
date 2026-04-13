@@ -40,7 +40,7 @@ const (
 // with a fallback to blackhole table (4097) if no BGP routes exist.
 // Errors are accumulated best-effort (partial progress over rollback);
 // the next reconcile retries any failed operations.
-func setPolicyRoutes(nl routingOps, vips []string) error {
+func setPolicyRoutes(nl abstractNetlink, vips []string) error {
 	// Setup blackhole routes as fallback
 	if err := setupBlackholeRoutes(nl); err != nil {
 		return err
@@ -137,7 +137,7 @@ func setPolicyRoutes(nl routingOps, vips []string) error {
 
 // setupBlackholeRoutes adds blackhole default routes to table 4097.
 // These act as a fallback when no BGP routes are available in table 4096.
-func setupBlackholeRoutes(nl routingOps) error {
+func setupBlackholeRoutes(nl abstractNetlink) error {
 	var errFinal error
 
 	// IPv4 blackhole

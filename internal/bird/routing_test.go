@@ -25,8 +25,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// mockRoutingOps implements routingOps for testing.
-type mockRoutingOps struct {
+// netlinkMock implements abstractNetlink for testing.
+type netlinkMock struct {
 	rules           []netlink.Rule
 	routes          []netlink.Route
 	ruleAddErr      error
@@ -35,7 +35,7 @@ type mockRoutingOps struct {
 	routeReplaceErr error
 }
 
-func (m *mockRoutingOps) RuleListFiltered(_ int, filter *netlink.Rule, _ uint64) ([]netlink.Rule, error) {
+func (m *netlinkMock) RuleListFiltered(_ int, filter *netlink.Rule, _ uint64) ([]netlink.Rule, error) {
 	if m.ruleListErr != nil {
 		return nil, m.ruleListErr
 	}
@@ -48,7 +48,7 @@ func (m *mockRoutingOps) RuleListFiltered(_ int, filter *netlink.Rule, _ uint64)
 	return result, nil
 }
 
-func (m *mockRoutingOps) RuleAdd(rule *netlink.Rule) error {
+func (m *netlinkMock) RuleAdd(rule *netlink.Rule) error {
 	if m.ruleAddErr != nil {
 		return m.ruleAddErr
 	}
@@ -56,7 +56,7 @@ func (m *mockRoutingOps) RuleAdd(rule *netlink.Rule) error {
 	return nil
 }
 
-func (m *mockRoutingOps) RuleDel(rule *netlink.Rule) error {
+func (m *netlinkMock) RuleDel(rule *netlink.Rule) error {
 	if m.ruleDelErr != nil {
 		return m.ruleDelErr
 	}
@@ -71,7 +71,7 @@ func (m *mockRoutingOps) RuleDel(rule *netlink.Rule) error {
 	return nil
 }
 
-func (m *mockRoutingOps) RouteReplace(route *netlink.Route) error {
+func (m *netlinkMock) RouteReplace(route *netlink.Route) error {
 	if m.routeReplaceErr != nil {
 		return m.routeReplaceErr
 	}
@@ -86,7 +86,7 @@ func (m *mockRoutingOps) RouteReplace(route *netlink.Route) error {
 	return nil
 }
 
-func (m *mockRoutingOps) rulesForTable(table int) []netlink.Rule {
+func (m *netlinkMock) rulesForTable(table int) []netlink.Rule {
 	var result []netlink.Rule
 	for _, r := range m.rules {
 		if r.Table == table {
@@ -96,7 +96,7 @@ func (m *mockRoutingOps) rulesForTable(table int) []netlink.Rule {
 	return result
 }
 
-func (m *mockRoutingOps) blackholeRoutes() []netlink.Route {
+func (m *netlinkMock) blackholeRoutes() []netlink.Route {
 	var result []netlink.Route
 	for _, r := range m.routes {
 		if r.Type == unix.RTN_BLACKHOLE {
@@ -109,7 +109,7 @@ func (m *mockRoutingOps) blackholeRoutes() []netlink.Route {
 // --- setupBlackholeRoutes tests ---
 
 func TestSetupBlackholeRoutes(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	err := setupBlackholeRoutes(m)
 	assert.NoError(t, err)
@@ -121,7 +121,7 @@ func TestSetupBlackholeRoutes(t *testing.T) {
 }
 
 func TestSetupBlackholeRoutes_RouteReplaceFails(t *testing.T) {
-	m := &mockRoutingOps{routeReplaceErr: fmt.Errorf("EPERM")}
+	m := &netlinkMock{routeReplaceErr: fmt.Errorf("EPERM")}
 
 	err := setupBlackholeRoutes(m)
 	assert.Error(t, err)
@@ -131,7 +131,7 @@ func TestSetupBlackholeRoutes_RouteReplaceFails(t *testing.T) {
 // --- setPolicyRoutes tests ---
 
 func TestSetPolicyRoutes_EmptyVIPs(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	err := setPolicyRoutes(m, []string{})
 	assert.NoError(t, err)
@@ -143,7 +143,7 @@ func TestSetPolicyRoutes_EmptyVIPs(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_AddNewVIPs(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
 	assert.NoError(t, err)
@@ -159,7 +159,7 @@ func TestSetPolicyRoutes_AddNewVIPs(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_Idempotent(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 	vips := []string{"20.0.0.1/32"}
 
 	err := setPolicyRoutes(m, vips)
@@ -174,7 +174,7 @@ func TestSetPolicyRoutes_Idempotent(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_RemoveStaleVIPs(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
 	assert.NoError(t, err)
@@ -194,7 +194,7 @@ func TestSetPolicyRoutes_RemoveStaleVIPs(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_MixedAddRemove(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
 	assert.NoError(t, err)
@@ -216,7 +216,7 @@ func TestSetPolicyRoutes_MixedAddRemove(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_DualStack(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "2001:db8::1/128"})
 	assert.NoError(t, err)
@@ -233,7 +233,7 @@ func TestSetPolicyRoutes_DualStack(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_InvalidCIDR(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	err := setPolicyRoutes(m, []string{"not-a-cidr"})
 	assert.Error(t, err)
@@ -241,7 +241,7 @@ func TestSetPolicyRoutes_InvalidCIDR(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_RuleListFails(t *testing.T) {
-	m := &mockRoutingOps{ruleListErr: fmt.Errorf("ENOMEM")}
+	m := &netlinkMock{ruleListErr: fmt.Errorf("ENOMEM")}
 
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32"})
 	assert.Error(t, err)
@@ -249,7 +249,7 @@ func TestSetPolicyRoutes_RuleListFails(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_RuleAddFails_BestEffort(t *testing.T) {
-	m := &mockRoutingOps{ruleAddErr: fmt.Errorf("EPERM")}
+	m := &netlinkMock{ruleAddErr: fmt.Errorf("EPERM")}
 
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
 	assert.Error(t, err)
@@ -258,7 +258,7 @@ func TestSetPolicyRoutes_RuleAddFails_BestEffort(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_RuleDelFails_BestEffort(t *testing.T) {
-	m := &mockRoutingOps{}
+	m := &netlinkMock{}
 
 	// Add two VIPs
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
@@ -272,7 +272,7 @@ func TestSetPolicyRoutes_RuleDelFails_BestEffort(t *testing.T) {
 }
 
 func TestSetPolicyRoutes_RouteReplaceFails(t *testing.T) {
-	m := &mockRoutingOps{routeReplaceErr: fmt.Errorf("EPERM")}
+	m := &netlinkMock{routeReplaceErr: fmt.Errorf("EPERM")}
 
 	err := setPolicyRoutes(m, []string{"20.0.0.1/32"})
 	assert.Error(t, err)

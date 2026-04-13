@@ -18,20 +18,11 @@ package bird
 
 import "github.com/vishvananda/netlink"
 
-// routingOps abstracts netlink syscalls used by policy routing for testability.
-type routingOps interface {
+// abstractNetlink abstracts netlink syscalls used by policy routing for testability.
+// *netlink.Handle satisfies this interface directly.
+type abstractNetlink interface {
 	RuleListFiltered(family int, filter *netlink.Rule, filterMask uint64) ([]netlink.Rule, error)
 	RuleAdd(rule *netlink.Rule) error
 	RuleDel(rule *netlink.Rule) error
 	RouteReplace(route *netlink.Route) error
 }
-
-// defaultRoutingOps delegates to the real netlink package.
-type defaultRoutingOps struct{}
-
-func (defaultRoutingOps) RuleListFiltered(family int, filter *netlink.Rule, filterMask uint64) ([]netlink.Rule, error) {
-	return netlink.RuleListFiltered(family, filter, filterMask)
-}
-func (defaultRoutingOps) RuleAdd(rule *netlink.Rule) error        { return netlink.RuleAdd(rule) }
-func (defaultRoutingOps) RuleDel(rule *netlink.Rule) error        { return netlink.RuleDel(rule) }
-func (defaultRoutingOps) RouteReplace(route *netlink.Route) error { return netlink.RouteReplace(route) }
