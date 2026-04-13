@@ -58,7 +58,7 @@ type Manager struct {
 	ipv6PreRule        *nftables.Rule
 	ipv4OutRule        *nftables.Rule
 	ipv6OutRule        *nftables.Rule
-	excludedIfPrefixes []string
+	excludedInterfaces []string
 	conn               *nftables.Conn
 }
 
@@ -66,14 +66,14 @@ const sharedTableName = "meridio-lb" // Shared table for all DistributionGroups
 
 // NewManager creates a new nftables manager.
 // Uses a single shared table for all DistributionGroups.
-// excludedIfPrefixes are interface name prefixes for which defragmentation is skipped
+// excludedInterfaces are interface names for which defragmentation is skipped
 // (target-facing interfaces, to preserve PMTU information in outbound packets).
-func NewManager(queueNum, queueTotal uint16, excludedIfPrefixes ...string) (*Manager, error) {
+func NewManager(queueNum, queueTotal uint16, excludedInterfaces ...string) (*Manager, error) {
 	return &Manager{
 		tableName:          sharedTableName,
 		queueNum:           queueNum,
 		queueTotal:         queueTotal,
-		excludedIfPrefixes: excludedIfPrefixes,
+		excludedInterfaces: excludedInterfaces,
 		conn:               &nftables.Conn{},
 	}, nil
 }
@@ -388,14 +388,16 @@ func (m *Manager) createDefragTable() error {
 	})
 
 	// notrack for each excluded interface prefix
-	for _, prefix := range m.excludedIfPrefixes {
+	for _, iface := range m.excludedInterfaces {
 		m.conn.AddRule(&nftables.Rule{
 			Table: m.defragTable,
 			Chain: m.defragPreChain,
 			Exprs: []expr.Any{
 				&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-				// byte-stream without null terminator matches as prefix
-				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte(prefix)},
+				// Prefix match: CmpOpEq on a byte sequence shorter than the 16-byte iifname
+				// field works as prefix match because the kernel zero-pads the field.
+				// Same technique as Meridio v1 (pkg/loadbalancer/stream/defrag.go).
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte(iface)},
 				&expr.Notrack{},
 			},
 		})

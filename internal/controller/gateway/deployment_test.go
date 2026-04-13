@@ -438,6 +438,20 @@ func TestInjectNetworkSubnetCIDRs(t *testing.T) {
 		injectNetworkSubnetCIDRs(d, gwConfig)
 		assert.Equal(t, "", d.Spec.Template.Spec.Containers[0].Env[0].Value)
 	})
+
+	t.Run("MultipleSubnetEntries", func(t *testing.T) {
+		d := makeDeployment()
+		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
+			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
+				NetworkSubnets: []meridio2v1alpha1.NetworkSubnet{
+					{CIDRs: []string{"192.168.100.0/24"}},
+					{CIDRs: []string{"192.168.200.0/24", "2001:db8:200::/64"}},
+				},
+			},
+		}
+		injectNetworkSubnetCIDRs(d, gwConfig)
+		assert.Equal(t, "192.168.100.0/24,192.168.200.0/24,2001:db8:200::/64", d.Spec.Template.Spec.Containers[0].Env[0].Value)
+	})
 }
 
 func TestApplyNetworkAttachments(t *testing.T) {

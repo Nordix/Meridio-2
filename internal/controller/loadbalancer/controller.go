@@ -274,11 +274,14 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 }
 
 func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
+	setupLog := ctrl.Log.WithName("loadbalancer")
+
 	// Initialize routing manager
 	c.routingManager = NewRoutingManager()
 
 	// Discover app-facing interfaces from local network state + configured subnet CIDRs
 	defragExcluded := discoverInterfacesBySubnets(c.NetworkSubnetCIDRs)
+	setupLog.Info("Defrag interface discovery", "subnetCIDRs", c.NetworkSubnetCIDRs, "excludedInterfaces", defragExcluded)
 
 	// Initialize shared nftables manager
 	var err error
@@ -407,6 +410,7 @@ func discoverInterfacesBySubnets(cidrs []string) []string {
 
 	ifaces, err := net.Interfaces()
 	if err != nil {
+		ctrl.Log.WithName("loadbalancer").Error(err, "Failed to list network interfaces for defrag discovery")
 		return nil
 	}
 

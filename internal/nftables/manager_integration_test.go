@@ -52,7 +52,7 @@ func TestIntegration_SetupLoadsAllChains(t *testing.T) {
 		tableName:          sharedTableName,
 		queueNum:           0,
 		queueTotal:         4,
-		excludedIfPrefixes: []string{"net"},
+		excludedInterfaces: []string{"net"},
 		conn:               conn,
 	}
 
@@ -122,7 +122,7 @@ func TestIntegration_DefragChainPriority(t *testing.T) {
 		tableName:          sharedTableName,
 		queueNum:           0,
 		queueTotal:         1,
-		excludedIfPrefixes: []string{"net"},
+		excludedInterfaces: []string{"net"},
 		conn:               conn,
 	}
 
@@ -147,7 +147,7 @@ func TestIntegration_DefragExcludedInterfaceRules(t *testing.T) {
 		tableName:          sharedTableName,
 		queueNum:           0,
 		queueTotal:         1,
-		excludedIfPrefixes: []string{"net1", "net2"},
+		excludedInterfaces: []string{"net1", "net2"},
 		conn:               conn,
 	}
 
