@@ -136,7 +136,7 @@ define deploy-suite
 	if ! $(KUBECTL) get deployment meridio-2-controller-manager-$$SUITE_LABEL -n $$NS -o jsonpath='{.spec.template.spec.volumes[*].name}' | grep -q templates-override; then \
 		$(KUBECTL) patch deployment meridio-2-controller-manager-$$SUITE_LABEL -n $$NS --type=json -p='[{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"templates-override","mountPath":"/templates-override"}},{"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"templates-override","configMap":{"name":"lb-template-override-'$$SUITE_LABEL'"}}}]'; \
 	fi; \
-	$(KUBECTL) wait --for=condition=Available --timeout=120s -n $$NS deployment/meridio-2-controller-manager-$$SUITE_LABEL; \
+	$(KUBECTL) wait --for=condition=Available --timeout=180s -n $$NS deployment/meridio-2-controller-manager-$$SUITE_LABEL; \
 	$(KUBECTL) wait --for=condition=Ready --timeout=60s -n $$NS certificate/meridio-2-serving-cert-$$SUITE_LABEL; \
 	$(KUBECTL) apply -f $$SUITE_DIR/rbac.yaml; \
 	$(KUBECTL) apply -f $$SUITE_DIR/nad.yaml -n $$NS; \
