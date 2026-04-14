@@ -40,7 +40,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 ################################################################################
 
 .PHONY: cluster
-cluster: kustomize multus cni-plugins whereabouts cert-manager gateway-api kind-network vpn-gateway ## Setup cluster dependencies.
+cluster: kustomize multus cni-plugins whereabouts cert-manager gateway-api kind-network vpn-gateway rp-filter ## Setup cluster dependencies.
 
 .PHONY: kustomize
 kustomize: ## Install kustomize from parent Makefile.
@@ -107,6 +107,14 @@ vpn-gateway: ## Deploy VPN gateway container.
 		docker compose build && \
 		docker compose up -d; \
 	}
+
+.PHONY: rp-filter
+rp-filter: ## Configure rp_filter=2 on all Kind nodes.
+	@echo "Configuring rp_filter=2 on all nodes..."; \
+	for node in $$($(KIND) get nodes --name $(CLUSTER_NAME)); do \
+		docker exec $$node sysctl -w net.ipv4.conf.all.rp_filter=2; \
+		docker exec $$node sysctl -w net.ipv4.conf.default.rp_filter=2; \
+	done
 
 .PHONY: cluster-cleanup
 cluster-cleanup: ## Cleanup cluster dependencies.

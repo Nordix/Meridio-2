@@ -69,6 +69,16 @@ var _ = Describe("E2E Test Suites", func() {
 						}).Should(Succeed())
 					})
 
+					It(fmt.Sprintf("should have %s Programmed", gw.name), func() {
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"))
+						}).Should(Succeed())
+					})
+
 					It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
