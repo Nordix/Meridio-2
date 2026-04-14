@@ -41,6 +41,7 @@ jobs:
 
   build-and-push:
     name: Build and push ${{ matrix.image }}
+    if: false # Skip this for testing purposes.
     runs-on: ubuntu-latest
     needs: get-tag
     strategy:
@@ -59,12 +60,15 @@ jobs:
           password: ${{ secrets.HARBOR_PASSWORD }}
       - run: make ${{ matrix.image }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }} BUILD_STEPS="build tag push"
 
-  kind:
+  e2e:
     runs-on: ubuntu-latest
-    needs: [get-tag, build-and-push]
+    needs: get-tag # Add build-and-push here.
     strategy:
       fail-fast: false
       matrix:
+        suite:
+          - common-appnetwork
+          - separate-appnetwork
         image:
           - v1.32.2@sha256:f226345927d7e348497136874b6d207e0b32cc52154ad8323129352923a3142f
           - v1.31.6@sha256:28b7cbb993dfe093c76641a0c95807637213c9109b761f1d422c2400e22b8e87
@@ -80,6 +84,7 @@ jobs:
           version: ${{ env.KIND_VERSION }}
           node_image: kindest/node:${{ matrix.image }}
           cluster_name: kind
+          config: test/e2e/kind-cluster/kind-basic.yaml
       - name: Check cluster
         run: |
           kubectl version
@@ -89,9 +94,14 @@ jobs:
           registry: ${{ secrets.HARBOR_REGISTRY }}
           username: ${{ secrets.HARBOR_USERNAME }}
           password: ${{ secrets.HARBOR_PASSWORD }}
-      - name: Deploy
-        run: make deploy REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION_CONTROLLER_MANAGER=${{ needs.get-tag.outputs.tag }}
-      - name: Wait for controller-manager
-        run: kubectl wait --for=condition=Ready --timeout=300s -n meridio-2 pod -l control-plane=controller-manager
-      - name: List pods
-        run: kubectl get pods -A
+      - name: Setup cluster dependencies
+        run: |
+          make -C test/e2e cluster
+          docker ps
+          kubectl get all -A -o wide
+      - name: Deploy ${{ matrix.suite }} suite
+        run: |
+          make -C test/e2e deploy-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest # Modify version before merging!
+          kubectl get all -A -o wide
+      - name: Run ${{ matrix.suite }} tests
+        run: make -C test/e2e test-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest # ${{ needs.get-tag.outputs.tag }}
