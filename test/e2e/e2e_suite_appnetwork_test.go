@@ -22,26 +22,29 @@ type gwTestCase struct {
 }
 
 type suiteTestCase struct {
-	name      string
-	namespace string
-	targetApp string
-	gateways  []gwTestCase
+	name           string
+	namespace      string
+	targetApp      string
+	targetReplicas int
+	gateways       []gwTestCase
 }
 
 var testCases = []suiteTestCase{
 	{
-		name:      "Common App Network",
-		namespace: "e2e-common-appnet",
-		targetApp: "target-b",
+		name:           "Common App Network",
+		namespace:      "e2e-common-appnet",
+		targetApp:      "target-b",
+		targetReplicas: 2,
 		gateways: []gwTestCase{
 			{name: "gw-b1", vip: "30.0.0.1", targets: 2},
 			{name: "gw-b2", vip: "30.0.0.2", targets: 2},
 		},
 	},
 	{
-		name:      "Separate App Network",
-		namespace: "e2e-separate-appnet",
-		targetApp: "target-a",
+		name:           "Separate App Network",
+		namespace:      "e2e-separate-appnet",
+		targetApp:      "target-a",
+		targetReplicas: 2,
 		gateways: []gwTestCase{
 			{name: "gw-a1", vip: "20.0.0.1", targets: 2},
 			{name: "gw-a2", vip: "20.0.0.2", targets: 2},
@@ -91,24 +94,24 @@ var _ = Describe("E2E Test Suites", func() {
 					})
 				}
 
-				It(fmt.Sprintf("should create %d ENCs with %d gateways each", len(suite.gateways), len(suite.gateways)), func() {
+				It(fmt.Sprintf("should create %d ENCs (one per target pod)", suite.targetReplicas), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "enc", "-n", suite.namespace,
 							"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
 						out, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
-						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(len(suite.gateways)))
+						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(suite.targetReplicas))
 					}).Should(Succeed())
 				})
 
-				It(fmt.Sprintf("should have %d target Pods running with sidecar", len(suite.gateways)), func() {
+				It(fmt.Sprintf("should have %d target Pods running with sidecar", suite.targetReplicas), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 							"-l", fmt.Sprintf("app=%s", suite.targetApp), "--field-selector=status.phase=Running",
 							"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
 						out, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
-						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(len(suite.gateways)))
+						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(suite.targetReplicas))
 					}).Should(Succeed())
 				})
 			})
