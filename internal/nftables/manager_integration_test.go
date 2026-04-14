@@ -49,16 +49,14 @@ func newTestConn(t *testing.T) *nftables.Conn {
 func TestIntegration_SetupLoadsAllChains(t *testing.T) {
 	conn := newTestConn(t)
 	mgr := &Manager{
-		tableName:          sharedTableName,
-		queueNum:           0,
-		queueTotal:         4,
-		excludedInterfaces: []string{"net"},
-		conn:               conn,
+		tableName:  sharedTableName,
+		queueNum:   0,
+		queueTotal: 4,
+		conn:       conn,
 	}
 
 	require.NoError(t, mgr.Setup())
 
-	// Verify main table chains
 	chains, err := conn.ListChains()
 	require.NoError(t, err)
 
@@ -70,9 +68,6 @@ func TestIntegration_SetupLoadsAllChains(t *testing.T) {
 	assert.True(t, chainNames[preroutingChainName], "prerouting chain should exist")
 	assert.True(t, chainNames[outputChainName], "output chain should exist")
 	assert.True(t, chainNames[pmtudChainName], "snat-local (PMTUD) chain should exist")
-	assert.True(t, chainNames[defragPreChainName], "pre-defrag chain should exist")
-	assert.True(t, chainNames[defragInChainName], "in chain should exist")
-	assert.True(t, chainNames[defragOutChainName], "out chain should exist")
 }
 
 func TestIntegration_PMTUDChainType(t *testing.T) {
@@ -116,64 +111,6 @@ func TestIntegration_PMTUDChainRuleCount(t *testing.T) {
 	assert.Len(t, rules, 2, "PMTUD chain should have 2 rules (IPv4 + IPv6)")
 }
 
-func TestIntegration_DefragChainPriority(t *testing.T) {
-	conn := newTestConn(t)
-	mgr := &Manager{
-		tableName:          sharedTableName,
-		queueNum:           0,
-		queueTotal:         1,
-		excludedInterfaces: []string{"net"},
-		conn:               conn,
-	}
-
-	require.NoError(t, mgr.Setup())
-
-	chains, err := conn.ListChains()
-	require.NoError(t, err)
-
-	for _, c := range chains {
-		if c.Name == defragPreChainName {
-			assert.Equal(t, int32(-500), int32(*c.Priority),
-				"pre-defrag chain must be at priority -500 (before conntrack defrag at -400)")
-			return
-		}
-	}
-	t.Fatal("pre-defrag chain not found")
-}
-
-func TestIntegration_DefragExcludedInterfaceRules(t *testing.T) {
-	conn := newTestConn(t)
-	mgr := &Manager{
-		tableName:          sharedTableName,
-		queueNum:           0,
-		queueTotal:         1,
-		excludedInterfaces: []string{"net1", "net2"},
-		conn:               conn,
-	}
-
-	require.NoError(t, mgr.Setup())
-
-	rules, err := conn.GetRules(mgr.defragTable, mgr.defragPreChain)
-	require.NoError(t, err)
-	assert.Len(t, rules, 2, "pre-defrag chain should have one notrack rule per excluded prefix")
-}
-
-func TestIntegration_DefragNoExcludedPrefixes(t *testing.T) {
-	conn := newTestConn(t)
-	mgr := &Manager{
-		tableName:  sharedTableName,
-		queueNum:   0,
-		queueTotal: 1,
-		conn:       conn,
-	}
-
-	require.NoError(t, mgr.Setup())
-
-	rules, err := conn.GetRules(mgr.defragTable, mgr.defragPreChain)
-	require.NoError(t, err)
-	assert.Len(t, rules, 0, "pre-defrag chain should be empty when no prefixes excluded")
-}
-
 func TestIntegration_SetVIPsAndCleanup(t *testing.T) {
 	conn := newTestConn(t)
 	mgr := &Manager{
@@ -186,7 +123,6 @@ func TestIntegration_SetVIPsAndCleanup(t *testing.T) {
 	require.NoError(t, mgr.Setup())
 	require.NoError(t, mgr.SetVIPs([]string{"10.0.0.1/32", "2001:db8::1/128"}))
 
-	// Verify sets have elements
 	elems, err := conn.GetSetElements(mgr.ipv4Set)
 	require.NoError(t, err)
 	assert.NotEmpty(t, elems, "IPv4 set should have elements")
@@ -195,7 +131,6 @@ func TestIntegration_SetVIPsAndCleanup(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, elems, "IPv6 set should have elements")
 
-	// Cleanup removes both tables
 	require.NoError(t, mgr.Cleanup())
 
 	tables, err := conn.ListTables()

@@ -34,12 +34,6 @@ func TestNewManager(t *testing.T) {
 	assert.Equal(t, "meridio-lb", mgr.tableName)
 }
 
-func TestNewManagerWithExcludedInterfaces(t *testing.T) {
-	mgr, err := NewManager(0, 4, "net1", "net2")
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"net1", "net2"}, mgr.excludedInterfaces)
-}
-
 func TestExtractVIPs(t *testing.T) {
 	tests := []struct {
 		name     string

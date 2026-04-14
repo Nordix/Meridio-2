@@ -1329,23 +1329,3 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 	})
 })
-
-func TestDiscoverInterfacesBySubnets(t *testing.T) {
-	RegisterFailHandler(Fail)
-
-	t.Run("EmptyCIDRs", func(t *testing.T) {
-		result := discoverInterfacesBySubnets(nil)
-		Expect(result).To(BeNil())
-	})
-
-	t.Run("InvalidCIDRs", func(t *testing.T) {
-		result := discoverInterfacesBySubnets([]string{"not-a-cidr"})
-		Expect(result).To(BeNil())
-	})
-
-	t.Run("LoopbackExcluded", func(t *testing.T) {
-		// 127.0.0.0/8 matches loopback but loopback should be skipped
-		result := discoverInterfacesBySubnets([]string{"127.0.0.0/8"})
-		Expect(result).NotTo(ContainElement("lo"))
-	})
-}

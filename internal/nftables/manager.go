@@ -31,50 +31,38 @@ const (
 	preroutingChainName = "prerouting"
 	outputChainName     = "output"
 	pmtudChainName      = "snat-local"
-	defragTableName     = "meridio-defrag"
-	defragPreChainName  = "pre-defrag"
-	defragInChainName   = "in"
-	defragOutChainName  = "out"
 	ipv4VIPSetName      = "ipv4-vips"
 	ipv6VIPSetName      = "ipv6-vips"
 )
 
 // Manager manages nftables rules for VIP traffic.
 type Manager struct {
-	tableName          string
-	queueNum           uint16
-	queueTotal         uint16
-	table              *nftables.Table
-	preChain           *nftables.Chain
-	outputChain        *nftables.Chain
-	pmtudChain         *nftables.Chain
-	defragTable        *nftables.Table
-	defragPreChain     *nftables.Chain
-	defragInChain      *nftables.Chain
-	defragOutChain     *nftables.Chain
-	ipv4Set            *nftables.Set
-	ipv6Set            *nftables.Set
-	ipv4PreRule        *nftables.Rule
-	ipv6PreRule        *nftables.Rule
-	ipv4OutRule        *nftables.Rule
-	ipv6OutRule        *nftables.Rule
-	excludedInterfaces []string
-	conn               *nftables.Conn
+	tableName   string
+	queueNum    uint16
+	queueTotal  uint16
+	table       *nftables.Table
+	preChain    *nftables.Chain
+	outputChain *nftables.Chain
+	pmtudChain  *nftables.Chain
+	ipv4Set     *nftables.Set
+	ipv6Set     *nftables.Set
+	ipv4PreRule *nftables.Rule
+	ipv6PreRule *nftables.Rule
+	ipv4OutRule *nftables.Rule
+	ipv6OutRule *nftables.Rule
+	conn        *nftables.Conn
 }
 
 const sharedTableName = "meridio-lb" // Shared table for all DistributionGroups
 
 // NewManager creates a new nftables manager.
 // Uses a single shared table for all DistributionGroups.
-// excludedInterfaces are interface names for which defragmentation is skipped
-// (target-facing interfaces, to preserve PMTU information in outbound packets).
-func NewManager(queueNum, queueTotal uint16, excludedInterfaces ...string) (*Manager, error) {
+func NewManager(queueNum, queueTotal uint16) (*Manager, error) {
 	return &Manager{
-		tableName:          sharedTableName,
-		queueNum:           queueNum,
-		queueTotal:         queueTotal,
-		excludedInterfaces: excludedInterfaces,
-		conn:               &nftables.Conn{},
+		tableName:  sharedTableName,
+		queueNum:   queueNum,
+		queueTotal: queueTotal,
+		conn:       &nftables.Conn{},
 	}, nil
 }
 
@@ -93,9 +81,6 @@ func (m *Manager) Setup() error {
 		return err
 	}
 	if err := m.createPMTUDChain(); err != nil {
-		return err
-	}
-	if err := m.createDefragTable(); err != nil {
 		return err
 	}
 	return nil
@@ -118,9 +103,6 @@ func (m *Manager) SetVIPs(cidrs []string) error {
 // Cleanup removes the nftables table and all associated rules.
 func (m *Manager) Cleanup() error {
 	m.conn.DelTable(m.table)
-	if m.defragTable != nil {
-		m.conn.DelTable(m.defragTable)
-	}
 	return m.conn.Flush()
 }
 
@@ -366,93 +348,6 @@ func buildPMTUDIPv6Exprs(ipv6Set *nftables.Set) []expr.Any {
 		&expr.Immediate{Register: 1, Data: binaryutil.NativeEndian.PutUint32(0)},
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
 	}
-}
-
-// createDefragTable creates a separate nftables table for selective defragmentation.
-// Enables kernel defrag for external traffic (needed for L4 flow matching) while
-// skipping defrag for target-facing interfaces (preserving PMTU information).
-func (m *Manager) createDefragTable() error {
-	m.defragTable = m.conn.AddTable(&nftables.Table{
-		Name:   defragTableName,
-		Family: nftables.TableFamilyINet,
-	})
-
-	// pre-defrag chain at priority -500 (before conntrack defrag at -400)
-	// Applies notrack to packets from target-facing interfaces to skip defrag
-	m.defragPreChain = m.conn.AddChain(&nftables.Chain{
-		Name:     defragPreChainName,
-		Table:    m.defragTable,
-		Type:     nftables.ChainTypeFilter,
-		Hooknum:  nftables.ChainHookPrerouting,
-		Priority: nftables.ChainPriorityRef(-500),
-	})
-
-	// notrack for each excluded interface prefix
-	for _, iface := range m.excludedInterfaces {
-		m.conn.AddRule(&nftables.Rule{
-			Table: m.defragTable,
-			Chain: m.defragPreChain,
-			Exprs: []expr.Any{
-				&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-				// Prefix match: CmpOpEq on a byte sequence shorter than the 16-byte iifname
-				// field works as prefix match because the kernel zero-pads the field.
-				// Same technique as Meridio v1 (pkg/loadbalancer/stream/defrag.go).
-				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte(iface)},
-				&expr.Notrack{},
-			},
-		})
-	}
-
-	// in chain: load defrag via dummy conntrack, then notrack all ingress
-	m.defragInChain = m.conn.AddChain(&nftables.Chain{
-		Name:     defragInChainName,
-		Table:    m.defragTable,
-		Type:     nftables.ChainTypeFilter,
-		Hooknum:  nftables.ChainHookPrerouting,
-		Priority: nftables.ChainPriorityRaw,
-	})
-
-	// notrack all ingress (disable conntrack bookkeeping)
-	m.conn.AddRule(&nftables.Rule{
-		Table: m.defragTable,
-		Chain: m.defragInChain,
-		Exprs: []expr.Any{&expr.Notrack{}},
-	})
-
-	// dummy conntrack rule to trigger kernel defrag module loading
-	m.conn.AddRule(&nftables.Rule{
-		Table: m.defragTable,
-		Chain: m.defragInChain,
-		Exprs: []expr.Any{
-			&expr.Ct{Register: 1, SourceRegister: false, Key: expr.CtKeySTATE},
-			&expr.Bitwise{
-				SourceRegister: 1,
-				DestRegister:   1,
-				Len:            4,
-				Mask:           binaryutil.NativeEndian.PutUint32(expr.CtStateBitUNTRACKED),
-				Xor:            binaryutil.NativeEndian.PutUint32(0),
-			},
-			&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: []byte{0, 0, 0, 0}},
-			&expr.Verdict{Kind: expr.VerdictAccept},
-		},
-	})
-
-	// out chain: notrack all egress
-	m.defragOutChain = m.conn.AddChain(&nftables.Chain{
-		Name:     defragOutChainName,
-		Table:    m.defragTable,
-		Type:     nftables.ChainTypeFilter,
-		Hooknum:  nftables.ChainHookOutput,
-		Priority: nftables.ChainPriorityRaw,
-	})
-
-	m.conn.AddRule(&nftables.Rule{
-		Table: m.defragTable,
-		Chain: m.defragOutChain,
-		Exprs: []expr.Any{&expr.Notrack{}},
-	})
-
-	return m.conn.Flush()
 }
 
 func (m *Manager) updateSet(set *nftables.Set, cidrs []string) error {

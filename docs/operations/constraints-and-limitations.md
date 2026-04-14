@@ -72,7 +72,7 @@ The `kernel` protocol blocks in the generated bird.conf do not set `scan time`. 
 
 **15. ~~PMTU handling not implemented in LB Pods~~ (Resolved)**
 
-PMTU handling is implemented: the LB controller creates nftables PMTU SNAT and defrag chains at startup. The PMTU SNAT chain rewrites ICMP Frag Needed / Packet Too Big source addresses to the VIP. The defrag table selectively skips defragmentation for app-facing interfaces (auto-discovered from `networkSubnets` CIDRs). Requires `fwmark_reflect` sysctls — see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods).
+PMTU handling is implemented: the LB controller creates a nftables PMTU SNAT chain at startup that rewrites ICMP Frag Needed / Packet Too Big source addresses to the VIP. Requires `fwmark_reflect` sysctls — see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods).
 
 **16. BGP authentication not supported**
 
