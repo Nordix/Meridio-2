@@ -18,6 +18,7 @@ package nfqlb
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -80,11 +81,5 @@ func anyIPRange(ips []string) bool {
 
 // anyPortRange returns true if ANY of the possible input port ranges cover all the possible ports (0-65535).
 func anyPortRange(ports []string) bool {
-	for _, port := range ports {
-		if port == maxPortRange {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(ports, maxPortRange)
 }

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	nspAPI "github.com/nordix/meridio/api/nsp/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -86,8 +85,7 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	var errFinal error
 	for flowName := range currentFlows {
 		if _, exists := newFlows[flowName]; !exists {
-			flow := &nspAPI.Flow{Name: flowName}
-			if err := instance.DeleteFlow(flow); err != nil {
+			if err := instance.DeleteFlow(ctx, &nameOnlyFlow{name: flowName}); err != nil {
 				logr.Error(err, "Failed to delete flow", "flow", flowName)
 				errFinal = fmt.Errorf("%w; failed to delete flow %s: %w", errFinal, flowName, err)
 			} else {
@@ -99,8 +97,8 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	// IMPROVEMENT #5: Add/update flows BEFORE configuring nftables
 	successfulFlows := make(map[string]*meridio2v1alpha1.L34Route)
 	for flowName, route := range newFlows {
-		flow := c.convertL34RouteToFlow(route)
-		if err := instance.SetFlow(flow); err != nil {
+		flow := newL34RouteFlow(flowName, route)
+		if err := instance.AddFlow(ctx, flow); err != nil {
 			logr.Error(err, "Failed to set flow", "flow", flowName)
 			errFinal = fmt.Errorf("%w; failed to set flow %s: %w", errFinal, flowName, err)
 		} else {
@@ -163,13 +161,12 @@ func (c *Controller) hasReadyEndpoints(ctx context.Context, distGroupName string
 }
 
 // deleteAllFlows deletes all flows for a DistributionGroup.
-func (c *Controller) deleteAllFlows(ctx context.Context, instance interface{ DeleteFlow(*nspAPI.Flow) error }, distGroupName string) error {
+func (c *Controller) deleteAllFlows(ctx context.Context, instance nfqlbInstance, distGroupName string) error {
 	logr := log.FromContext(ctx)
 	currentFlows := c.flows[distGroupName]
 	var errFinal error
 	for flowName := range currentFlows {
-		flow := &nspAPI.Flow{Name: flowName}
-		if err := instance.DeleteFlow(flow); err != nil {
+		if err := instance.DeleteFlow(ctx, &nameOnlyFlow{name: flowName}); err != nil {
 			logr.Error(err, "Failed to delete flow", "flow", flowName)
 			errFinal = fmt.Errorf("%w; failed to delete flow %s: %w", errFinal, flowName, err)
 		} else {
@@ -263,34 +260,6 @@ func (c *Controller) referencesDistributionGroup(route *meridio2v1alpha1.L34Rout
 		}
 	}
 	return "", false
-}
-
-// convertL34RouteToFlow converts an L34Route to NFQLB Flow.
-func (c *Controller) convertL34RouteToFlow(route *meridio2v1alpha1.L34Route) *nspAPI.Flow {
-	flow := &nspAPI.Flow{
-		Name:                  route.Name,
-		Priority:              route.Spec.Priority,
-		SourceSubnets:         route.Spec.SourceCIDRs,
-		SourcePortRanges:      route.Spec.SourcePorts,
-		DestinationPortRanges: route.Spec.DestinationPorts,
-		ByteMatches:           route.Spec.ByteMatches,
-	}
-
-	// Convert protocols
-	protocols := make([]string, len(route.Spec.Protocols))
-	for i, p := range route.Spec.Protocols {
-		protocols[i] = string(p)
-	}
-	flow.Protocols = protocols
-
-	// Convert VIPs
-	vips := make([]*nspAPI.Vip, len(route.Spec.DestinationCIDRs))
-	for i, cidr := range route.Spec.DestinationCIDRs {
-		vips[i] = &nspAPI.Vip{Address: cidr}
-	}
-	flow.Vips = vips
-
-	return flow
 }
 
 // getGatewayVIPs extracts VIP addresses from Gateway status

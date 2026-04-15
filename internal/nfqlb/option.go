@@ -55,12 +55,12 @@ func WithNFQLBPath(nfqlbPath string) Option {
 	}
 }
 
-// ServiceOption applies a configuration option value to a nfqlb service.
-type ServiceOption func(*nfqlbServiceConfig)
+// InstanceOption applies a configuration option value to a nfqlb instance.
+type InstanceOption func(*nfqlbInstanceConfig)
 
 // WithQLength sets the queue length.
-func WithMaxTargets(maxTargets int) ServiceOption {
-	return func(c *nfqlbServiceConfig) {
+func WithMaxTargets(maxTargets int) InstanceOption {
+	return func(c *nfqlbInstanceConfig) {
 		c.maxTargets = maxTargets
 	}
 }

@@ -32,28 +32,33 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// NFQueueLoadBalancer represents an nfqlb process with its related configuration and services.
+// NFQueueLoadBalancer represents an nfqlb process with its related configuration and instances.
 type NFQueueLoadBalancer struct {
 	*nfqlbConfig
-	services map[string]*Service // key: name
-	mu       sync.Mutex
-	logger   logr.Logger
+	instances map[string]*Instance // key: name
+	mu        sync.Mutex
+	logger    logr.Logger
 }
 
 // New instantiates a NFQLB struct and configure netfiler for the nfqlb process.
 // New creates a new NFQueueLoadBalancer.
 // Nftables rules for VIP matching and nfqueue are managed externally
 // (via internal/nftables.Manager). This package only manages the nfqlb
-// process, shared memory services, flows, targets, and policy routing.
+// process, shared memory instances, flows, targets, and policy routing.
 func New(options ...Option) (*NFQueueLoadBalancer, error) {
 	config := newNFQLBConfig()
 	for _, opt := range options {
 		opt(config)
 	}
 
+	// Validate queue format to prevent command injection
+	if _, _, err := getQueue(config.queue); err != nil {
+		return nil, fmt.Errorf("invalid queue %q: %w", config.queue, err)
+	}
+
 	return &NFQueueLoadBalancer{
 		nfqlbConfig: config,
-		services:    map[string]*Service{},
+		instances:   map[string]*Instance{},
 		logger:      ctrl.Log.WithName("nfqlb"),
 	}, nil
 }
@@ -78,12 +83,9 @@ func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		nfqlb.heal(ctx)
-	}()
+	})
 
 	var errFinal error
 
@@ -102,23 +104,23 @@ func (nfqlb *NFQueueLoadBalancer) heal(ctx context.Context) {
 		select {
 		case <-time.After(nfqlb.healInterval):
 			nfqlb.mu.Lock()
-			for _, service := range nfqlb.services {
-				service.mu.Lock()
-				for identifier, ips := range service.targets {
-					fwmark := identifier + service.offset
+			for _, instance := range nfqlb.instances {
+				instance.mu.Lock()
+				for identifier, ips := range instance.targets {
+					fwmark := identifier + instance.offset
 
 					for _, ip := range ips {
 						err := createPolicyRoute(fwmark, ip)
 						if err != nil {
 							nfqlb.logger.Error(err, "failed creating policy route, will retry in next heal",
-								"service", service.name,
+								"instance", instance.name,
 								"fwmark", fwmark,
 								"ip", ip,
 							)
 						}
 					}
 				}
-				service.mu.Unlock()
+				instance.mu.Unlock()
 			}
 			nfqlb.mu.Unlock()
 		case <-ctx.Done():
@@ -246,9 +248,9 @@ type Flow interface {
 	GetByteMatches() []string
 }
 
-// Service represents a nfqlb service instantiated with nfqlb init.
-type Service struct {
-	*nfqlbServiceConfig
+// Instance represents a nfqlb instance instantiated with nfqlb init.
+type Instance struct {
+	*nfqlbInstanceConfig
 	name                              string
 	targets                           map[int][]string // Key: identifier ; Value: IPs
 	offset                            int
@@ -257,34 +259,34 @@ type Service struct {
 	nfqlbPath                         string
 }
 
-// AddService adds a nfqlb service.
-func (nfqlb *NFQueueLoadBalancer) AddService(ctx context.Context,
+// AddInstance adds a nfqlb instance.
+func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 	name string,
-	options ...ServiceOption,
-) (*Service, error) {
+	options ...InstanceOption,
+) (*Instance, error) {
 	nfqlb.mu.Lock()
 	defer nfqlb.mu.Unlock()
 
-	nfqlbService, exists := nfqlb.services[name]
+	nfqlbInstance, exists := nfqlb.instances[name]
 	if exists {
-		return nfqlbService, nil
+		return nfqlbInstance, nil
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: add service", "service", name)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: add instance", "instance", name)
 
-	config := newNFQLBServiceConfig()
+	config := newNFQLBInstanceConfig()
 	for _, opt := range options {
 		opt(config)
 	}
 
-	offset, err := getOffset(nfqlb.startingOffset, nfqlb.services, config.maxTargets)
+	offset, err := getOffset(nfqlb.startingOffset, nfqlb.instances, config.maxTargets)
 	if err != nil {
 		return nil, err
 	}
 
-	nfqlbService = &Service{
+	nfqlbInstance = &Instance{
 		name:                              name,
-		nfqlbServiceConfig:                config,
+		nfqlbInstanceConfig:               config,
 		targets:                           map[int][]string{},
 		updateNfQueueDestinationCIDRsFunc: nfqlb.updateNfQueueDestinationCIDRs,
 		offset:                            offset,
@@ -297,9 +299,9 @@ func (nfqlb *NFQueueLoadBalancer) AddService(ctx context.Context,
 		nfqlb.nfqlbPath,
 		"init",
 		fmt.Sprintf("--ownfw=%d", ownfw),
-		fmt.Sprintf("--shm=%s", nfqlbService.name),
-		fmt.Sprintf("--M=%d", nfqlbService.getM()),
-		fmt.Sprintf("--N=%d", nfqlbService.maxTargets),
+		fmt.Sprintf("--shm=%s", nfqlbInstance.name),
+		fmt.Sprintf("--M=%d", nfqlbInstance.getM()),
+		fmt.Sprintf("--N=%d", nfqlbInstance.maxTargets),
 	)
 
 	stdoutStderr, err := cmd.CombinedOutput()
@@ -307,30 +309,30 @@ func (nfqlb *NFQueueLoadBalancer) AddService(ctx context.Context,
 		return nil, fmt.Errorf("failed init nfqlb ; %w; %s", err, stdoutStderr)
 	}
 
-	nfqlb.services[name] = nfqlbService
+	nfqlb.instances[name] = nfqlbInstance
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: service added", "service", name)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: instance added", "instance", name)
 
-	return nfqlbService, nil
+	return nfqlbInstance, nil
 }
 
-// DeleteService deletes a nfqlb service and all related configuration (targets and flows).
-func (nfqlb *NFQueueLoadBalancer) DeleteService(ctx context.Context, name string) error {
+// DeleteInstance deletes a nfqlb instance and all related configuration (targets and flows).
+func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name string) error {
 	nfqlb.mu.Lock()
 
-	nfqlbService, exists := nfqlb.services[name]
+	nfqlbInstance, exists := nfqlb.instances[name]
 	if !exists {
 		return nil
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: delete service", "service", name)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: delete instance", "instance", name)
 
-	delete(nfqlb.services, name)
+	delete(nfqlb.instances, name)
 
 	nfqlb.mu.Unlock()
 
-	nfqlbService.mu.Lock()
-	defer nfqlbService.mu.Unlock()
+	nfqlbInstance.mu.Lock()
+	defer nfqlbInstance.mu.Unlock()
 
 	// unlink the shared mem file
 	//nolint:gosec
@@ -343,40 +345,40 @@ func (nfqlb *NFQueueLoadBalancer) DeleteService(ctx context.Context, name string
 
 	stdoutStderr, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed deleting nfqlb service ; %w; %s", err, stdoutStderr)
+		return fmt.Errorf("failed deleting nfqlb instance ; %w; %s", err, stdoutStderr)
 	}
 
 	var errFinal error
 
-	for targetIdentifier, targetIPs := range nfqlbService.targets {
-		err := nfqlbService.deleteTargetNoLock(ctx, targetIPs, targetIdentifier)
+	for targetIdentifier, targetIPs := range nfqlbInstance.targets {
+		err := nfqlbInstance.deleteTargetNoLock(ctx, targetIPs, targetIdentifier)
 		if err != nil {
-			errFinal = fmt.Errorf("failed deleting nfqlb service target ; %w; %w", err, errFinal)
+			errFinal = fmt.Errorf("failed deleting nfqlb instance target ; %w; %w", err, errFinal)
 		}
 	}
 
 	flows, err := nfqlb.flowList(ctx)
 	if err != nil {
-		return fmt.Errorf("failed deleting nfqlb service flows ; %w; %w", err, errFinal)
+		return fmt.Errorf("failed deleting nfqlb instance flows ; %w; %w", err, errFinal)
 	}
 
 	for _, flow := range flows {
 		if flow.ServerName == name {
-			err = nfqlbService.DeleteFlow(ctx, flow)
+			err = nfqlbInstance.DeleteFlow(ctx, flow)
 			if err != nil {
-				errFinal = fmt.Errorf("failed deleting nfqlb service flow ; %w; %w", err, errFinal)
+				errFinal = fmt.Errorf("failed deleting nfqlb instance flow ; %w; %w", err, errFinal)
 			}
 		}
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: service deleted", "service", name)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: instance deleted", "instance", name)
 
 	return errFinal
 }
 
-// AddFlow adds/updates a Flow selecting the associated nfqlb service.
-func (s *Service) AddFlow(ctx context.Context, flowToAdd Flow) error {
-	ctrl.LoggerFrom(ctx).Info("nfqlb: add flow", "service", s.name, "flow", flowToAdd)
+// AddFlow adds/updates a Flow selecting the associated nfqlb instance.
+func (s *Instance) AddFlow(ctx context.Context, flowToAdd Flow) error {
+	ctrl.LoggerFrom(ctx).Info("nfqlb: add flow", "instance", s.name, "flow", flowToAdd)
 
 	args := []string{
 		"flow-set",
@@ -423,14 +425,14 @@ func (s *Service) AddFlow(ctx context.Context, flowToAdd Flow) error {
 		return fmt.Errorf("failed setting nfqlb flow ; %w; %s", err, stdoutStderr)
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: flow added", "service", s.name, "flow", flowToAdd)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: flow added", "instance", s.name, "flow", flowToAdd)
 
 	return nil
 }
 
-// DeleteFlow adds a Flow selecting the associated nfqlb service.
-func (s *Service) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
-	ctrl.LoggerFrom(ctx).Info("nfqlb: delete flow", "service", s.name, "flow", flowToDelete)
+// DeleteFlow adds a Flow selecting the associated nfqlb instance.
+func (s *Instance) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
+	ctrl.LoggerFrom(ctx).Info("nfqlb: delete flow", "instance", s.name, "flow", flowToDelete)
 
 	args := []string{
 		"flow-delete",
@@ -454,14 +456,14 @@ func (s *Service) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
 		return fmt.Errorf("failed setting nfqlb flow ; %w; %s", err, stdoutStderr)
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: flow deleted", "service", s.name, "flow", flowToDelete)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: flow deleted", "instance", s.name, "flow", flowToDelete)
 
 	return nil
 }
 
-// AddTarget adds a target identifier to the nfqlb service
+// AddTarget adds a target identifier to the nfqlb instance
 // and configures the policy route associated.
-func (s *Service) AddTarget(ctx context.Context, ips []string, identifier int) error {
+func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -470,7 +472,7 @@ func (s *Service) AddTarget(ctx context.Context, ips []string, identifier int) e
 		return nil
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: add target", "service", s.name, "ips", ips, "identifier", identifier)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: add target", "instance", s.name, "ips", ips, "identifier", identifier)
 
 	//nolint:gosec
 	stdoutStderr, err := exec.CommandContext(
@@ -493,34 +495,34 @@ func (s *Service) AddTarget(ctx context.Context, ips []string, identifier int) e
 		err = createPolicyRoute(fwmark, ip)
 		if err != nil {
 			ctrl.LoggerFrom(ctx).Error(err, "failed creating policy route, will retry in next heal",
-				"service", s.name,
+				"instance", s.name,
 				"fwmark", fwmark,
 				"ip", ip,
 			)
 		}
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: target added", "service", s.name, "ips", ips, "identifier", identifier)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: target added", "instance", s.name, "ips", ips, "identifier", identifier)
 
 	return nil
 }
 
-// DeleteTarget deletes a target identifier to the nfqlb service
+// DeleteTarget deletes a target identifier to the nfqlb instance
 // and deletes the policy route associated.
-func (s *Service) DeleteTarget(ctx context.Context, ips []string, identifier int) error {
+func (s *Instance) DeleteTarget(ctx context.Context, ips []string, identifier int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	return s.deleteTargetNoLock(ctx, ips, identifier)
 }
 
-func (s *Service) deleteTargetNoLock(ctx context.Context, ips []string, identifier int) error {
+func (s *Instance) deleteTargetNoLock(ctx context.Context, ips []string, identifier int) error {
 	_, exists := s.targets[identifier]
 	if !exists {
 		return nil
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: delete target", "service", s.name, "ips", ips, "identifier", identifier)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: delete target", "instance", s.name, "ips", ips, "identifier", identifier)
 
 	delete(s.targets, identifier)
 
@@ -540,7 +542,7 @@ func (s *Service) deleteTargetNoLock(ctx context.Context, ips []string, identifi
 		_ = deletePolicyRoute(identifier+s.offset, ip)
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: target deleted", "service", s.name, "ips", ips, "identifier", identifier)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: target deleted", "instance", s.name, "ips", ips, "identifier", identifier)
 
 	return nil
 }

@@ -23,7 +23,7 @@ import (
 
 var errIdentifierOffset = errors.New("unable to generate identifier offset")
 
-func getOffset(startingOffset int, services map[string]*Service, maxTarget int) (int, error) {
+func getOffset(startingOffset int, instances map[string]*Instance, maxTarget int) (int, error) {
 	offset := startingOffset
 
 search:
@@ -32,14 +32,14 @@ search:
 			return 0, errIdentifierOffset
 		}
 
-		for _, service := range services {
-			serviceStart := service.offset
-			serviceEnd := serviceStart + service.maxTargets - 1
+		for _, instance := range instances {
+			serviceStart := instance.offset
+			serviceEnd := serviceStart + instance.maxTargets - 1
 			currentSearchStart := offset
 			currentSearchEnd := offset + maxTarget - 1
 
 			if currentSearchStart <= serviceEnd && currentSearchEnd >= serviceStart {
-				offset = serviceStart + service.maxTargets
+				offset = serviceStart + instance.maxTargets
 
 				continue search
 			}

@@ -45,16 +45,16 @@ func newNFQLBConfig() *nfqlbConfig {
 	}
 }
 
-type nfqlbServiceConfig struct {
+type nfqlbInstanceConfig struct {
 	maxTargets int
 }
 
-func newNFQLBServiceConfig() *nfqlbServiceConfig {
-	return &nfqlbServiceConfig{
+func newNFQLBInstanceConfig() *nfqlbInstanceConfig {
+	return &nfqlbInstanceConfig{
 		maxTargets: defaultMaxTargets,
 	}
 }
 
-func (sc *nfqlbServiceConfig) getM() int {
+func (sc *nfqlbInstanceConfig) getM() int {
 	return sc.maxTargets * maglevMMultiplier
 }

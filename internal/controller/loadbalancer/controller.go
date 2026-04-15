@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/google/nftables"
-	"github.com/nordix/meridio/pkg/loadbalancer/types"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -61,22 +60,18 @@ type Controller struct {
 	Scheme            *runtime.Scheme
 	GatewayName       string
 	GatewayNamespace  string
-	LBFactory         types.NFQueueLoadBalancerFactory
+	NFQLB             nfqlbManager
 	NFTConn           *nftables.Conn
 	NFTTable          *nftables.Table
 	NFTChain          *nftables.Chain
 	NftManagerFactory func(queueNum, queueTotal uint16) (nftablesManager, error)
 
-	mu             sync.Mutex
-	instances      map[string]types.NFQueueLoadBalancer             // key: DistributionGroup name
-	nftManager     nftablesManager                                  // Shared nftables manager for all DGs
-	routingManager *RoutingManager                                  // Manages policy routing for all targets
-	targets        map[string]map[int][]string                      // key: DistributionGroup name -> identifier -> IPs
-	flows          map[string]map[string]*meridio2v1alpha1.L34Route // key: DistributionGroup name -> L34Route name
-	dgIDs          map[string]int                                   // key: DistributionGroup name -> ID (0, 1, 2, ...)
-	freedIDs       []int                                            // Pool of freed IDs for reuse
-	nextID         int                                              // Next available ID if no freed IDs
-	currentVIPs    []string                                         // Currently configured VIPs (to avoid redundant updates)
+	mu          sync.Mutex
+	instances   map[string]nfqlbInstance                         // key: DistributionGroup name
+	nftManager  nftablesManager                                  // Shared nftables manager for all DGs
+	targets     map[string]map[int][]string                      // key: DistributionGroup name -> identifier -> IPs
+	flows       map[string]map[string]*meridio2v1alpha1.L34Route // key: DistributionGroup name -> L34Route name
+	currentVIPs []string                                         // Currently configured VIPs (to avoid redundant updates)
 }
 
 // nftablesManager interface for nftables operations
@@ -162,21 +157,15 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Cleanup NFQLB instance
-	if instance, exists := c.instances[distGroupName]; exists {
-		logr.Info("Deleting NFQLB instance", "distGroup", distGroupName)
-		if err := instance.Delete(); err != nil {
-			logr.Error(err, "Failed to delete NFQLB instance", "distGroup", distGroupName)
+	// Cleanup NFQLB service
+	if _, exists := c.instances[distGroupName]; exists {
+		logr.Info("Deleting NFQLB service", "distGroup", distGroupName)
+		if err := c.NFQLB.DeleteInstance(ctx, distGroupName); err != nil {
+			logr.Error(err, "Failed to delete NFQLB service", "distGroup", distGroupName)
 		}
 		delete(c.instances, distGroupName)
 		delete(c.targets, distGroupName)
 		delete(c.flows, distGroupName)
-
-		// Return ID to freed pool for reuse
-		if id, exists := c.dgIDs[distGroupName]; exists {
-			c.freedIDs = append(c.freedIDs, id)
-			delete(c.dgIDs, distGroupName)
-		}
 	}
 
 	// Note: nftables manager is shared, not cleaned up per-DG
@@ -297,9 +286,6 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 }
 
 func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
-	// Initialize routing manager
-	c.routingManager = NewRoutingManager()
-
 	// Initialize shared nftables manager
 	var err error
 	if c.NftManagerFactory != nil {

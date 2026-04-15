@@ -22,7 +22,6 @@ import (
 	"fmt"
 
 	"github.com/google/nftables"
-	"github.com/nordix/meridio/pkg/loadbalancer/nfqlb"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -38,6 +37,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
+	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
 var (
@@ -91,7 +91,11 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	}
 
 	// Initialize NFQLB
-	lbFactory := nfqlb.NewLbFactory(nfqlb.WithNFQueue(cfg.NFQueue))
+	nfqlbInstance, err := nfqlb.New(nfqlb.WithQueue(cfg.NFQueue))
+	if err != nil {
+		setupLog.Error(err, "failed to create NFQLB instance")
+		return err
+	}
 
 	// NFQLB lifecycle: if the process fails, cancel context to crash the container.
 	// Kubernetes will restart via CrashLoopBackOff. A running LB Pod with dead NFQLB
@@ -102,7 +106,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 
 	go func() {
 		setupLog.Info("Starting NFQLB process")
-		err := lbFactory.Start(ctx)
+		err := nfqlbInstance.Start(ctx)
 		if err != nil && ctx.Err() == nil {
 			setupLog.Error(err, "NFQLB process failed")
 			cancel(fmt.Errorf("NFQLB process failed: %w", err))
@@ -185,7 +189,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		Scheme:           mgr.GetScheme(),
 		GatewayName:      cfg.GatewayName,
 		GatewayNamespace: cfg.GatewayNamespace,
-		LBFactory:        lbFactory,
+		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
 		NFTConn:          nftConn,
 		NFTTable:         nftTable,
 		NFTChain:         nftChain,

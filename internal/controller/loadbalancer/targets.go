@@ -27,25 +27,6 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 )
 
-const (
-	baseOffset       = 5000 // Base offset for all fwmarks
-	offsetMultiplier = 1024 // Offset multiplier per DistributionGroup
-)
-
-// getFwmarkOffset calculates the fwmark offset for a DistributionGroup
-// Formula: DistributionGroup_ID * 1024 + 5000
-// DistributionGroup_ID is assigned sequentially (0, 1, 2, ...) to avoid collisions
-// Note: Caller must hold c.mu lock
-func (c *Controller) getFwmarkOffset(distGroupName string) int {
-	dgID, exists := c.dgIDs[distGroupName]
-	if !exists {
-		// Should not happen - ID assigned during instance creation
-		return baseOffset
-	}
-
-	return dgID*offsetMultiplier + baseOffset
-}
-
 // reconcileTargets synchronizes NFQLB targets from EndpointSlices.
 func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
 	logr := log.FromContext(ctx)
@@ -53,13 +34,10 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	instance, exists := c.instances[distGroup.Name]
+	service, exists := c.instances[distGroup.Name]
 	if !exists {
 		return nil
 	}
-
-	// Calculate fwmark offset for this DistributionGroup
-	fwmarkOffset := c.getFwmarkOffset(distGroup.Name)
 
 	// Get EndpointSlices for this DistributionGroup
 	endpointSliceList := &discoveryv1.EndpointSliceList{}
@@ -106,41 +84,21 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}
 	}
 
-	// Deactivate removed targets
-	for identifier := range currentTargets {
+	// Deactivate removed targets (nfqlb handles policy route cleanup internally)
+	for identifier, ips := range currentTargets {
 		if _, exists := newTargets[identifier]; !exists {
-			index := identifier + 1 // NFQLB uses 1-based indexing
-			fwmark := identifier + fwmarkOffset
-			if err := instance.Deactivate(index); err != nil {
+			if err := service.DeleteTarget(ctx, ips, identifier); err != nil {
 				logr.Error(err, "Failed to deactivate target", "identifier", identifier)
 			} else {
 				logr.Info("Deactivated target", "distGroup", distGroup.Name, "identifier", identifier)
 			}
-			// Remove routing for this target
-			if err := c.routingManager.DeleteRoute(fwmark); err != nil {
-				logr.Error(err, "Failed to delete route", "fwmark", fwmark)
-			}
 		}
 	}
 
-	// Activate new/updated targets
+	// Activate new/updated targets (nfqlb handles policy route creation internally)
 	for identifier, ips := range newTargets {
-		index := identifier + 1             // NFQLB uses 1-based indexing
-		fwmark := identifier + fwmarkOffset // fwmark = identifier + offset
-
-		// Configure routing BEFORE activating target to prevent traffic loss
-		if len(ips) > 0 {
-			if err := c.routingManager.AddRoute(fwmark, ips[0]); err != nil {
-				logr.Error(err, "Failed to add route", "fwmark", fwmark, "targetIP", ips[0])
-				continue // Skip activation if routing fails
-			}
-		}
-
-		// Now activate target in NFQLB
-		if err := instance.Activate(index, fwmark); err != nil {
+		if err := service.AddTarget(ctx, ips, identifier); err != nil {
 			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
-			// Cleanup routing on activation failure
-			_ = c.routingManager.DeleteRoute(fwmark)
 		} else {
 			logr.Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
 		}
@@ -151,12 +109,10 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 
 	// Manage readiness file based on endpoint count
 	if len(newTargets) > 0 {
-		// At least one endpoint ready - create readiness file
 		if err := c.createReadinessFile(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to create readiness file", "distGroup", distGroup.Name)
 		}
 	} else {
-		// No endpoints ready - remove readiness file
 		if err := c.removeReadinessFile(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to remove readiness file", "distGroup", distGroup.Name)
 		}
