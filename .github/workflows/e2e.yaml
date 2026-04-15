@@ -112,14 +112,15 @@ jobs:
         run: make -C test/e2e test-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest GINKGO_FLAGS="--junit-report=junit-${{ matrix.suite }}-${{ matrix.k8s_version }}.xml" # ${{ needs.get-tag.outputs.tag }}
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.suite }}-${{ matrix.k8s_version }}
           path: test/e2e/junit-*.xml
           if-no-files-found: warn
       - name: Publish test results
-        if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@v3
         with:
-          files: test/e2e/junit-*.xml
-          check_name: Test Results (${{ matrix.suite }}, ${{ matrix.k8s_version }})
+          name: Test Results (${{ matrix.suite }}, ${{ matrix.k8s_version }})
+          path: test/e2e/junit-*.xml
+          reporter: java-junit
