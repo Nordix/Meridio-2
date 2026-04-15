@@ -30,6 +30,9 @@ WHEREABOUTS_VERSION ?= v0.8.0
 # Suites
 SUITES ?= common-appnetwork separate-appnetwork
 
+# Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
+GINKGO_FLAGS ?=
+
 # Paths
 PROJECT_ROOT := $(shell cd ../.. && pwd)
 LOCALBIN ?= $(PROJECT_ROOT)/bin
@@ -174,7 +177,7 @@ deploy-common-appnetwork: cluster ## Deploy common-appnetwork topology.
 
 .PHONY: test-common-appnetwork
 test-common-appnetwork: ## Run e2e tests for common-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Common App Network"
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Common App Network" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-common-appnetwork
 undeploy-common-appnetwork: ## Undeploy common-appnetwork topology.
@@ -195,7 +198,7 @@ deploy-separate-appnetwork: cluster ## Deploy separate-appnetwork topology.
 
 .PHONY: test-separate-appnetwork
 test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network"
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-separate-appnetwork
 undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
@@ -213,7 +216,7 @@ deploy-all: ## Deploy all suites.
 
 .PHONY: test
 test: deploy-all ## Run all e2e tests in parallel.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e $(GINKGO_FLAGS)
 
 .PHONY: undeploy-all
 undeploy-all: ## Undeploy all suites.
