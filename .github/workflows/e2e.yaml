@@ -69,9 +69,14 @@ jobs:
         suite:
           - common-appnetwork
           - separate-appnetwork
-        image:
-          - v1.32.2@sha256:f226345927d7e348497136874b6d207e0b32cc52154ad8323129352923a3142f
-          - v1.31.6@sha256:28b7cbb993dfe093c76641a0c95807637213c9109b761f1d422c2400e22b8e87
+        k8s_version:
+          - v1.32.2
+          - v1.31.6
+        include:
+          - k8s_version: v1.32.2
+            image: v1.32.2@sha256:f226345927d7e348497136874b6d207e0b32cc52154ad8323129352923a3142f
+          - k8s_version: v1.31.6
+            image: v1.31.6@sha256:28b7cbb993dfe093c76641a0c95807637213c9109b761f1d422c2400e22b8e87
     steps:
       - uses: actions/checkout@v6
         with:
@@ -104,12 +109,12 @@ jobs:
           make -C test/e2e deploy-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest # Modify version before merging!
           kubectl get all -A -o wide
       - name: Run ${{ matrix.suite }} tests
-        run: make -C test/e2e test-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest GINKGO_FLAGS="--junit-report=junit-${{ matrix.suite }}-${{ matrix.image }}.xml" # ${{ needs.get-tag.outputs.tag }}
+        run: make -C test/e2e test-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest GINKGO_FLAGS="--junit-report=junit-${{ matrix.suite }}-${{ matrix.k8s_version }}.xml" # ${{ needs.get-tag.outputs.tag }}
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.suite }}-${{ matrix.image }}
+          name: test-results-${{ matrix.suite }}-${{ matrix.k8s_version }}
           path: test/e2e/junit-*.xml
           if-no-files-found: warn
       - name: Publish test results
@@ -117,4 +122,4 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           files: test/e2e/junit-*.xml
-          check_name: Test Results (${{ matrix.suite }}, ${{ matrix.image }})
+          check_name: Test Results (${{ matrix.suite }}, ${{ matrix.k8s_version }})
