@@ -86,7 +86,11 @@ type nftablesManager interface {
 	Cleanup() error
 }
 
-const kindDistributionGroup = "DistributionGroup"
+const (
+	kindDistributionGroup = "DistributionGroup"
+	groupGatewayAPI       = "gateway.networking.k8s.io"
+	kindGateway           = "Gateway"
+)
 
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logr := log.FromContext(ctx)
@@ -188,6 +192,27 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 // belongsToGateway checks if a DistributionGroup belongs to this Gateway
 // by checking if any L34Route references both this Gateway and this DistributionGroup
 func (c *Controller) belongsToGateway(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) (bool, error) {
+	// 1. Direct parentRefs: DistributionGroup.spec.parentRefs → Gateway
+	for _, parentRef := range distGroup.Spec.ParentRefs {
+		group := groupGatewayAPI
+		if parentRef.Group != nil {
+			group = *parentRef.Group
+		}
+		kind := kindGateway
+		if parentRef.Kind != nil {
+			kind = *parentRef.Kind
+		}
+		namespace := distGroup.Namespace
+		if parentRef.Namespace != nil {
+			namespace = *parentRef.Namespace
+		}
+		if group == groupGatewayAPI && kind == kindGateway &&
+			parentRef.Name == c.GatewayName && namespace == c.GatewayNamespace {
+			return true, nil
+		}
+	}
+
+	// 2. Indirect via L34Route: L34Route.parentRefs → Gateway AND L34Route.backendRefs → DG
 	l34routeList := &meridio2v1alpha1.L34RouteList{}
 	if err := c.List(ctx, l34routeList, client.InNamespace(c.GatewayNamespace)); err != nil {
 		return false, fmt.Errorf("failed to list L34Routes: %w", err)

@@ -224,13 +224,13 @@ func (c *Controller) listMatchingL34Routes(ctx context.Context, distGroup *merid
 func (c *Controller) referencesGateway(route *meridio2v1alpha1.L34Route) bool {
 	for _, parentRef := range route.Spec.ParentRefs {
 		// Default Group to "gateway.networking.k8s.io" when unspecified
-		group := "gateway.networking.k8s.io"
+		group := groupGatewayAPI
 		if parentRef.Group != nil {
 			group = string(*parentRef.Group)
 		}
 
 		// Default Kind to "Gateway" when unspecified
-		kind := "Gateway"
+		kind := kindGateway
 		if parentRef.Kind != nil {
 			kind = string(*parentRef.Kind)
 		}
@@ -243,7 +243,7 @@ func (c *Controller) referencesGateway(route *meridio2v1alpha1.L34Route) bool {
 
 		// Check if this parentRef matches our Gateway
 		if group == gatewayv1.GroupVersion.Group &&
-			kind == "Gateway" &&
+			kind == kindGateway &&
 			string(parentRef.Name) == c.GatewayName &&
 			namespace == c.GatewayNamespace {
 			return true
