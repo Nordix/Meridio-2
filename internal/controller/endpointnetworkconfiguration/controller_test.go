@@ -136,11 +136,11 @@ func TestReconcileENC_CreatesNew(t *testing.T) {
 					Name:     "sllb-a-IPv4",
 					IPFamily: "IPv4",
 					Network: meridio2v1alpha1.NetworkIdentity{
-						Subnet:        "169.111.100.0/24",
+						Subnet:        "169.111.60.0/24",
 						InterfaceHint: "net1",
 					},
 					VIPs:     []string{"20.0.0.1", "20.0.0.2"},
-					NextHops: []string{"169.111.100.3"},
+					NextHops: []string{"169.111.60.3"},
 				},
 			},
 		},
@@ -159,7 +159,7 @@ func TestReconcileENC_CreatesNew(t *testing.T) {
 	assert.Len(t, enc.Spec.Gateways[0].Domains, 1)
 	assert.Equal(t, "sllb-a-IPv4", enc.Spec.Gateways[0].Domains[0].Name)
 	assert.Equal(t, []string{"20.0.0.1", "20.0.0.2"}, enc.Spec.Gateways[0].Domains[0].VIPs)
-	assert.Equal(t, []string{"169.111.100.3"}, enc.Spec.Gateways[0].Domains[0].NextHops)
+	assert.Equal(t, []string{"169.111.60.3"}, enc.Spec.Gateways[0].Domains[0].NextHops)
 
 	// Verify ownerReference
 	require.Len(t, enc.OwnerReferences, 1)

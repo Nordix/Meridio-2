@@ -38,7 +38,7 @@ import (
 // BirdInterface defines the interface for BIRD operations
 type BirdInterface interface {
 	Run(ctx context.Context) error
-	Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter) error
+	Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error
 	Monitor(ctx context.Context, interval time.Duration) (<-chan MonitorStatus, error)
 }
 
@@ -95,7 +95,7 @@ func (b *Bird) Run(ctx context.Context) error {
 	}
 
 	if _, err := os.Stat(b.ConfigFile); errors.Is(err, os.ErrNotExist) {
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}, nil)
 		if err != nil {
 			b.mu.Unlock()
 			return err
@@ -141,7 +141,7 @@ func vipsToCidr(vips []string) []string {
 	return cidrs
 }
 
-func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter) error {
+func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	vips = vipsToCidr(vips)
@@ -153,7 +153,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 		return err
 	}
 
-	conf, err := b.generateConfig(vips, routers)
+	conf, err := b.generateConfig(vips, routers, passwords)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	return nil
 }
 
-func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) (string, error) {
+func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) (string, error) {
 	data := birdConfigData{KernelTableID: b.TableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
 
 	for _, vip := range vips {
@@ -215,7 +215,7 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 				bfdParams[r.Spec.Interface] = r.Spec.Static.BFD
 			}
 		case meridio2v1alpha1.RoutingProtocolBGP, "":
-			rd, err := toBGPRouterData(r)
+			rd, err := toBGPRouterData(r, passwords[r.Name])
 			if err != nil {
 				return "", err
 			}

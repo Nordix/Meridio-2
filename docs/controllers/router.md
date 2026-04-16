@@ -25,18 +25,25 @@ GatewayRouter (cluster-scoped per Gateway namespace)
 ├── spec.interface → network interface name
 ├── spec.protocol → BGP or Static
 ├── spec.bgp → BGP session parameters (ASN, ports, hold time, BFD)
+├── spec.bgp.authentication → TCP-AO keychain (references Secrets)
 └── spec.static → Static routing parameters (BFD supervision)
+
+Secret (same namespace as GatewayRouter)
+└── data[key] → TCP-AO master key value, referenced by keychain entries
 ```
 
 ### Reconcile Flow
 
 ```
-1. Gateway or GatewayRouter change triggers reconcile
+1. Gateway, GatewayRouter, or Secret change triggers reconcile
 2. Filter: skip if Gateway name/namespace doesn't match this instance
 3. Skip if Gateway is being deleted (DeletionTimestamp check)
 4. Fetch Gateway → extract VIPs from status.addresses (IPAddressType only)
 5. List GatewayRouters → filter by gatewayRef matching this Gateway
-6. Call Bird.Configure(vips, routers) which internally:
+6. Resolve TCP-AO passwords: for each GatewayRouter with authentication,
+   fetch referenced Secrets and build passwords map (router name → sendId → password).
+   If any Secret is missing/unreadable → retain current BIRD config unchanged, return.
+7. Call Bird.Configure(vips, routers, passwords) which internally:
    a. Install policy routing rules first (VIP source → BIRD kernel table)
    b. Write config to file (atomic: write tmp + rename)
    c. If BIRD is running: birdc configure (hot reload)
@@ -50,8 +57,11 @@ Policy routes are applied before BIRD reconfiguration to minimize the misrouting
 
 - **Primary**: `Gateway` (For trigger)
 - **Secondary**: `GatewayRouter` via `EnqueueRequestsFromMapFunc` → enqueues the owning Gateway
+- **Secondary**: `Secret` via `EnqueueRequestsFromMapFunc` → enqueues the owning Gateway if the Secret is referenced by any GatewayRouter's TCP-AO keychain
 
-The mapper filters GatewayRouters by `spec.gatewayRef` (not labels), ensuring only relevant changes trigger reconciliation. When `gatewayRef.Namespace` is nil, it defaults to the GatewayRouter's own namespace for comparison.
+The GatewayRouter mapper filters by `spec.gatewayRef` (not labels), ensuring only relevant changes trigger reconciliation. When `gatewayRef.Namespace` is nil, it defaults to the GatewayRouter's own namespace for comparison.
+
+The Secret mapper lists all GatewayRouters in the Secret's namespace and checks if any keychain entry references the Secret by name. If a match is found and the GatewayRouter belongs to this controller's Gateway, it enqueues a reconcile.
 
 ## BIRD Integration
 
@@ -123,6 +133,77 @@ For each VIP:
 Blackhole routes (`0.0.0.0/0` and `::/0`) in table 4097 prevent traffic leaking via the default routing table when no BGP routes exist.
 
 Rules are reconciled idempotently: stale rules removed, missing rules added. Errors are accumulated best-effort (partial progress over rollback); the next reconcile retries any failed operations.
+
+### BGP Authentication (TCP-AO)
+
+The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support.
+
+**Configuration**: Authentication is configured per GatewayRouter via `spec.bgp.authentication`:
+
+```yaml
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: router-a
+spec:
+  gatewayRef:
+    name: sllb-a
+  interface: "vlan-100"
+  address: "169.254.100.150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64512
+    remoteASN: 4200000000
+    authentication:
+      keychain:
+        - sendId: 1
+          recvId: 1
+          algorithm: hmac sha256
+          secretName: bgp-tcp-ao-keys
+          secretKey: key1
+        - sendId: 2
+          recvId: 2
+          algorithm: hmac sha256
+          secretName: bgp-tcp-ao-keys
+          secretKey: key2
+      currentKeyId: 1
+      nextKeyId: 2
+```
+
+**Secret management**: Master keys are stored in Kubernetes Secrets. Each keychain entry references a Secret by name and key:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bgp-tcp-ao-keys
+type: Opaque
+stringData:
+  key1: "my-secret-password-1"
+  key2: "my-secret-password-2"
+```
+
+**Supported algorithms**:
+- `hmac md5`
+- `hmac sha1`
+- `hmac sha224`
+- `hmac sha256`
+- `hmac sha384`
+- `hmac sha512`
+- `cmac aes128`
+
+**Key rotation**: Multiple keys can be configured in the keychain. The `currentKeyId` and `nextKeyId` fields control which key is active for sending and which is advertised for rotation. Both peers must share the same key material for the corresponding key IDs.
+
+**BIRD config generation**: The controller generates BIRD `authentication ao` blocks for all key entries from keychains and their Secrets. If any Secret referenced by a GatewayRouter's keychain is missing or unreadable, the reconciler **retains the previous BIRD configuration unchanged** and logs the unresolved references at info level. It does not return an error or request an explicit requeue — the controller relies on its existing watches (on Secrets and GatewayRouters) to trigger re-reconciliation automatically once the missing data appears.
+
+This means there can be a **delay** between modifying authentication configuration and the new config actually taking effect in BIRD. The controller provides **no status feedback** to the user about whether the requested authentication config has been applied or is still pending resolution. Operators must infer success from BIRD (birdc or logs) or BGP session state.
+
+**Why no error and no status update?**
+
+- Ambiguity of partial config: When `currentKeyId` or `nextKeyId` references a key whose Secret has not yet propagated, there is no safe "partial" authentication config to apply. Retaining the old working config avoids breaking an established BGP session.
+- No GatewayRouter status condition: The router controller must not write authentication-related status conditions to the GatewayRouter. Multiple LB Pods each run independent router controller instances watching the same GatewayRouter. If one Pod has informer cache lag (Secret not yet visible) while another resolves fine, multiple writers would race on the status subresource — causing condition flapping, 409 Conflict errors, and meaningless conditions that do not reflect the true cluster-wide state.
+
+**RBAC**: The router controller requires `get`/`list`/`watch` on Secrets in its namespace (configured in `config/rbac/lb-serviceaccount.yaml`). Because controller-runtime's informer-based cache requires `list`+`watch`, this grants read access to **all** Secrets in the namespace — not just those referenced by keychains. Scope the deployment namespace to limit exposure.
 
 ### BGP and BFD Monitoring
 
@@ -215,8 +296,9 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 | Feature | Meridio-1 | This Controller | Notes |
 |---|---|---|---|
 | BGP config generation | ✅ | ✅ | Dual-stack, BFD, custom ports |
+| BGP authentication (TCP-MD5) | ✅ | ❌ | (RFC 2385) Superseded by TCP-AO |
+| BGP authentication (TCP-AO) | ❌ | ✅ | RFC 5925, key rotation via Secrets |
 | Static routing protocol | ✅ | ✅ | Default route with optional BFD supervision |
-| BGP authentication | ✅ | ❌ | Out of MVP scope |
 | BIRD process lifecycle | ✅ | ✅ | Graceful shutdown via SIGTERM, file-based logging |
 | BIRD startup readiness | ✅ | ❌ | Meridio-1 polls `birdc show status`; this controller relies on retry |
 | BGP monitoring | ✅ (rich) | ✅ (basic) | Meridio-1: per-gateway per-IP-family tracking; here: simple up-count |
@@ -225,12 +307,12 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 | Connectivity → health signal | ✅ | ❌ | Meridio-1 signals NSP; this controller only logs |
 | Error propagation | ✅ | ✅ | errgroup cancels context on BIRD/monitor failure |
 | Metrics | ✅ | ❌ | Meridio-1 has gateway metrics |
-| Config generation method | `fmt.Sprintf` | `text/template` | Migrated for maintainability and future auth support |
+| Config generation method | `fmt.Sprintf` | `text/template` | Migrated for maintainability and auth template composition |
 
 ## Testing
 
 ### Unit Tests
 
-- `internal/controller/router/controller_test.go`: Reconciler logic (gateway filtering, GatewayRouter matching, VIP extraction, address type filtering, enqueue mapper, configure error propagation)
-- `internal/bird/bird_test.go`: Config generation (base, VIPs, routers, full reference config comparison, static routing with/without BFD, BFD interface params first-alphabetically-wins)
+- `internal/controller/router/controller_test.go`: Reconciler logic (gateway filtering, GatewayRouter matching, VIP extraction, address type filtering, enqueue mapper, configure error propagation, TCP-AO secret resolution and password map building)
+- `internal/bird/bird_test.go`: Config generation (base, VIPs, routers, full reference config comparison, static routing with/without BFD, BFD interface params first-alphabetically-wins, TCP-AO authentication block generation with key rotation)
 - `internal/bird/monitor_test.go`: Protocol output parsing, BFD session output parsing, connectivity detection, status formatting, monitor channel lifecycle
