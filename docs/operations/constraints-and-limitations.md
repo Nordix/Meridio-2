@@ -76,9 +76,9 @@ The BIRD configuration now includes `scan time` (default 10 seconds, configurabl
 
 PMTU handling is implemented: the LB controller creates a nftables PMTU SNAT chain at startup that rewrites ICMP Frag Needed / Packet Too Big source addresses to the VIP. Requires `fwmark_reflect` sysctls — see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods).
 
-**15. BGP authentication not supported**
+**15. ~~BGP authentication not supported~~ (Resolved)**
 
-The GatewayRouter CRD has no field for BGP MD5 or TCP-AO authentication. Meridio v1 supported this.
+TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) is now supported via `spec.bgp.authentication` in the GatewayRouter CRD. TCP-AO is the successor to TCP MD5 (RFC 2385), offering stronger cryptographic algorithms and key rotation. Meridio v1 supported TCP-MD5; Meridio v2 supports TCP-AO instead — TCP-MD5 is not supported. Master keys are stored in Kubernetes Secrets referenced by each keychain entry. See [Router controller docs](../controllers/router.md#bgp-authentication-tcp-ao) for configuration details.
 
 **16. ~~Static routing with BFD not supported~~ (Resolved)**
 

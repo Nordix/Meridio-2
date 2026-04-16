@@ -66,7 +66,7 @@ func TestGenerateConfig(t *testing.T) {
 
 func testEmptyConfig(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -79,7 +79,7 @@ func testEmptyConfig(b *Bird) func(t *testing.T) {
 func testWithVips(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		vips := []string{"20.0.0.1/32", "2001:db8::1/128"}
-		conf, err := b.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{})
+		conf, err := b.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -107,7 +107,7 @@ func testWithRouter(b *Bird) func(t *testing.T) {
 				BGP:     &testBGPSpec,
 			},
 		}
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -152,7 +152,7 @@ func testMatchesReferenceConfig() func(t *testing.T) {
 		}
 		vips := []string{"20.0.0.1/32"}
 
-		got, err := bWithLogs.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router})
+		got, err := bWithLogs.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -268,7 +268,7 @@ func testDuplicateInterfaceDedup(b *Bird) func(t *testing.T) {
 			},
 		}
 
-		conf, err := b.generateConfig([]string{}, routers)
+		conf, err := b.generateConfig([]string{}, routers, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -297,7 +297,7 @@ func testStaticRouterWithBFD(b *Bird) func(t *testing.T) {
 				},
 			},
 		}
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -327,7 +327,7 @@ func testStaticRouterBFDParamsOnInterface(b *Bird) func(t *testing.T) {
 				},
 			},
 		}
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -391,7 +391,7 @@ func testStaticBFDParamsFirstAlphabeticallyWins(b *Bird) func(t *testing.T) {
 				},
 			},
 		}
-		conf, err := b.generateConfig([]string{}, routers)
+		conf, err := b.generateConfig([]string{}, routers, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -413,7 +413,7 @@ func testStaticRouterWithoutBFD(b *Bird) func(t *testing.T) {
 				Static:    &meridio2v1alpha1.StaticSpec{},
 			},
 		}
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -437,7 +437,7 @@ func testStaticRouterIPv6WithoutBFD(b *Bird) func(t *testing.T) {
 				Static:    &meridio2v1alpha1.StaticSpec{},
 			},
 		}
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -472,7 +472,7 @@ func testMixedBGPAndStaticRouters(b *Bird) func(t *testing.T) {
 				},
 			},
 		}
-		conf, err := b.generateConfig([]string{}, routers)
+		conf, err := b.generateConfig([]string{}, routers, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -518,7 +518,7 @@ func testSortedByName(b *Bird) func(t *testing.T) {
 			},
 		}
 
-		conf, err := b.generateConfig([]string{}, routers)
+		conf, err := b.generateConfig([]string{}, routers, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -601,7 +601,7 @@ func TestGenerateConfig_Deterministic(t *testing.T) {
 	var reference string
 	for i, vips := range vipPermutations {
 		for j, rts := range routerPermutations {
-			conf, err := b.generateConfig(vips, rts)
+			conf, err := b.generateConfig(vips, rts, nil)
 			if err != nil {
 				t.Fatalf("vips[%d] routers[%d]: generateConfig() error = %v", i, j, err)
 			}
@@ -641,7 +641,7 @@ func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
 	}
 
 	// First Configure writes the config file
-	if err := b.Configure(context.Background(), vips, routers); err != nil {
+	if err := b.Configure(context.Background(), vips, routers, nil); err != nil {
 		t.Fatal(err)
 	}
 	info1, err := os.Stat(cfg.ConfigFile)
@@ -653,7 +653,7 @@ func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Second Configure with same inputs should skip the write
-	if err := b.Configure(context.Background(), vips, routers); err != nil {
+	if err := b.Configure(context.Background(), vips, routers, nil); err != nil {
 		t.Fatal(err)
 	}
 	info2, err := os.Stat(cfg.ConfigFile)
@@ -663,5 +663,184 @@ func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
 
 	if info2.ModTime() != info1.ModTime() {
 		t.Error("config file was rewritten despite no change (skip-if-unchanged guard failed)")
+	}
+}
+
+func TestTcpAoConfig(t *testing.T) {
+	t.Run("nil spec returns empty", func(t *testing.T) {
+		if got := tcpAoConfig(nil, nil); got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("empty keychain returns empty", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{Keychain: []meridio2v1alpha1.TcpAoKeyChain{}}
+		if got := tcpAoConfig(spec, nil); got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("missing password skips key", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
+			},
+		}
+		if got := tcpAoConfig(spec, map[uint8]string{}); got != "" {
+			t.Errorf("expected empty when password missing, got %q", got)
+		}
+	})
+
+	t.Run("single key", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, RecvId: 10, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
+			},
+		}
+		passwords := map[uint8]string{1: "secret123"}
+		got := tcpAoConfig(spec, passwords)
+
+		if !strings.Contains(got, "authentication ao;") {
+			t.Error("missing 'authentication ao;'")
+		}
+		if !strings.Contains(got, "send id 1;") {
+			t.Error("missing send id")
+		}
+		if !strings.Contains(got, "recv id 10;") {
+			t.Error("missing recv id")
+		}
+		if !strings.Contains(got, `secret "secret123";`) {
+			t.Error("missing secret")
+		}
+		if !strings.Contains(got, "algorithm hmac sha256;") {
+			t.Error("missing algorithm")
+		}
+	})
+
+	t.Run("multiple keys", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, RecvId: 11, Algorithm: "hmac sha1", SecretName: "s1", SecretKey: "k1"},
+				{SendId: 2, RecvId: 12, Algorithm: "cmac aes128", SecretName: "s2", SecretKey: "k2"},
+			},
+		}
+		passwords := map[uint8]string{1: "pass1", 2: "pass2"}
+		got := tcpAoConfig(spec, passwords)
+
+		if !strings.Contains(got, "send id 1;") || !strings.Contains(got, "send id 2;") {
+			t.Error("missing one of the send ids")
+		}
+		if !strings.Contains(got, "recv id 11;") || !strings.Contains(got, "recv id 12;") {
+			t.Error("missing one of the recv ids")
+		}
+		if !strings.Contains(got, "algorithm hmac sha1;") {
+			t.Error("missing hmac sha1 algorithm")
+		}
+		if !strings.Contains(got, "algorithm cmac aes128;") {
+			t.Error("missing cmac aes128 algorithm")
+		}
+	})
+
+	t.Run("CurrentKeyId selects preferred", func(t *testing.T) {
+		currentKey := uint8(2)
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			CurrentKeyId: &currentKey,
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, RecvId: 11, Algorithm: "hmac sha1", SecretName: "s1", SecretKey: "k1"},
+				{SendId: 2, RecvId: 12, Algorithm: "hmac sha256", SecretName: "s2", SecretKey: "k2"},
+			},
+		}
+		passwords := map[uint8]string{1: "pass1", 2: "pass2"}
+		got := tcpAoConfig(spec, passwords)
+
+		// Key 2 should have preferred, key 1 should not
+		parts := strings.Split(got, "key {")
+		if len(parts) != 3 {
+			t.Fatalf("expected 2 key blocks, got %d", len(parts)-1)
+		}
+		if strings.Contains(parts[1], "preferred;") {
+			t.Error("key 1 should NOT have preferred")
+		}
+		if !strings.Contains(parts[2], "preferred;") {
+			t.Error("key 2 should have preferred")
+		}
+	})
+
+	t.Run("NextKeyId emits rnext id", func(t *testing.T) {
+		nextKey := uint8(3)
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			NextKeyId: &nextKey,
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, RecvId: 10, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
+			},
+		}
+		passwords := map[uint8]string{1: "pass1"}
+		got := tcpAoConfig(spec, passwords)
+
+		if !strings.Contains(got, "rnext id 3;") {
+			t.Error("missing rnext id")
+		}
+	})
+
+	t.Run("no NextKeyId omits rnext id", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, RecvId: 10, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
+			},
+		}
+		passwords := map[uint8]string{1: "pass1"}
+		got := tcpAoConfig(spec, passwords)
+
+		if strings.Contains(got, "rnext id") {
+			t.Error("rnext id should not be present when NextKeyId is nil")
+		}
+	})
+}
+
+func TestGenerateConfigWithTcpAo(t *testing.T) {
+	b, err := New(testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := &meridio2v1alpha1.GatewayRouter{
+		ObjectMeta: metav1.ObjectMeta{Name: "gw-ao"},
+		Spec: meridio2v1alpha1.GatewayRouterSpec{
+			Interface: "eth0",
+			Address:   "10.0.0.1",
+			BGP: &meridio2v1alpha1.BgpSpec{
+				RemoteASN:  65000,
+				LocalASN:   65001,
+				HoldTime:   "240s",
+				LocalPort:  uint16Ptr(179),
+				RemotePort: uint16Ptr(179),
+				Authentication: &meridio2v1alpha1.BgpTcpAoSpec{
+					Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+						{SendId: 5, RecvId: 7, Algorithm: "hmac sha256", SecretName: "bgp-secret", SecretKey: "key"},
+					},
+				},
+			},
+		},
+	}
+	passwords := map[string]map[uint8]string{"gw-ao": {5: "mypassword"}}
+
+	conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, passwords)
+	if err != nil {
+		t.Fatalf("generateConfig() error = %v", err)
+	}
+
+	if !strings.Contains(conf, "authentication ao;") {
+		t.Error("missing 'authentication ao;' in generated config")
+	}
+	if !strings.Contains(conf, `secret "mypassword";`) {
+		t.Error("missing secret in generated config")
+	}
+	if !strings.Contains(conf, "send id 5;") {
+		t.Error("missing send id in generated config")
+	}
+	if !strings.Contains(conf, "recv id 7;") {
+		t.Error("missing recv id in generated config")
+	}
+	if !strings.Contains(conf, "algorithm hmac sha256;") {
+		t.Error("missing algorithm in generated config")
 	}
 }
