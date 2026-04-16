@@ -41,7 +41,6 @@ jobs:
 
   build-and-push:
     name: Build and push ${{ matrix.image }}
-    if: false # Skip this for testing purposes.
     runs-on: ubuntu-latest
     needs: get-tag
     strategy:
@@ -62,7 +61,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: get-tag # Add build-and-push here.
+    needs: [get-tag, build-and-push]
     strategy:
       fail-fast: false
       matrix:
@@ -106,12 +105,12 @@ jobs:
           kubectl get all -A -o wide
       - name: Deploy ${{ matrix.suite }} suite
         run: |
-          make -C test/e2e deploy-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest # Modify version before merging!
+          make -C test/e2e deploy-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }}
           kubectl get all -A -o wide
       - name: Run ${{ matrix.suite }} tests
-        run: make -C test/e2e test-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=latest GINKGO_FLAGS="--junit-report=junit-${{ matrix.suite }}-${{ matrix.k8s_version }}.xml" # ${{ needs.get-tag.outputs.tag }}
+        run: make -C test/e2e test-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }} GINKGO_FLAGS="--junit-report=junit-${{ matrix.suite }}-${{ matrix.k8s_version }}.xml"
       - name: Upload test results
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.suite }}-${{ matrix.k8s_version }}
