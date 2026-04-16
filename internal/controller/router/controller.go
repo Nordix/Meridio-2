@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -87,6 +88,8 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, fmt.Errorf("failed to get gateway routers: %w", err)
 	}
 
+	passwords := r.resolvePasswords(ctx, gatewayRouters)
+
 	// Gateway API uses plain IPs; BIRD's vipsToCidr converts to CIDR notation
 	vips := getVIPs(gateway)
 
@@ -98,7 +101,7 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	log.Info("Reconciling router", "vips", vips, "gatewayRouters", len(gatewayRouters))
 
-	if err := r.Bird.Configure(ctx, vips, gatewayRouters); err != nil {
+	if err := r.Bird.Configure(ctx, vips, gatewayRouters, passwords); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to configure BIRD: %w", err)
 	}
 
@@ -214,4 +217,40 @@ func (r *RouterReconciler) watchLBReadinessDir(ctx context.Context, ch chan<- ev
 	}
 
 	return nil
+}
+
+func (r *RouterReconciler) getTcpAoSecret(ctx context.Context, namespace, name, key string) (string, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, secret)
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret %s/%s: %w", namespace, name, err)
+	}
+
+	value, ok := secret.Data[key]
+	if !ok {
+		return "", fmt.Errorf("key %s not found in secret %s/%s", key, namespace, name)
+	}
+
+	return string(value), nil
+}
+
+func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meridio2v1alpha1.GatewayRouter) map[string]map[uint8]string {
+	result := make(map[string]map[uint8]string)
+	for _, router := range routers {
+		if router.Spec.BGP.Authentication == nil {
+			continue
+		}
+		passwords := make(map[uint8]string)
+		for _, key := range router.Spec.BGP.Authentication.Keychain {
+			password, err := r.getTcpAoSecret(ctx, router.Namespace, key.SecretName, key.SecretKey)
+			if err != nil {
+				logf.FromContext(ctx).Error(err, "Failed to fetch TCP-AO secret",
+					"router", router.Name, "secretName", key.SecretName)
+				continue
+			}
+			passwords[key.KeyId] = password
+		}
+		result[router.Name] = passwords
+	}
+	return result
 }
