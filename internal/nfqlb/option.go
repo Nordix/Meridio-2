@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 OpenInfra Foundation Europe
+Copyright (c) 2024-2026 OpenInfra Foundation Europe
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,13 +33,6 @@ func WithQLength(qlength uint) Option {
 	}
 }
 
-// WithFanout sets the queue fanout option.
-func WithFanout(fanout bool) Option {
-	return func(c *nfqlbConfig) {
-		c.fanout = fanout
-	}
-}
-
 // WithStartingOffset sets the starting offset for the fowarding mark
 // to avoid collisions with existing routing tables.
 func WithStartingOffset(startingOffset int) Option {
@@ -58,7 +51,7 @@ func WithNFQLBPath(nfqlbPath string) Option {
 // InstanceOption applies a configuration option value to a nfqlb instance.
 type InstanceOption func(*nfqlbInstanceConfig)
 
-// WithQLength sets the queue length.
+// WithMaxTargets sets the maximum number of targets for the instance.
 func WithMaxTargets(maxTargets int) InstanceOption {
 	return func(c *nfqlbInstanceConfig) {
 		c.maxTargets = maxTargets

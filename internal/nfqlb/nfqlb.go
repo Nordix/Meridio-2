@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 OpenInfra Foundation Europe
+Copyright (c) 2024-2026 OpenInfra Foundation Europe
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,7 +40,6 @@ type NFQueueLoadBalancer struct {
 	logger    logr.Logger
 }
 
-// New instantiates a NFQLB struct and configure netfiler for the nfqlb process.
 // New creates a new NFQueueLoadBalancer.
 // Nftables rules for VIP matching and nfqueue are managed externally
 // (via internal/nftables.Manager). This package only manages the nfqlb
@@ -163,7 +162,7 @@ func (nfqlb *NFQueueLoadBalancer) flowList(ctx context.Context) ([]*nfqlbFlow, e
 	return parseFlows(stdout.String())
 }
 
-// nfqlbFlowStats represents the nfqlb format returned with
+// nfqlbFlow represents the nfqlb format returned with
 // nfqlb flow-list.
 //
 //nolint:tagliatelle
@@ -329,6 +328,9 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 
 	delete(nfqlb.instances, name)
 
+	// Safe to release nfqlb.mu before locking instance.mu: the instance was
+	// already removed from the map above, so heal() (which iterates
+	// nfqlb.instances under nfqlb.mu) will no longer see it.
 	nfqlb.mu.Unlock()
 
 	nfqlbInstance.mu.Lock()
@@ -430,7 +432,7 @@ func (s *Instance) AddFlow(ctx context.Context, flowToAdd Flow) error {
 	return nil
 }
 
-// DeleteFlow adds a Flow selecting the associated nfqlb instance.
+// DeleteFlow deletes a Flow from the associated nfqlb instance.
 func (s *Instance) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
 	ctrl.LoggerFrom(ctx).Info("nfqlb: delete flow", "instance", s.name, "flow", flowToDelete)
 

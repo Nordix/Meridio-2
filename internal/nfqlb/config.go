@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 OpenInfra Foundation Europe
+Copyright (c) 2024-2026 OpenInfra Foundation Europe
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,30 +18,23 @@ package nfqlb
 
 import (
 	"time"
-
-	"github.com/go-logr/logr"
-	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 type nfqlbConfig struct {
 	queue          string
 	qlength        uint
-	fanout         bool
 	healInterval   time.Duration
 	startingOffset int
 	nfqlbPath      string
-	logger         logr.Logger
 }
 
 func newNFQLBConfig() *nfqlbConfig {
 	return &nfqlbConfig{
 		queue:          defaultQueue,
 		qlength:        defaultQLength,
-		fanout:         false,
 		healInterval:   defaultHealInterval,
 		startingOffset: defaultStartingOffset,
 		nfqlbPath:      nfqlbCmd,
-		logger:         ctrl.Log.WithName("nfqlb"),
 	}
 }
 
