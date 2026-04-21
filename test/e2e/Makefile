@@ -115,8 +115,12 @@ vpn-gateway: ## Deploy VPN gateway container.
 rp-filter: ## Configure rp_filter=2 on all Kind nodes.
 	@echo "Configuring rp_filter=2 on all nodes..."; \
 	for node in $$($(KIND) get nodes --name $(CLUSTER_NAME)); do \
-		docker exec $$node sysctl -w net.ipv4.conf.all.rp_filter=2; \
-		docker exec $$node sysctl -w net.ipv4.conf.default.rp_filter=2; \
+		docker exec $$node sh -c ' \
+			sysctl -w net.ipv4.conf.all.rp_filter=2 && \
+			sysctl -w net.ipv4.conf.default.rp_filter=2 && \
+			echo "net.ipv4.conf.all.rp_filter=2" >> /etc/sysctl.conf && \
+			echo "net.ipv4.conf.default.rp_filter=2" >> /etc/sysctl.conf \
+		'; \
 	done
 
 .PHONY: cluster-cleanup
