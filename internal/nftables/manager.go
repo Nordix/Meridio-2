@@ -229,6 +229,20 @@ func (m *Manager) createOutputChain() error {
 //
 // Chain type is "route" (not "filter") so the kernel re-evaluates routing after rewrite.
 // Requires net.ipv4.fwmark_reflect=1 and net.ipv6.fwmark_reflect=1 sysctls.
+//
+// Notes:
+//   - If src of ICMP reply is already a VIP address then leave it unchanged.
+//   - Avoid mangling locally generated ICMPv4/v6 replies destined to VIP addresses.
+//     (Those shall be handled by nfqlb.)
+//   - Checking non-zero fwmark makes sure that offending packet got processed by nfqlb.
+//     Thus, checks if original packet was destined to a VIP address (provides early skip
+//     for packets not relevant, therefore no need to walk through most of the matches
+//     in vain and do an additional transport lookup verifying if orig dst was VIP).
+//     REQUIRES enabling fwmark_reflect sysctl for both IPv4 and IPv6!
+//     (Note: Sysctls also allows for an early successful route lookup to generate the reply.)
+//   - Additional safety check verifies that encapsulated destination address is a VIP address.
+//   - Resetting packet mark at the end makes sure policy based routes related to Targets
+//     do not interfere.
 func (m *Manager) createPMTUDChain() error {
 	m.pmtudChain = m.conn.AddChain(&nftables.Chain{
 		Name:     pmtudChainName,

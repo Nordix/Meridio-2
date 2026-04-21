@@ -478,9 +478,8 @@ The LB Pod's network namespace requires specific sysctls for correct operation. 
 | `net.ipv6.conf.all.forwarding` | `1` | IPv6 forwarding |
 | `net.ipv4.fib_multipath_hash_policy` | `1` | L4 (5-tuple) ECMP hashing |
 | `net.ipv6.fib_multipath_hash_policy` | `1` | L4 ECMP hashing for IPv6 |
-| `net.ipv4.conf.all.rp_filter` | `0` | Disable reverse path filtering (VIP traffic would fail RPF) |
-| `net.ipv4.conf.default.rp_filter` | `0` | Disable RPF for new interfaces |
-| `net.ipv6.conf.all.accept_dad` | `0` | Disable DAD (avoids delays on interface up) |
+| `net.ipv4.conf.all.rp_filter` | `2` | Loose reverse path filtering (VIP traffic would fail strict RPF) |
+| `net.ipv4.conf.default.rp_filter` | `2` | Loose RPF for new interfaces |
 | `net.ipv4.fwmark_reflect` | `1` | Copy fwmark to locally generated ICMP replies (required for PMTU SNAT) |
 | `net.ipv6.fwmark_reflect` | `1` | Same for IPv6 |
 
@@ -502,9 +501,8 @@ spec:
           "net.ipv6.conf.all.forwarding": "1",
           "net.ipv4.fib_multipath_hash_policy": "1",
           "net.ipv6.fib_multipath_hash_policy": "1",
-          "net.ipv4.conf.all.rp_filter": "0",
-          "net.ipv4.conf.default.rp_filter": "0",
-          "net.ipv6.conf.all.accept_dad": "0",
+          "net.ipv4.conf.all.rp_filter": "2",
+          "net.ipv4.conf.default.rp_filter": "2",
           "net.ipv4.fwmark_reflect": "1",
           "net.ipv6.fwmark_reflect": "1"
         }
