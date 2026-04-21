@@ -1,0 +1,44 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-m1
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-m1
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-m1
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-low-mtu
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-500
+      namespace: e2e-low-mtu
+      interface: vlan-500
+  - type: NAD
+    nad:
+      name: app-net-mtu1200
+      namespace: e2e-low-mtu
+      interface: net-m
+  networkSubnets:
+  - attachmentType: NAD
+    cidrs:
+    - "169.111.50.0/24"
+  horizontalScaling:
+    replicas: 1

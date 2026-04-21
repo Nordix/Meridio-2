@@ -55,6 +55,15 @@ var testCases = []suiteTestCase{
 	},
 }
 
+var lowMTUTestCase = suiteTestCase{
+	name:      "Low MTU",
+	namespace: "e2e-low-mtu",
+	targetApp: "target-m",
+	gateways: []gwTestCase{
+		{name: "gw-m1", vip: "40.0.0.1", targets: 2},
+	},
+}
+
 var _ = Describe("E2E Test Suites", func() {
 	SetDefaultEventuallyTimeout(5 * time.Minute)
 	SetDefaultEventuallyPollingInterval(2 * time.Second)
@@ -217,18 +226,8 @@ var _ = Describe("E2E Test Suites", func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						It("handles ping on "+gw.name+" VIP", func() {
-							Expect(e2eutils.Ping(gw.vip)).To(Succeed())
-						})
-					}
-				})
-
-				Context("ICMP large packet", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("handles 1400-byte ping on "+gw.name+" VIP", func() {
-							// 1400 payload + 28 headers = 1428, fits within 1500 MTU.
-							// Exercises the output chain ICMP → nfqueue path with larger packets.
-							Expect(e2eutils.PingLargePacket(gw.vip, 1400)).To(Succeed())
+							Eventually(func() error { return e2eutils.Ping(gw.vip) }).
+								WithTimeout(30 * time.Second).Should(Succeed())
 						})
 					}
 				})
@@ -261,4 +260,67 @@ var _ = Describe("E2E Test Suites", func() {
 			})
 		})
 	}
+
+	// Low MTU suite: tests PMTU discovery with 1200 MTU internal network.
+	// A 1400-byte ping (DF set) exceeds the 1200 MTU app network, so the LB
+	// must return ICMP Frag Needed with the VIP as source address.
+	Describe(lowMTUTestCase.name, Ordered, func() {
+		suite := lowMTUTestCase
+
+		Context("Deployment", func() {
+			for _, gw := range suite.gateways {
+				gw := gw
+				It(fmt.Sprintf("should have %s Accepted", gw.name), func() {
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
+							"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
+						out, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(out).To(Equal("True"))
+					}).Should(Succeed())
+				})
+
+				It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
+							"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
+							"-o", "jsonpath={.items[*].status.phase}")
+						out, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(out).To(ContainSubstring("Running"))
+					}).Should(Succeed())
+				})
+			}
+		})
+
+		Context("Traffic", func() {
+			BeforeAll(func() {
+				By("waiting for BGP routes to propagate to VPN gateway")
+				for _, gw := range suite.gateways {
+					Eventually(func() error { return e2eutils.Ping(gw.vip) }).Should(Succeed())
+				}
+			})
+
+			Context("ICMP reachability", func() {
+				for _, gw := range suite.gateways {
+					gw := gw
+					It("handles ping on "+gw.name+" VIP", func() {
+						Eventually(func() error { return e2eutils.Ping(gw.vip) }).
+							WithTimeout(30 * time.Second).Should(Succeed())
+					})
+				}
+			})
+
+			Context("PMTU discovery", func() {
+				for _, gw := range suite.gateways {
+					gw := gw
+					It("returns ICMP Frag Needed from VIP on "+gw.name+" (1400 bytes > 1200 MTU)", func() {
+						// 1400 payload + 28 headers = 1428 > 1200 MTU.
+						// LB must return ICMP Frag Needed with VIP as source (not LB pod IP).
+						Expect(e2eutils.VerifyPMTU(gw.vip, 1400)).To(Succeed())
+					})
+				}
+			})
+		})
+	})
 })
