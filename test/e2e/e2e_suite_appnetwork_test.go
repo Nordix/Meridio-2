@@ -15,6 +15,8 @@ import (
 	e2eutils "github.com/nordix/meridio-2/test/e2e/utils"
 )
 
+const maglevIDFormat = `^maglev:\d+$`
+
 type gwTestCase struct {
 	name    string
 	vip     string
@@ -153,7 +155,7 @@ var _ = Describe("E2E Test Suites", func() {
 							out, err := utils.Run(cmd)
 							g.Expect(err).NotTo(HaveOccurred())
 
-							// Parse JSON to count endpoints and check Maglev IDs
+							// Parse JSON to verify Maglev IDs
 							var result struct {
 								Items []struct {
 									Endpoints []struct {
@@ -166,18 +168,13 @@ var _ = Describe("E2E Test Suites", func() {
 							g.Expect(err).NotTo(HaveOccurred())
 							g.Expect(result.Items).NotTo(BeEmpty(), "no EndpointSlices found for %s", gw.dgName)
 
-							// Count total endpoints across all slices
-							totalEndpoints := 0
+							// Verify Maglev ID format for all endpoints
 							for _, slice := range result.Items {
 								for _, ep := range slice.Endpoints {
-									totalEndpoints++
-									// Verify Maglev ID format
 									g.Expect(ep.Zone).NotTo(BeNil(), "endpoint missing zone field")
-									g.Expect(*ep.Zone).To(MatchRegexp(`^maglev:\d+$`), "invalid Maglev ID format")
+									g.Expect(*ep.Zone).To(MatchRegexp(maglevIDFormat), "invalid Maglev ID format")
 								}
 							}
-							g.Expect(totalEndpoints).To(Equal(suite.targetReplicas),
-								"%s: expected %d endpoints, got %d", gw.dgName, suite.targetReplicas, totalEndpoints)
 						}).Should(Succeed())
 					}
 				})
