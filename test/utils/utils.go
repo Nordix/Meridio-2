@@ -19,6 +19,7 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -171,6 +172,15 @@ func GetProjectDir() (string, error) {
 	}
 	wd = strings.ReplaceAll(wd, "/test/e2e", "")
 	return wd, nil
+}
+
+// ParseJSON parses JSON output into the provided struct
+func ParseJSON(jsonStr string, v any) error {
+	decoder := strings.NewReader(jsonStr)
+	if err := json.NewDecoder(decoder).Decode(v); err != nil {
+		return fmt.Errorf("failed to parse JSON: %w", err)
+	}
+	return nil
 }
 
 // UncommentCode searches for target in the file and remove the comment prefix
