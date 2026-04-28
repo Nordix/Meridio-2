@@ -180,3 +180,39 @@ var _ = Describe("slicesEqual", func() {
 		Expect(slicesEqual(nil, []string{})).To(BeTrue())
 	})
 })
+
+var _ = Describe("Instance.AddTarget validation", func() {
+	var (
+		instance *Instance
+		routing  *mockRouting
+		executor *mockExec
+		ctx      context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		routing = &mockRouting{}
+		executor = &mockExec{}
+		instance = newTestInstance("test-instance", 5000, 32, routing, executor)
+	})
+
+	It("should reject empty IPs", func() {
+		err := instance.AddTarget(ctx, []string{}, 0)
+		Expect(err).To(MatchError(ContainSubstring("must not be empty")))
+	})
+
+	It("should reject invalid IP address", func() {
+		err := instance.AddTarget(ctx, []string{"not-an-ip"}, 0)
+		Expect(err).To(MatchError(ContainSubstring("invalid target IP")))
+	})
+
+	It("should reject negative identifier", func() {
+		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, -1)
+		Expect(err).To(MatchError(ContainSubstring("out of range")))
+	})
+
+	It("should reject identifier >= maxTargets", func() {
+		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 32)
+		Expect(err).To(MatchError(ContainSubstring("out of range")))
+	})
+})

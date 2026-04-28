@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -277,6 +278,10 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 		return nfqlbInstance, nil
 	}
 
+	if err := validateName(name); err != nil {
+		return nil, fmt.Errorf("invalid instance name: %w", err)
+	}
+
 	ctrl.LoggerFrom(ctx).Info("nfqlb: add instance", "instance", name)
 
 	config := newNFQLBInstanceConfig()
@@ -386,6 +391,10 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 
 // AddFlow adds/updates a Flow selecting the associated nfqlb instance.
 func (s *Instance) AddFlow(ctx context.Context, flowToAdd Flow) error {
+	if err := validateFlow(flowToAdd); err != nil {
+		return fmt.Errorf("invalid flow: %w", err)
+	}
+
 	ctrl.LoggerFrom(ctx).Info("nfqlb: add flow", "instance", s.name, "flow", flowToAdd)
 
 	args := []string{
@@ -475,6 +484,18 @@ func (s *Instance) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
 // If the identifier exists with different IPs, policy routes are updated
 // without re-activating in nfqlb (the fwmark is unchanged).
 func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) error {
+	if len(ips) == 0 {
+		return fmt.Errorf("target IPs must not be empty")
+	}
+	if identifier < 0 || identifier >= s.maxTargets {
+		return fmt.Errorf("identifier %d out of range [0, %d)", identifier, s.maxTargets)
+	}
+	for _, ip := range ips {
+		if net.ParseIP(ip) == nil {
+			return fmt.Errorf("invalid target IP: %q", ip)
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
