@@ -361,32 +361,31 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 		return fmt.Errorf("failed deleting nfqlb instance ; %w; %s", err, stdoutStderr)
 	}
 
-	var errFinal error
+	var errs []error
 
 	for targetIdentifier, targetIPs := range nfqlbInstance.targets {
-		err := nfqlbInstance.deleteTargetNoLock(ctx, targetIPs, targetIdentifier)
-		if err != nil {
-			errFinal = fmt.Errorf("failed deleting nfqlb instance target ; %w; %w", err, errFinal)
+		if err := nfqlbInstance.deleteTargetNoLock(ctx, targetIPs, targetIdentifier); err != nil {
+			errs = append(errs, fmt.Errorf("delete target %d: %w", targetIdentifier, err))
 		}
 	}
 
 	flows, err := nfqlb.flowList(ctx)
 	if err != nil {
-		return fmt.Errorf("failed deleting nfqlb instance flows ; %w; %w", err, errFinal)
+		errs = append(errs, fmt.Errorf("list flows: %w", err))
+		return errors.Join(errs...)
 	}
 
 	for _, flow := range flows {
 		if flow.ServerName == name {
-			err = nfqlbInstance.DeleteFlow(ctx, flow)
-			if err != nil {
-				errFinal = fmt.Errorf("failed deleting nfqlb instance flow ; %w; %w", err, errFinal)
+			if err := nfqlbInstance.DeleteFlow(ctx, flow); err != nil {
+				errs = append(errs, fmt.Errorf("delete flow %s: %w", flow.GetName(), err))
 			}
 		}
 	}
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: instance deleted", "instance", name)
 
-	return errFinal
+	return errors.Join(errs...)
 }
 
 // AddFlow adds/updates a Flow selecting the associated nfqlb instance.
