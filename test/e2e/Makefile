@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES ?= common-appnetwork separate-appnetwork
+SUITES ?= common-appnetwork separate-appnetwork low-mtu
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
 GINKGO_FLAGS ?=
@@ -208,6 +208,27 @@ test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
 undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 	@NS=e2e-separate-appnet; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
+##@ Suite: low-mtu
+################################################################################
+
+.PHONY: low-mtu
+low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
+
+.PHONY: deploy-low-mtu
+deploy-low-mtu: cluster ## Deploy low-mtu topology (1200 MTU app network for PMTU testing).
+	$(call deploy-suite,e2e-low-mtu,$(shell pwd)/suites/low-mtu,low-mtu,sllb-gw-m1)
+
+.PHONY: test-low-mtu
+test-low-mtu: ## Run e2e tests for low-mtu suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Low MTU"
+
+.PHONY: undeploy-low-mtu
+undeploy-low-mtu: ## Undeploy low-mtu topology.
+	@NS=e2e-low-mtu; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-low-mtu --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################

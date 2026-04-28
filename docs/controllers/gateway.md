@@ -462,6 +462,68 @@ networkAttachments:
 
 ## Configuration
 
+### Sysctl Prerequisites for LB Pods
+
+The LB Pod's network namespace requires specific sysctls for correct operation. These are **not** set by the controller — they must be applied externally via one of:
+
+1. **Multus CNI tuning plugin** (recommended) — attach a `sysctl-tuning` NAD in GatewayConfiguration's `networkAttachments`
+2. **Init container** — privileged init container running `sysctl -w ...`
+3. **Pod `securityContext.sysctls`** — requires the sysctls to be listed as safe/unsafe in kubelet config
+
+**Required sysctls:**
+
+| Sysctl | Value | Purpose |
+|--------|-------|---------|
+| `net.ipv4.conf.all.forwarding` | `1` | IP forwarding (LB must forward packets) |
+| `net.ipv6.conf.all.forwarding` | `1` | IPv6 forwarding |
+| `net.ipv4.fib_multipath_hash_policy` | `1` | L4 (5-tuple) ECMP hashing |
+| `net.ipv6.fib_multipath_hash_policy` | `1` | L4 ECMP hashing for IPv6 |
+| `net.ipv4.conf.all.rp_filter` | `2` | Loose reverse path filtering (VIP traffic would fail strict RPF) |
+| `net.ipv4.conf.default.rp_filter` | `2` | Loose RPF for new interfaces |
+| `net.ipv4.fwmark_reflect` | `1` | Copy fwmark to locally generated ICMP replies (required for PMTU SNAT) |
+| `net.ipv6.fwmark_reflect` | `1` | Same for IPv6 |
+
+**Example using Multus tuning plugin:**
+
+```yaml
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: sysctl-tuning
+spec:
+  config: '{
+      "cniVersion": "0.4.0",
+      "name": "sysctl-tuning",
+      "plugins": [{
+        "type": "tuning",
+        "sysctl": {
+          "net.ipv4.conf.all.forwarding": "1",
+          "net.ipv6.conf.all.forwarding": "1",
+          "net.ipv4.fib_multipath_hash_policy": "1",
+          "net.ipv6.fib_multipath_hash_policy": "1",
+          "net.ipv4.conf.all.rp_filter": "2",
+          "net.ipv4.conf.default.rp_filter": "2",
+          "net.ipv4.fwmark_reflect": "1",
+          "net.ipv6.fwmark_reflect": "1"
+        }
+      }]
+  }'
+```
+
+Then reference it in GatewayConfiguration:
+
+```yaml
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: meridio-2
+      interface: dummy
+```
+
+**Note:** The `fwmark_reflect` sysctls are specifically required for PMTU discovery. Without them, the PMTU SNAT chain's fwmark check always fails and ICMP Frag Needed / Packet Too Big replies are sent with the LB pod's IP as source instead of the VIP.
+
 ### Controller Flags
 
 **`--namespace`**: Limit to single namespace (empty = all namespaces)

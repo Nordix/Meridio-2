@@ -27,8 +27,14 @@ ip link set vlan4 up
 ip addr add 169.254.201.150/24 dev vlan4
 ip addr add 200.200.0.101/32 dev vlan4
 
+# VLAN 500 — low-mtu gw-m1
+ip link add link eth0 name vlan5 type vlan id 500
+ip link set vlan5 up
+ip addr add 169.254.50.150/24 dev vlan5
+ip addr add 200.50.0.100/32 dev vlan5
+
 ethtool -K eth0 tx off
 
-echo "VPN Gateway ready on VLAN 100, 200, 300, 400"
+echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500"
 
 /usr/sbin/bird -d -c /etc/bird/bird-gw.conf

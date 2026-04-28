@@ -70,9 +70,9 @@ If BIRD crashes, the router controller continues running with healthy probes whi
 
 The `kernel` protocol blocks in the generated bird.conf do not set `scan time`. BIRD 3.x's default is 60 seconds, which can delay BGP-learned routes from appearing in the kernel routing table by 30-50 seconds. Meridio v1 fixed this with `scan time 10`.
 
-**15. PMTU handling not implemented in LB Pods**
+**15. ~~PMTU handling not implemented in LB Pods~~ (Resolved)**
 
-The nftables rules and sysctls required to handle MTU differences between external and internal networks are not in place. This may cause issues when the external network has a larger MTU than the internal network towards application endpoints.
+PMTU handling is implemented: the LB controller creates a nftables PMTU SNAT chain at startup that rewrites ICMP Frag Needed / Packet Too Big source addresses to the VIP. Requires `fwmark_reflect` sysctls — see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods).
 
 **16. BGP authentication not supported**
 
