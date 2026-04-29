@@ -157,6 +157,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time 10;
 	kernel table 4096;
 	merge paths on;
 }
@@ -166,6 +167,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time 10;
 	kernel table 4096;
 	merge paths on;
 }
