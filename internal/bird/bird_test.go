@@ -82,14 +82,18 @@ func TestGenerateConfig(t *testing.T) {
 	})
 
 	t.Run("matches reference config", func(t *testing.T) {
+		bWithLogs := New(WithLogParams(BirdLogParams{
+			{Type: "stderr", Classes: []string{"info", "warning", "error", "fatal"}},
+			{Type: "file", Path: "/var/log/bird.log", Size: 1048576, BackupPath: "/var/log/bird.log.1", Classes: []string{"all"}},
+		}))
 		router := &meridio2v1alpha1.GatewayRouter{
 			ObjectMeta: metav1.ObjectMeta{Name: "gatewayrouter-sample"},
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "vlan-100",
 				Address:   "169.254.100.150",
 				BGP: meridio2v1alpha1.BgpSpec{
-					RemoteASN:  4248829953,
-					LocalASN:   8103,
+					RemoteASN:  4200000000,
+					LocalASN:   64512,
 					LocalPort:  uint16Ptr(10179),
 					RemotePort: uint16Ptr(10179),
 					HoldTime:   "3s",
@@ -104,12 +108,14 @@ func TestGenerateConfig(t *testing.T) {
 		}
 		vips := []string{"20.0.0.1/32"}
 
-		got, err := b.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router})
+		got, err := bWithLogs.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router})
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
 
-		want := `log stderr all;
+		want := `
+log stderr { info, warning, error, fatal };
+log "/var/log/bird.log" 1048576 "/var/log/bird.log.1" all;
 
 protocol device {}
 
@@ -176,8 +182,8 @@ protocol static VIP4 {
 
 protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 	interface "vlan-100";
-	local port 10179 as 8103;
-	neighbor 169.254.100.150 port 10179 as 4248829953;
+	local port 10179 as 64512;
+	neighbor 169.254.100.150 port 10179 as 4200000000;
 	bfd {
 		min rx interval 300ms;
 		min tx interval 300ms;

@@ -41,23 +41,18 @@ type BirdInterface interface {
 }
 
 type Bird struct {
-	SocketPath  string
-	ConfigFile  string
-	LogFile     string
-	LogFileSize int // bytes; if >0, enables rotation with 1 backup file
-	nl          abstractNetlink
-	running     bool
-	mu          sync.Mutex
+	SocketPath string
+	ConfigFile string
+	LogParams  BirdLogParams
+	nl         abstractNetlink
+	running    bool
+	mu         sync.Mutex
 }
 
 type Option func(*Bird)
 
-func WithLogFile(path string) Option {
-	return func(b *Bird) { b.LogFile = path }
-}
-
-func WithLogFileSize(bytes int) Option {
-	return func(b *Bird) { b.LogFileSize = bytes }
+func WithLogParams(params BirdLogParams) Option {
+	return func(b *Bird) { b.LogParams = params }
 }
 
 func New(opts ...Option) *Bird {
@@ -148,7 +143,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 }
 
 func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) (string, error) {
-	data := birdConfigData{KernelTableID: defaultKernelTableID, LogFile: b.LogFile, LogFileSize: b.LogFileSize}
+	data := birdConfigData{KernelTableID: defaultKernelTableID, LogParams: b.LogParams}
 
 	for _, vip := range vips {
 		if isIPv6(vip) {

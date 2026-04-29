@@ -72,19 +72,7 @@ type DistributionGroupReconciler struct {
 // Current: Uses controller-runtime default (10 hours).
 // Future: Add --resync-period flag if faster drift recovery needed.
 
-// TODO(RBAC): Split into namespace-scoped Role and cluster-scoped ClusterRole
-// - Role: distributiongroups, endpointslices, pods, l34routes, gatewayconfigurations
-// - ClusterRole: gateways, nodes
-// This allows principle of least privilege for namespace-scoped deployments.
-//
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=distributiongroups,verbs=get;list;watch
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=distributiongroups/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=l34routes,verbs=get;list;watch
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=gatewayconfigurations,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+// RBAC: See config/rbac/manager-role.yaml and manager-clusterrole.yaml for required permissions.
 
 // Reconcile manages EndpointSlices for a DistributionGroup
 func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -1,0 +1,80 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  InPlacePodVerticalScaling: true
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+        controllerManager:
+          extraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+        scheduler:
+          extraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+  - role: worker
+    image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            container-log-max-size: "100Mi"
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+  - role: worker
+    image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            container-log-max-size: "100Mi"
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+  - role: worker
+    image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            container-log-max-size: "100Mi"
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+  - role: worker
+    image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            container-log-max-size: "100Mi"
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            feature-gates: "InPlacePodVerticalScaling=true"
+networking:
+  kubeProxyMode: "ipvs" # Enable IPVS mode for kube-proxy
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443

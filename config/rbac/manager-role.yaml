@@ -1,0 +1,117 @@
+---
+# Namespace-scoped Role for the controller-manager.
+# Covers all namespace-scoped resources across all controllers
+# (gateway, distributiongroup, endpointnetworkconfiguration).
+#
+# RBAC: This file is hand-maintained. Update when controller permissions change.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: manager-role
+  namespace: system
+  labels:
+    app.kubernetes.io/name: meridio-2
+    app.kubernetes.io/component: controller-manager
+rules:
+# --- Core resources ---
+# DistributionGroup + ENC controllers: list/watch Pods for endpoint discovery
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+# Gateway controller: manage LB Deployments
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# DistributionGroup controller: manage EndpointSlices
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# --- Gateway API resources ---
+# Gateway controller: reconcile Gateways, update status
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gateways
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gateways/status
+  verbs:
+  - get
+  - patch
+  - update
+# --- Meridio-2 CRDs ---
+# All controllers: watch L34Routes for VIP and backend resolution
+- apiGroups:
+  - meridio-2.nordix.org
+  resources:
+  - l34routes
+  verbs:
+  - get
+  - list
+  - watch
+# Gateway + DistributionGroup + ENC controllers: read GatewayConfiguration
+- apiGroups:
+  - meridio-2.nordix.org
+  resources:
+  - gatewayconfigurations
+  verbs:
+  - get
+  - list
+  - watch
+# DistributionGroup controller: reconcile DGs, update status
+- apiGroups:
+  - meridio-2.nordix.org
+  resources:
+  - distributiongroups
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - meridio-2.nordix.org
+  resources:
+  - distributiongroups/status
+  verbs:
+  - get
+  - patch
+  - update
+# ENC controller: full lifecycle management of EndpointNetworkConfigurations
+- apiGroups:
+  - meridio-2.nordix.org
+  resources:
+  - endpointnetworkconfigurations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

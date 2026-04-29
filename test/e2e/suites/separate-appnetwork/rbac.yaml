@@ -1,0 +1,33 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: meridio-2-network-sidecar
+  namespace: e2e-separate-appnet
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: meridio-2-network-sidecar
+  namespace: e2e-separate-appnet
+rules:
+- apiGroups: ["meridio-2.nordix.org"]
+  resources: ["endpointnetworkconfigurations"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["meridio-2.nordix.org"]
+  resources: ["endpointnetworkconfigurations/status"]
+  verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: meridio-2-network-sidecar
+  namespace: e2e-separate-appnet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: meridio-2-network-sidecar
+subjects:
+- kind: ServiceAccount
+  name: meridio-2-network-sidecar
+  namespace: e2e-separate-appnet

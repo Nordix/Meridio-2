@@ -11,8 +11,8 @@ spec:
   interface: "vlan-100"
   address: "169.254.100.150"
   bgp:
-    localASN: 8103
-    remoteASN: 4248829953
+    localASN: 64512
+    remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179
     holdTime: 24s

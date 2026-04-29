@@ -61,7 +61,7 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 
 ################################################################################
-# Image: Build, tag, push
+# Image: build, tag, push
 ################################################################################
 
 .PHONY: build
@@ -135,6 +135,12 @@ vet: ## Run go vet against code.
 test: generate setup-envtest ## Run the unit tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+.PHONY: e2e
+e2e: ## Run end-to-end tests.
+	$(MAKE) -C test/e2e REGISTRY=$(REGISTRY) VERSION=$(VERSION) test
+	$(MAKE) -C test/e2e undeploy-all
+	$(MAKE) -C test/e2e cluster-cleanup
+
 .PHONY: install-hooks
 install-hooks: ## Install git pre-commit hook to run 'make check' before commits.
 	@echo "Installing git pre-commit hook..."
@@ -151,8 +157,8 @@ install-hooks: ## Install git pre-commit hook to run 'make check' before commits
 generate: manifests generate-controller ## Generate everything.
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDefinition objects.
+	"$(CONTROLLER_GEN)" crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate-controller
 generate-controller: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

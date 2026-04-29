@@ -1,0 +1,58 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: target-b
+  labels:
+    app: target-b
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: target-b
+  template:
+    metadata:
+      labels:
+        app: target-b
+      annotations:
+        k8s.v1.cni.cncf.io/networks: app-net-b
+    spec:
+      serviceAccountName: meridio-2-network-sidecar
+      containers:
+      - name: ctraffic
+        image: registry.nordix.org/cloud-native/meridio/ctraffic:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /home/tapa-user/ctraffic -server -address [::]:5000 &
+          /home/tapa-user/ctraffic -server -udp -address [::]:5001 &
+          wait
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+      - name: network-sidecar
+        image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --pod-name=$(POD_NAME)
+        - --pod-namespace=$(POD_NAMESPACE)
+        - --pod-uid=$(POD_UID)
+        - --log-level=debug
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        securityContext:
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]

@@ -55,12 +55,7 @@ type Reconciler struct {
 	IPScraper func(pod *corev1.Pod, cidr, attachmentType string) string
 }
 
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=endpointnetworkconfigurations,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=distributiongroups,verbs=get;list;watch
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=l34routes,verbs=get;list;watch
-// +kubebuilder:rbac:groups=meridio-2.nordix.org,resources=gatewayconfigurations,verbs=get;list;watch
-// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch
+// RBAC: See config/rbac/manager-role.yaml and manager-clusterrole.yaml for required permissions.
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
