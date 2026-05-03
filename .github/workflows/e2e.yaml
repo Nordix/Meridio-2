@@ -50,6 +50,7 @@ jobs:
           - stateless-load-balancer
           - router
           - network-sidecar
+          - example-target
     steps:
       - uses: actions/checkout@v6
       - uses: docker/login-action@v4
@@ -68,6 +69,8 @@ jobs:
         suite:
           - common-appnetwork
           - separate-appnetwork
+          - sctp-multihoming
+          - low-mtu
         k8s_version:
           - v1.32.2
           - v1.31.6

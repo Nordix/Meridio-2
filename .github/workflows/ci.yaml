@@ -80,6 +80,7 @@ jobs:
           - stateless-load-balancer
           - router
           - network-sidecar
+          - example-target
     steps:
       - uses: actions/checkout@v6
       - run: make ${{ matrix.image }} BUILD_STEPS=build
