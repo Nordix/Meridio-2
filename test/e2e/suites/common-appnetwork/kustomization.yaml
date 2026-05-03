@@ -4,70 +4,68 @@ kind: Kustomization
 namespace: e2e-common-appnet
 
 resources:
-- ../../../../config/default
+  - ../../../../config/default
 
 images:
-- name: controller-manager
-  newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
-  newTag: latest
+  - name: controller-manager
+    newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
+    newTag: latest
 
 nameSuffix: -common-appnet
 
 labels:
-- pairs:
-    e2e-suite: common-appnet
-
-
+  - pairs:
+      e2e-suite: common-appnet
 
 patches:
-- patch: |-
-    apiVersion: admissionregistration.k8s.io/v1
-    kind: ValidatingWebhookConfiguration
-    metadata:
-      name: not-important
-      annotations:
-        cert-manager.io/inject-ca-from: e2e-common-appnet/meridio-2-serving-cert-common-appnet
-    webhooks:
-    - name: vl34route-v1alpha1.kb.io
-      namespaceSelector:
-        matchLabels:
-          e2e-suite: common-appnet
-      clientConfig:
-        service:
-          name: meridio-2-webhook-service-common-appnet
-          namespace: e2e-common-appnet
-  target:
-    kind: ValidatingWebhookConfiguration
-- patch: |-
-    - op: replace
-      path: /spec/dnsNames
-      value:
-      - meridio-2-webhook-service-common-appnet.e2e-common-appnet.svc
-      - meridio-2-webhook-service-common-appnet.e2e-common-appnet.svc.cluster.local
-    - op: replace
-      path: /spec/secretName
-      value: webhook-server-cert-common-appnet
-  target:
-    group: cert-manager.io
-    kind: Certificate
-    name: serving-cert
-- patch: |-
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: not-important
-    spec:
-      template:
-        spec:
-          containers:
-          - name: manager
-            env:
-            - name: MERIDIO_LB_SERVICE_ACCOUNT
-              value: meridio-2-stateless-load-balancer-common-appnet
-          volumes:
-          - name: webhook-certs
-            secret:
-              secretName: webhook-server-cert-common-appnet
-  target:
-    kind: Deployment
-    labelSelector: control-plane=controller-manager
+  - patch: |-
+      apiVersion: admissionregistration.k8s.io/v1
+      kind: ValidatingWebhookConfiguration
+      metadata:
+        name: not-important
+        annotations:
+          cert-manager.io/inject-ca-from: e2e-common-appnet/meridio-2-serving-cert-common-appnet
+      webhooks:
+      - name: vl34route-v1alpha1.kb.io
+        namespaceSelector:
+          matchLabels:
+            e2e-suite: common-appnet
+        clientConfig:
+          service:
+            name: meridio-2-webhook-service-common-appnet
+            namespace: e2e-common-appnet
+    target:
+      kind: ValidatingWebhookConfiguration
+  - patch: |-
+      - op: replace
+        path: /spec/dnsNames
+        value:
+        - meridio-2-webhook-service-common-appnet.e2e-common-appnet.svc
+        - meridio-2-webhook-service-common-appnet.e2e-common-appnet.svc.cluster.local
+      - op: replace
+        path: /spec/secretName
+        value: webhook-server-cert-common-appnet
+    target:
+      group: cert-manager.io
+      kind: Certificate
+      name: serving-cert
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: not-important
+      spec:
+        template:
+          spec:
+            containers:
+            - name: manager
+              env:
+              - name: MERIDIO_LB_SERVICE_ACCOUNT
+                value: meridio-2-stateless-load-balancer-common-appnet
+            volumes:
+            - name: webhook-certs
+              secret:
+                secretName: webhook-server-cert-common-appnet
+    target:
+      kind: Deployment
+      labelSelector: control-plane=controller-manager

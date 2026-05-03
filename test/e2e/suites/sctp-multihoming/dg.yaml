@@ -1,0 +1,28 @@
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: sctp-dg1
+spec:
+  type: Maglev
+  selector:
+    matchLabels:
+      app: sctp-target
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: sctp-gw1
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: sctp-dg2
+spec:
+  type: Maglev
+  selector:
+    matchLabels:
+      app: sctp-target
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: sctp-gw2

@@ -6,10 +6,10 @@ metadata:
 spec:
   gatewayRef:
     name: gw-m1
-  interface: "vlan-500"
+  interface: "vlan-700"
   address: "169.254.50.150"
   bgp:
-    localASN: 64516
+    localASN: 64518
     remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179

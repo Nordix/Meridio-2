@@ -18,7 +18,7 @@ help: ## Display this help.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-IMAGES ?= controller-manager stateless-load-balancer router network-sidecar
+IMAGES ?= controller-manager stateless-load-balancer router network-sidecar example-target
 
 # Versions
 VERSION ?= latest
@@ -26,6 +26,7 @@ VERSION_CONTROLLER_MANAGER ?= $(VERSION)
 VERSION_SLLB ?= $(VERSION)
 VERSION_ROUTER ?= $(VERSION)
 VERSION_NETWORK_SIDECAR ?= $(VERSION)
+VERSION_EXAMPLE_TARGET ?= $(VERSION)
 LOCAL_VERSION ?= $(VERSION)
 
 # Container registry
@@ -106,7 +107,7 @@ network-sidecar: ## Build the network-sidecar.
 
 .PHONY: example-target
 example-target: ## Build the example target application.
-	BUILD_DIR=examples/target/build IMAGE=example-target $(MAKE) -s $(BUILD_STEPS)
+	VERSION=$(VERSION_EXAMPLE_TARGET) BUILD_DIR=examples/target/build IMAGE=example-target $(MAKE) -s $(BUILD_STEPS)
 
 ################################################################################
 ##@ Testing & Code check
@@ -157,8 +158,8 @@ install-hooks: ## Install git pre-commit hook to run 'make check' before commits
 generate: manifests generate-controller ## Generate everything.
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate-controller
 generate-controller: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

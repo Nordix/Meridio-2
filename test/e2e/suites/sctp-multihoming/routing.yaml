@@ -1,0 +1,194 @@
+---
+# sctp-gw1 router (VLAN 500, ASN 64516)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: sctp-gw1-router-vlan500
+spec:
+  gatewayRef:
+    name: sctp-gw1
+    namespace: e2e-sctp-multihoming
+  interface: "vlan-500"
+  address: "169.254.102.150"
+  bgp:
+    localASN: 64516
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 5
+---
+# sctp-gw2 router (VLAN 600, ASN 64517)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: sctp-gw2-router-vlan600
+spec:
+  gatewayRef:
+    name: sctp-gw2
+    namespace: e2e-sctp-multihoming
+  interface: "vlan-600"
+  address: "169.254.202.150"
+  bgp:
+    localASN: 64517
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 5
+---
+# Gateway sctp-gw1 routes (→ dg-sctp-gw1)
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: sctp-gw1-tcp-control
+spec:
+  parentRefs:
+  - name: sctp-gw1
+  backendRefs:
+  - name: sctp-dg1
+    group: meridio-2.nordix.org
+    kind: DistributionGroup
+  destinationCIDRs:
+  - "50.0.0.1/32"
+  sourceCIDRs:
+  - "0.0.0.0/0"
+  sourcePorts:
+  - "0-65535"
+  destinationPorts:
+  - "9001"
+  protocols:
+  - TCP
+  priority: 10
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: sctp-gw1-sctp-init
+spec:
+  parentRefs:
+  - name: sctp-gw1
+  backendRefs:
+  - name: sctp-dg1
+    group: meridio-2.nordix.org
+    kind: DistributionGroup
+  destinationCIDRs:
+  - "50.0.0.1/32"
+  sourceCIDRs:
+  - "0.0.0.0/0"
+  sourcePorts:
+  - "0-65535"
+  destinationPorts:
+  - "9000"
+  protocols:
+  - SCTP
+  byteMatches:
+  - "sctp[8:4] = 0"
+  - "sctp[12:1] = 1"
+  priority: 20
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: sctp-gw1-sctp-data
+spec:
+  parentRefs:
+  - name: sctp-gw1
+  backendRefs:
+  - name: sctp-dg1
+    group: meridio-2.nordix.org
+    kind: DistributionGroup
+  destinationCIDRs:
+  - "50.0.0.1/32"
+  sourceCIDRs:
+  - "0.0.0.0/0"
+  sourcePorts:
+  - "0-65535"
+  destinationPorts:
+  - "9000"
+  protocols:
+  - SCTP
+  priority: 30
+---
+# Gateway sctp-gw2 routes (→ dg-sctp-gw2)
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: sctp-gw2-tcp-control
+spec:
+  parentRefs:
+  - name: sctp-gw2
+  backendRefs:
+  - name: sctp-dg2
+    group: meridio-2.nordix.org
+    kind: DistributionGroup
+  destinationCIDRs:
+  - "50.0.0.2/32"
+  sourceCIDRs:
+  - "0.0.0.0/0"
+  sourcePorts:
+  - "0-65535"
+  destinationPorts:
+  - "9001"
+  protocols:
+  - TCP
+  priority: 10
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: sctp-gw2-sctp-init
+spec:
+  parentRefs:
+  - name: sctp-gw2
+  backendRefs:
+  - name: sctp-dg2
+    group: meridio-2.nordix.org
+    kind: DistributionGroup
+  destinationCIDRs:
+  - "50.0.0.2/32"
+  sourceCIDRs:
+  - "0.0.0.0/0"
+  sourcePorts:
+  - "0-65535"
+  destinationPorts:
+  - "9000"
+  protocols:
+  - SCTP
+  byteMatches:
+  - "sctp[8:4] = 0"
+  - "sctp[12:1] = 1"
+  priority: 20
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: sctp-gw2-sctp-data
+spec:
+  parentRefs:
+  - name: sctp-gw2
+  backendRefs:
+  - name: sctp-dg2
+    group: meridio-2.nordix.org
+    kind: DistributionGroup
+  destinationCIDRs:
+  - "50.0.0.2/32"
+  sourceCIDRs:
+  - "0.0.0.0/0"
+  sourcePorts:
+  - "0-65535"
+  destinationPorts:
+  - "9000"
+  protocols:
+  - SCTP
+  priority: 30

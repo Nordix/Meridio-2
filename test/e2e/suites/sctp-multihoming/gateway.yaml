@@ -1,0 +1,92 @@
+---
+# Gateway SCTP-1 on VLAN 500 with shared app networks
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: sctp-gw1
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: sctp-gwconfig1
+  listeners:
+  - name: sctp
+    protocol: TCP
+    port: 9000
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: sctp-gwconfig1
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-sctp-multihoming
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-500
+      namespace: e2e-sctp-multihoming
+      interface: vlan-500
+  - type: NAD
+    nad:
+      name: app-net-sctp1
+      namespace: e2e-sctp-multihoming
+      interface: net1
+  networkSubnets:
+  - attachmentType: NAD
+    cidrs:
+    - "169.111.100.0/24"
+  horizontalScaling:
+    replicas: 2
+    enforceReplicas: true
+---
+# Gateway SCTP-2 on VLAN 600 with shared app networks
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: sctp-gw2
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: sctp-gwconfig2
+  listeners:
+  - name: sctp
+    protocol: TCP
+    port: 9000
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: sctp-gwconfig2
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-sctp-multihoming
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-600
+      namespace: e2e-sctp-multihoming
+      interface: vlan-600
+  - type: NAD
+    nad:
+      name: app-net-sctp2
+      namespace: e2e-sctp-multihoming
+      interface: net2
+  networkSubnets:
+  - attachmentType: NAD
+    cidrs:
+    - "169.111.200.0/24"
+  horizontalScaling:
+    replicas: 2
+    enforceReplicas: true

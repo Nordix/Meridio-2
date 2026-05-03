@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES ?= common-appnetwork separate-appnetwork low-mtu
+SUITES ?= common-appnetwork separate-appnetwork sctp-multihoming low-mtu
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
 GINKGO_FLAGS ?=
@@ -153,6 +153,11 @@ define deploy-suite
 	fi; \
 	$(KUBECTL) wait --for=condition=Available --timeout=180s -n $$NS deployment/meridio-2-controller-manager-$$SUITE_LABEL; \
 	$(KUBECTL) wait --for=condition=Ready --timeout=60s -n $$NS certificate/meridio-2-serving-cert-$$SUITE_LABEL; \
+	timeout=60; elapsed=0; \
+	until $(KUBECTL) get endpoints -n $$NS meridio-2-webhook-service-$$SUITE_LABEL -o jsonpath='{.subsets[*].addresses[*].ip}' | grep -q .; do \
+		sleep 1; elapsed=$$((elapsed + 1)); \
+		if [ $$elapsed -ge $$timeout ]; then echo "Timeout waiting for webhook endpoint"; exit 1; fi; \
+	done; \
 	$(KUBECTL) apply -f $$SUITE_DIR/rbac.yaml; \
 	$(KUBECTL) apply -f $$SUITE_DIR/nad.yaml -n $$NS; \
 	$(KUBECTL) apply -f $$SUITE_DIR/gateway.yaml -n $$NS; \
@@ -164,7 +169,7 @@ define deploy-suite
 		if [ $$elapsed -ge $$timeout ]; then echo "Timeout waiting for deployments: $(4)"; exit 1; fi; \
 	done; \
 	$(KUBECTL) wait --for=condition=Available --timeout=300s -n $$NS $(foreach dep,$(4),deployment/$(dep)); \
-	sed 's|registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest|$(REGISTRY)/network-sidecar:$(VERSION)|g' $$SUITE_DIR/targets.yaml | $(KUBECTL) apply -n $$NS -f -; \
+	sed 's|registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest|$(REGISTRY)/network-sidecar:$(VERSION)|g; s|registry.nordix.org/cloud-native/meridio-2/example-target:latest|$(REGISTRY)/example-target:$(VERSION)|g' $$SUITE_DIR/targets.yaml | $(KUBECTL) apply -n $$NS -f -; \
 	$(KUBECTL) wait --for=condition=Available --timeout=300s -n $$NS $$($(KUBECTL) get deployment -n $$NS -l app -o name | grep target)
 endef
 
@@ -211,6 +216,27 @@ undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
+##@ Suite: sctp-multihoming
+################################################################################
+
+.PHONY: sctp-multihoming
+sctp-multihoming: deploy-sctp-multihoming test-sctp-multihoming ## Deploy and test sctp-multihoming suite.
+
+.PHONY: deploy-sctp-multihoming
+deploy-sctp-multihoming: cluster ## Deploy sctp-multihoming topology.
+	$(call deploy-suite,e2e-sctp-multihoming,$(shell pwd)/suites/sctp-multihoming,sctp-multihoming,sllb-sctp-gw1 sllb-sctp-gw2)
+
+.PHONY: test-sctp-multihoming
+test-sctp-multihoming: ## Run e2e tests for sctp-multihoming suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="SCTP Multihoming" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-sctp-multihoming
+undeploy-sctp-multihoming: ## Undeploy sctp-multihoming topology.
+	@NS=e2e-sctp-multihoming; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-sctp-multihoming --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
 ##@ Suite: low-mtu
 ################################################################################
 
@@ -218,12 +244,12 @@ undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
 
 .PHONY: deploy-low-mtu
-deploy-low-mtu: cluster ## Deploy low-mtu topology (1200 MTU app network for PMTU testing).
+deploy-low-mtu: cluster ## Deploy low-mtu topology.
 	$(call deploy-suite,e2e-low-mtu,$(shell pwd)/suites/low-mtu,low-mtu,sllb-gw-m1)
 
 .PHONY: test-low-mtu
 test-low-mtu: ## Run e2e tests for low-mtu suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Low MTU"
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Low MTU" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-low-mtu
 undeploy-low-mtu: ## Undeploy low-mtu topology.

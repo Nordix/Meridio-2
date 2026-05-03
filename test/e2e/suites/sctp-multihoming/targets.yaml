@@ -2,20 +2,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: target-m
+  name: sctp-target
   labels:
-    app: target-m
+    app: sctp-target
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      app: target-m
+      app: sctp-target
   template:
     metadata:
       labels:
-        app: target-m
+        app: sctp-target
       annotations:
-        k8s.v1.cni.cncf.io/networks: app-net-mtu1200
+        k8s.v1.cni.cncf.io/networks: app-net-sctp1, app-net-sctp2
     spec:
       serviceAccountName: meridio-2-network-sidecar
       containers:
@@ -25,14 +25,12 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - |
-          screen -d -m bash -c "./ctraffic -server -address [::]:5000" ;
-          screen -d -m bash -c "./ctraffic -server -udp -address [::]:5001" ;
-          tail -f /dev/null
+          netperfmeter 9000 --control-over-tcp
         securityContext:
           runAsNonRoot: true
+          runAsUser: 10011
           capabilities:
             drop: ["ALL"]
-            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
       - name: network-sidecar
         image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
         imagePullPolicy: IfNotPresent
@@ -55,6 +53,7 @@ spec:
             fieldRef:
               fieldPath: metadata.uid
         securityContext:
+          runAsNonRoot: true
           capabilities:
-            drop: ["ALL"]
             add: ["NET_ADMIN"]
+            drop: ["ALL"]
