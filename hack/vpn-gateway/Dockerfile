@@ -25,6 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        ca-certificates \
         lksctp-tools \
         iproute2 \
         tcpdump \
@@ -32,11 +33,21 @@ RUN apt-get update && \
         ethtool \
         libreadline8t64 \
         xz-utils \
-        software-properties-common \
-    && add-apt-repository -y ppa:dreibh/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends netperfmeter-all \
+        wget \
+        build-essential \
+        cmake \
+        libsctp-dev \
+        libbz2-dev \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+RUN wget -q https://www.nntb.no/~dreibh/netperfmeter/download/netperfmeter-2.0.2.tar.xz \
+    && tar xf netperfmeter-2.0.2.tar.xz \
+    && cd netperfmeter-2.0.2 \
+    && cmake . -DWITH_ICONS=OFF \
+    && make -j$(nproc) \
+    && make install \
+    && cd .. \
+    && rm -rf netperfmeter-2.0.2 netperfmeter-2.0.2.tar.xz
 
 COPY --from=bird-builder /usr/local/sbin/bird /usr/sbin/bird
 COPY --from=bird-builder /usr/local/sbin/birdc /usr/sbin/birdc
