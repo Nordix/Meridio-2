@@ -92,9 +92,8 @@ spec:
   protocols:
   - SCTP
   byteMatches:
-  - "sctp[8:4] = 0"
   - "sctp[12:1] = 1"
-  priority: 20
+  priority: 30
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
@@ -117,7 +116,7 @@ spec:
   - "9000"
   protocols:
   - SCTP
-  priority: 30
+  priority: 20
 ---
 # Gateway sctp-gw2 routes (→ dg-sctp-gw2)
 ---
@@ -166,9 +165,8 @@ spec:
   protocols:
   - SCTP
   byteMatches:
-  - "sctp[8:4] = 0"
   - "sctp[12:1] = 1"
-  priority: 20
+  priority: 30
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
@@ -191,4 +189,4 @@ spec:
   - "9000"
   protocols:
   - SCTP
-  priority: 30
+  priority: 20
