@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net"
 	"strings"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -175,6 +176,8 @@ func reconcileDeploymentSpec(base, template *appsv1.Deployment, gw *gatewayv1.Ga
 		}
 		applyGatewayConfiguration(desired, gwConfig, templateNADAnnotation, base == nil)
 	}
+	// Inject downward API env vars for router Pod identity (POD_NAME, POD_NAMESPACE, POD_UID) - after applying GatewayConfiguration in case it changes the container spec
+	injectRouterPodIdentityEnvVars(desired)
 
 	return desired
 }
@@ -280,6 +283,9 @@ func applyGatewayConfiguration(deployment *appsv1.Deployment, gwConfig *meridio2
 
 	// Network attachments
 	applyNetworkAttachments(deployment, templateNADAnnotation, gwConfig.Spec.NetworkAttachments)
+
+	// Readiness gates (per-IP-family based on InternalSubnets)
+	applyReadinessGates(deployment, gwConfig)
 }
 
 // applyVerticalScaling applies container resources from VerticalScaling config.
@@ -479,4 +485,107 @@ func parseNetworkAnnotation(annotation string) []*netdefv1.NetworkSelectionEleme
 	}
 
 	return elements
+}
+
+// ipFamiliesFromInternalSubnets scans CIDRs in gwConfig.Spec.InternalSubnets, returns (hasIPv4, hasIPv6 bool).
+// Each InternalSubnet entry contains a single CIDR of one IP family. Dual-stack uses two separate entries.
+func ipFamiliesFromInternalSubnets(subnets []meridio2v1alpha1.InternalSubnet) (bool, bool) {
+	hasIPv4 := false
+	hasIPv6 := false
+
+	for _, subnet := range subnets {
+		ip, _, err := net.ParseCIDR(subnet.CIDR)
+		if err != nil {
+			continue
+		}
+		if ip.To4() == nil {
+			hasIPv6 = true
+		} else {
+			hasIPv4 = true
+		}
+	}
+
+	return hasIPv4, hasIPv6
+}
+
+// applyReadinessGates sets deployment.spec.Template.Spec.ReadinessGates authoritatively based on presence of IP families in GatewayConfiguration.
+// Always replaces (controller owns these gates).
+func applyReadinessGates(deployment *appsv1.Deployment, gatewayConfig *meridio2v1alpha1.GatewayConfiguration) {
+	hasIPv4, hasIPv6 := ipFamiliesFromInternalSubnets(gatewayConfig.Spec.InternalSubnets)
+
+	gates := []corev1.PodReadinessGate{}
+
+	if hasIPv4 {
+		gates = append(gates, corev1.PodReadinessGate{
+			ConditionType: ReadinessGateIPv4,
+		})
+	}
+
+	if hasIPv6 {
+		gates = append(gates, corev1.PodReadinessGate{
+			ConditionType: ReadinessGateIPv6,
+		})
+	}
+
+	deployment.Spec.Template.Spec.ReadinessGates = gates
+}
+
+// injectRouterPodIdentityEnvVars finds the router container and ensures these downward API env vars are set: POD_NAME, POD_NAMESPACE, POD_UID
+// MERIDIO_GATEWAY_NAMESPACE is the Gateway's namespace (not necessarily the Pod's namespace — cross-namespace scenarios are possible in the future).
+// The router needs its own Pod's namespace to patch its own status.
+func injectRouterPodIdentityEnvVars(deployment *appsv1.Deployment) {
+	for i := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[i]
+		if container.Name == "router" {
+			// Check if env vars already exist to avoid unnecessary updates
+			hasPodName := false
+			hasPodNamespace := false
+			hasPodUID := false
+
+			for j := range container.Env {
+				switch container.Env[j].Name {
+				case "POD_NAME":
+					hasPodName = true
+				case "POD_NAMESPACE":
+					hasPodNamespace = true
+				case "POD_UID":
+					hasPodUID = true
+				}
+			}
+
+			if !hasPodName {
+				container.Env = append(container.Env, corev1.EnvVar{
+					Name: "POD_NAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.name",
+						},
+					},
+				})
+			}
+
+			if !hasPodNamespace {
+				container.Env = append(container.Env, corev1.EnvVar{
+					Name: "POD_NAMESPACE",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				})
+			}
+
+			if !hasPodUID {
+				container.Env = append(container.Env, corev1.EnvVar{
+					Name: "POD_UID",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.uid",
+						},
+					},
+				})
+			}
+			break
+		}
+	}
 }

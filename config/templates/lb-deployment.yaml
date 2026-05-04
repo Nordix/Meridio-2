@@ -78,6 +78,18 @@ spec:
           value: "file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all"
         - name: MERIDIO_READINESS_DIR
           value: '/var/run/meridio'
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
