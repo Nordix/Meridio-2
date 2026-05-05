@@ -25,8 +25,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -43,6 +46,9 @@ type RouterReconciler struct {
 	GatewayNamespace string
 	// BIRD instance
 	Bird bird.BirdInterface
+	// LBReadinessPath is the directory where the LB controller writes readiness files.
+	// If empty, readiness gating is disabled (VIPs always advertised).
+	LBReadinessPath string
 }
 
 // RBAC for the router controller is managed via config/rbac/lb-serviceaccount.yaml
@@ -82,6 +88,12 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// Gateway API uses plain IPs; BIRD's vipsToCidr converts to CIDR notation
 	vips := getVIPs(gateway)
 
+	// Gate VIP advertisement on LB readiness
+	if r.LBReadinessPath != "" && !dirHasLBReadinessFiles(r.LBReadinessPath) {
+		log.Info("LB not ready, suppressing VIP advertisement")
+		vips = nil
+	}
+
 	log.Info("Reconciling router", "vips", vips, "gatewayRouters", len(gatewayRouters))
 
 	if err := r.Bird.Configure(ctx, vips, gatewayRouters); err != nil {
@@ -93,11 +105,21 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *RouterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&gatewayapiv1.Gateway{}).
-		Watches(&meridio2v1alpha1.GatewayRouter{}, handler.EnqueueRequestsFromMapFunc(r.gatewayRouterEnqueue)).
-		Named("gatewayrouter").
-		Complete(r)
+		Watches(&meridio2v1alpha1.GatewayRouter{}, handler.EnqueueRequestsFromMapFunc(r.gatewayRouterEnqueue))
+
+	if r.LBReadinessPath != "" {
+		ch := make(chan event.GenericEvent, 1)
+		_ = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+			return r.watchLBReadinessDir(ctx, ch)
+		}))
+		builder = builder.WatchesRawSource(source.Channel(ch, &handler.EnqueueRequestForObject{}))
+	} else {
+		logf.Log.WithName("setup").Info("WARNING: --lb-readiness-path/MERIDIO_LB_READINESS_PATH not set, VIPs will be advertised without waiting for LB targets")
+	}
+
+	return builder.Named("gatewayrouter").Complete(r)
 }
 
 func makeNamespacedName(ref gatewayapiv1.ParentReference, defaultNs string) types.NamespacedName {

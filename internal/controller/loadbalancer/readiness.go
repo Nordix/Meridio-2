@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/nordix/meridio-2/internal/common/readiness"
 )
 
 const defaultReadinessDir = "/var/run/meridio"
@@ -35,7 +37,7 @@ func (c *Controller) cleanupReadinessDir() error {
 	}
 
 	// Remove all lb-ready-* files
-	pattern := filepath.Join(readinessDir, "lb-ready-*")
+	pattern := filepath.Join(readinessDir, readiness.LBReadyFilePrefix+"*")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to glob readiness files: %w", err)
@@ -59,7 +61,7 @@ func (c *Controller) createReadinessFile(distGroupName string) error {
 	}
 
 	// Create readiness file
-	filePath := filepath.Join(readinessDir, fmt.Sprintf("lb-ready-%s", distGroupName))
+	filePath := filepath.Join(readinessDir, fmt.Sprintf("%s%s", readiness.LBReadyFilePrefix, distGroupName))
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create readiness file: %w", err)
@@ -71,7 +73,7 @@ func (c *Controller) createReadinessFile(distGroupName string) error {
 
 // removeReadinessFile removes the readiness file for the DistributionGroup.
 func (c *Controller) removeReadinessFile(distGroupName string) error {
-	filePath := filepath.Join(readinessDir, fmt.Sprintf("lb-ready-%s", distGroupName))
+	filePath := filepath.Join(readinessDir, fmt.Sprintf("%s%s", readiness.LBReadyFilePrefix, distGroupName))
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove readiness file: %w", err)
 	}

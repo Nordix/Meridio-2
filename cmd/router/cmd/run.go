@@ -134,6 +134,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		GatewayName:      cfg.GatewayName,
 		GatewayNamespace: cfg.GatewayNamespace,
 		Bird:             birdInstance,
+		LBReadinessPath:  cfg.LBReadinessPath,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to create controller", "controller", "GatewayRouter")
 		return err

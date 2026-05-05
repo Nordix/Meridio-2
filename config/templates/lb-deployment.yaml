@@ -74,6 +74,8 @@ spec:
               fieldPath: metadata.namespace
         - name: MERIDIO_BIRD_LOG
           value: "file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all"
+        - name: MERIDIO_LB_READINESS_PATH
+          value: /var/run/meridio
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -92,6 +94,9 @@ spec:
           mountPath: /etc/bird
         - name: bird-log
           mountPath: /var/log/bird
+        - name: lb-run
+          mountPath: /var/run/meridio
+          readOnly: true
         resources:
           requests:
             cpu: 100m

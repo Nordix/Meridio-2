@@ -38,6 +38,7 @@ type RouterConfig struct {
 	EnableHTTP2        bool
 	BirdLogs           bird.BirdLogParams
 	BirdKernelScanTime int
+	LBReadinessPath    string
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -65,6 +66,9 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	fs.IntVar(&c.BirdKernelScanTime, "bird-kernel-scan-time", 10,
 		"Interval in seconds for BIRD kernel protocol route table scanning")
+	fs.StringVar(&c.LBReadinessPath, "lb-readiness-path", "/var/run/meridio",
+		"Path to LB readiness directory. VIPs are only advertised when lb-ready-* files exist. "+
+			"Empty string disables the check (always advertise).")
 	fs.Var(&c.BirdLogs, "bird-log",
 		"BIRD log destination (repeatable).\n"+
 			"Format: type:params:classes\n"+
@@ -100,6 +104,7 @@ func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
 	bindInt(fs, "bird-kernel-scan-time", "MERIDIO_BIRD_KERNEL_SCAN_TIME", &c.BirdKernelScanTime)
+	bindString(fs, "lb-readiness-path", "MERIDIO_LB_READINESS_PATH", &c.LBReadinessPath)
 	bindBirdLogs(fs, "bird-log", "MERIDIO_BIRD_LOG", &c.BirdLogs)
 }
 
