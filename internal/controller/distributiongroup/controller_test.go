@@ -36,14 +36,14 @@ import (
 )
 
 const (
-	testControllerName  = "example.com/gateway-controller"
-	testNamespace       = "meridio-2"
-	testDGName          = "test-dg"
-	testGatewayName     = "test-gateway"
-	testGWClassName     = "test-class"
-	testGWConfigName    = "test-gwconfig"
-	testNetworkSubnet   = "192.168.100.0/24"
-	testNetworkSubnetV6 = "2001:db8:100::/64"
+	testControllerName   = "example.com/gateway-controller"
+	testNamespace        = "meridio-2"
+	testDGName           = "test-dg"
+	testGatewayName      = "test-gateway"
+	testGWClassName      = "test-class"
+	testGWConfigName     = "test-gwconfig"
+	testInternalSubnet   = "192.168.100.0/24"
+	testInternalSubnetV6 = "2001:db8:100::/64"
 )
 
 func newScheme() *runtime.Scheme {
@@ -163,8 +163,8 @@ func newGatewayConfig() *meridio2v1alpha1.GatewayConfiguration {
 			Namespace: testNamespace,
 		},
 		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
-			NetworkSubnets: []meridio2v1alpha1.NetworkSubnet{
-				{AttachmentType: "NAD", CIDRs: []string{testNetworkSubnet}},
+			InternalSubnets: []meridio2v1alpha1.InternalSubnet{
+				{AttachmentType: "NAD", CIDR: testInternalSubnet},
 			},
 			NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 				{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Name: "macvlan", Namespace: testNamespace, Interface: "net1"}},
@@ -431,9 +431,9 @@ func TestReconcile_DualStack(t *testing.T) {
 	dg := newDG()
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
-	gwConfig.Spec.NetworkSubnets = []meridio2v1alpha1.NetworkSubnet{
-		{AttachmentType: "NAD", CIDRs: []string{testNetworkSubnet}},
-		{AttachmentType: "NAD", CIDRs: []string{testNetworkSubnetV6}},
+	gwConfig.Spec.InternalSubnets = []meridio2v1alpha1.InternalSubnet{
+		{AttachmentType: "NAD", CIDR: testInternalSubnet},
+		{AttachmentType: "NAD", CIDR: testInternalSubnetV6},
 	}
 	route := newL34Route(testGatewayName, testDGName)
 	pod := newPod("pod-1", "192.168.100.10", true)
@@ -656,7 +656,7 @@ func TestReconcile_NoNetworkContext(t *testing.T) {
 	dg := newDG()
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
-	gwConfig.Spec.NetworkSubnets = nil // no network subnets
+	gwConfig.Spec.InternalSubnets = nil // no internal subnets
 	route := newL34Route(testGatewayName, testDGName)
 	pod := newPod("pod-1", "192.168.100.10", true)
 

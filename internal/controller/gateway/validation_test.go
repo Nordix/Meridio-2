@@ -136,7 +136,7 @@ func TestValidateGateway(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-gwconfig", Namespace: testNamespace},
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
-				NetworkSubnets: []meridio2v1alpha1.NetworkSubnet{}, // empty = invalid
+				InternalSubnets: []meridio2v1alpha1.InternalSubnet{}, // empty = invalid
 			},
 		}
 		gw := &gatewayv1.Gateway{
@@ -153,7 +153,7 @@ func TestValidateGateway(t *testing.T) {
 
 		var valErr *validationError
 		assert.True(t, errors.As(err, &valErr))
-		assert.Contains(t, err.Error(), "at least one networkSubnet")
+		assert.Contains(t, err.Error(), "at least one internalSubnet")
 	})
 
 	t.Run("Valid", func(t *testing.T) {
@@ -176,76 +176,55 @@ func TestValidateGateway(t *testing.T) {
 	})
 }
 
-// --- validateNetworkSubnets ---
+// --- validateInternalSubnets ---
 
-func TestValidateNetworkSubnets(t *testing.T) {
+func TestValidateInternalSubnets(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{})
-		assert.Contains(t, err.Error(), "at least one networkSubnet")
+		err := validateInternalSubnets([]meridio2v1alpha1.InternalSubnet{})
+		assert.Contains(t, err.Error(), "at least one internalSubnet")
 	})
 
 	t.Run("UnsupportedAttachmentType", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "DRA", CIDRs: []string{"10.0.0.0/24"}},
+		err := validateInternalSubnets([]meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "DRA", CIDR: "10.0.0.0/24"},
 		})
 		assert.Contains(t, err.Error(), "only NAD attachment type is supported")
 	})
 
 	t.Run("InvalidCIDR", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"not-a-cidr"}},
+		err := validateInternalSubnets([]meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "NAD", CIDR: "not-a-cidr"},
 		})
 		assert.Contains(t, err.Error(), "invalid CIDR")
 	})
 
 	t.Run("Valid", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"192.168.1.0/24"}},
+		err := validateInternalSubnets([]meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "NAD", CIDR: "192.168.1.0/24"},
 		})
 		assert.NoError(t, err)
 	})
 
-	t.Run("OverlappingCIDRsSameSubnet", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"10.0.0.0/8", "10.1.0.0/16"}},
-		})
-		assert.Contains(t, err.Error(), "overlapping")
-	})
-
 	t.Run("OverlappingCIDRsAcrossSubnets", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"192.168.0.0/16"}},
-			{AttachmentType: "NAD", CIDRs: []string{"192.168.1.0/24"}},
-		})
-		assert.Contains(t, err.Error(), "overlapping")
-	})
-
-	t.Run("OverlappingIPv6SameSubnet", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"fd00::/48", "fd00:0:0:1::/64"}},
+		err := validateInternalSubnets([]meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "NAD", CIDR: "192.168.0.0/16"},
+			{AttachmentType: "NAD", CIDR: "192.168.1.0/24"},
 		})
 		assert.Contains(t, err.Error(), "overlapping")
 	})
 
 	t.Run("OverlappingIPv6AcrossSubnets", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"2001:db8::/32"}},
-			{AttachmentType: "NAD", CIDRs: []string{"2001:db8:1::/48"}},
+		err := validateInternalSubnets([]meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "NAD", CIDR: "2001:db8::/32"},
+			{AttachmentType: "NAD", CIDR: "2001:db8:1::/48"},
 		})
 		assert.Contains(t, err.Error(), "overlapping")
 	})
 
-	t.Run("NonOverlappingIPv6", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"fd00:1::/64", "fd00:2::/64"}},
-		})
-		assert.NoError(t, err)
-	})
-
 	t.Run("NonOverlappingDualStack", func(t *testing.T) {
-		err := validateNetworkSubnets([]meridio2v1alpha1.NetworkSubnet{
-			{AttachmentType: "NAD", CIDRs: []string{"192.168.1.0/24"}},
-			{AttachmentType: "NAD", CIDRs: []string{"fd00::/64"}},
+		err := validateInternalSubnets([]meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "NAD", CIDR: "192.168.1.0/24"},
+			{AttachmentType: "NAD", CIDR: "fd00::/64"},
 		})
 		assert.NoError(t, err)
 	})

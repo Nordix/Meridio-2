@@ -32,13 +32,15 @@ type GatewayConfigurationSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	NetworkAttachments []NetworkAttachment `json:"networkAttachments"`
 
-	// networkSubnets identifies the subnet(s) where application endpoint IPs reside.
+	// internalSubnets identifies the subnet(s) where application endpoint IPs reside.
 	// Used by the ENC controller to match secondary interfaces in application Pods
 	// and to determine IP family (IPv4/IPv6) for VIP and next-hop assignment.
-	// Typically one entry per IP family for dual-stack deployments.
+	// Each entry represents a single subnet of one IP family. For dual-stack, use two
+	// separate entries (one IPv4, one IPv6).
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=2
-	NetworkSubnets []NetworkSubnet `json:"networkSubnets"`
+	// +kubebuilder:validation:XValidation:rule="self.size() <= 1 || cidr(self[0].cidr).ip().family() != cidr(self[1].cidr).ip().family()",message="Each internalSubnet must represent a different IP family"
+	InternalSubnets []InternalSubnet `json:"internalSubnets"`
 
 	// horizontalScaling controls the replica count of the LB Deployment.
 	// For further details on horizontal scaling, see the Kubernetes documentation:
@@ -52,8 +54,10 @@ type GatewayConfigurationSpec struct {
 	VerticalScaling *VerticalScaling `json:"verticalScaling,omitempty"`
 }
 
-// NetworkSubnet identifies a network segment where application endpoints are reachable.
-type NetworkSubnet struct {
+// InternalSubnet identifies a network segment where application endpoints are reachable.
+// Each entry represents a single subnet of one IP family. For dual-stack, use two separate
+// InternalSubnet entries (one IPv4, one IPv6).
+type InternalSubnet struct {
 
 	// attachmentType specifies how the network is attached to Pods.
 	// Currently only NAD (NetworkAttachmentDefinition) is supported.
@@ -61,13 +65,12 @@ type NetworkSubnet struct {
 	// +kubebuilder:validation:Enum=NAD;DRA
 	AttachmentType string `json:"attachmentType"`
 
-	// cidrs lists the subnet CIDRs for this network segment (e.g. "192.168.100.0/24").
-	// Must not overlap with CIDRs in other NetworkSubnets. Default routes (0.0.0.0/0,
+	// cidr is the subnet CIDR for this network segment (e.g. "192.168.100.0/24").
+	// Must not overlap with CIDRs in other InternalSubnets. Default routes (0.0.0.0/0,
 	// ::/0) and IPv6 link-local addresses (fe80::/10) are not allowed.
-	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:MaxItems=15
-	// +kubebuilder:validation:items:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
-	CIDRs []string `json:"cidrs"`
+	// +kubebuilder:validation:MaxLength=43
+	// +kubebuilder:validation:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
+	CIDR string `json:"cidr"`
 }
 
 // NetworkAttachment defines a secondary network interface for the LB Deployment Pods.

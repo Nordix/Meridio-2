@@ -63,6 +63,48 @@ spec:
                 - enforceReplicas
                 - replicas
                 type: object
+              internalSubnets:
+                description: |-
+                  internalSubnets identifies the subnet(s) where application endpoint IPs reside.
+                  Used by the ENC controller to match secondary interfaces in application Pods
+                  and to determine IP family (IPv4/IPv6) for VIP and next-hop assignment.
+                  Each entry represents a single subnet of one IP family. For dual-stack, use two
+                  separate entries (one IPv4, one IPv6).
+                items:
+                  description: |-
+                    InternalSubnet identifies a network segment where application endpoints are reachable.
+                    Each entry represents a single subnet of one IP family. For dual-stack, use two separate
+                    InternalSubnet entries (one IPv4, one IPv6).
+                  properties:
+                    attachmentType:
+                      default: NAD
+                      description: |-
+                        attachmentType specifies how the network is attached to Pods.
+                        Currently only NAD (NetworkAttachmentDefinition) is supported.
+                      enum:
+                      - NAD
+                      - DRA
+                      type: string
+                    cidr:
+                      description: |-
+                        cidr is the subnet CIDR for this network segment (e.g. "192.168.100.0/24").
+                        Must not overlap with CIDRs in other InternalSubnets. Default routes (0.0.0.0/0,
+                        ::/0) and IPv6 link-local addresses (fe80::/10) are not allowed.
+                      maxLength: 43
+                      type: string
+                      x-kubernetes-validations:
+                      - message: Must be a valid CIDR notation!
+                        rule: isCIDR(self)
+                  required:
+                  - attachmentType
+                  - cidr
+                  type: object
+                maxItems: 2
+                minItems: 1
+                type: array
+                x-kubernetes-validations:
+                - message: Each internalSubnet must represent a different IP family
+                  rule: self.size() <= 1 || cidr(self[0].cidr).ip().family() != cidr(self[1].cidr).ip().family()
               networkAttachments:
                 description: |-
                   networkAttachments defines the secondary network interfaces for the LB
@@ -120,45 +162,6 @@ spec:
                     rule: self.type == "NAD" && self.nad != null || self.type == "DRA"
                       && self.dra != null
                 maxItems: 10
-                type: array
-              networkSubnets:
-                description: |-
-                  networkSubnets identifies the subnet(s) where application endpoint IPs reside.
-                  Used by the ENC controller to match secondary interfaces in application Pods
-                  and to determine IP family (IPv4/IPv6) for VIP and next-hop assignment.
-                  Typically one entry per IP family for dual-stack deployments.
-                items:
-                  description: NetworkSubnet identifies a network segment where application
-                    endpoints are reachable.
-                  properties:
-                    attachmentType:
-                      default: NAD
-                      description: |-
-                        attachmentType specifies how the network is attached to Pods.
-                        Currently only NAD (NetworkAttachmentDefinition) is supported.
-                      enum:
-                      - NAD
-                      - DRA
-                      type: string
-                    cidrs:
-                      description: |-
-                        cidrs lists the subnet CIDRs for this network segment (e.g. "192.168.100.0/24").
-                        Must not overlap with CIDRs in other NetworkSubnets. Default routes (0.0.0.0/0,
-                        ::/0) and IPv6 link-local addresses (fe80::/10) are not allowed.
-                      items:
-                        type: string
-                        x-kubernetes-validations:
-                        - message: Must be a valid CIDR notation!
-                          rule: isCIDR(self)
-                      maxItems: 15
-                      minItems: 1
-                      type: array
-                  required:
-                  - attachmentType
-                  - cidrs
-                  type: object
-                maxItems: 2
-                minItems: 1
                 type: array
               verticalScaling:
                 description: |-
@@ -277,8 +280,8 @@ spec:
                 type: object
             required:
             - horizontalScaling
+            - internalSubnets
             - networkAttachments
-            - networkSubnets
             type: object
           status:
             description: status defines the observed state of GatewayConfiguration
