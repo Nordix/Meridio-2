@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -81,7 +80,7 @@ func (r *GatewayReconciler) validateGateway(ctx context.Context, gw *gatewayv1.G
 // Returns validationError for invalid config (caller should set Accepted=False)
 func (r *GatewayReconciler) validateConfigurationFields(gwConfig *meridio2v1alpha1.GatewayConfiguration, template *appsv1.Deployment) error {
 	// Validate GatewayConfiguration fields
-	if err := validateNetworkSubnets(gwConfig.Spec.NetworkSubnets); err != nil {
+	if err := validateInternalSubnets(gwConfig.Spec.InternalSubnets); err != nil {
 		return err
 	}
 	if err := validateNetworkAttachments(gwConfig.Spec.NetworkAttachments); err != nil {
@@ -165,9 +164,9 @@ func validateMergedNetworkAttachments(gwConfig *meridio2v1alpha1.GatewayConfigur
 	return nil
 }
 
-func validateNetworkSubnets(subnets []meridio2v1alpha1.NetworkSubnet) error {
+func validateInternalSubnets(subnets []meridio2v1alpha1.InternalSubnet) error {
 	if len(subnets) == 0 {
-		return &validationError{message: "GatewayConfiguration must have at least one networkSubnet"}
+		return &validationError{message: "GatewayConfiguration must have at least one internalSubnet"}
 	}
 
 	allNets := make([]*net.IPNet, 0, 2) // typically one IPv4 + one IPv6
@@ -175,24 +174,22 @@ func validateNetworkSubnets(subnets []meridio2v1alpha1.NetworkSubnet) error {
 		if subnet.AttachmentType != attachmentTypeNAD {
 			return &validationError{
 				message: fmt.Sprintf("subnet %s: only NAD attachment type is supported (got %q)",
-					strings.Join(subnet.CIDRs, ", "), subnet.AttachmentType),
+					subnet.CIDR, subnet.AttachmentType),
 			}
 		}
 
-		for _, cidr := range subnet.CIDRs {
-			if err := validateCIDR(cidr); err != nil {
-				return err
-			}
-			_, ipnet, _ := net.ParseCIDR(cidr) // safe: validateCIDR passed
-			for _, existing := range allNets {
-				if existing.Contains(ipnet.IP) || ipnet.Contains(existing.IP) {
-					return &validationError{
-						message: fmt.Sprintf("overlapping networkSubnet CIDRs: %s and %s", existing, ipnet),
-					}
+		if err := validateCIDR(subnet.CIDR); err != nil {
+			return err
+		}
+		_, ipnet, _ := net.ParseCIDR(subnet.CIDR) // safe: validateCIDR passed
+		for _, existing := range allNets {
+			if existing.Contains(ipnet.IP) || ipnet.Contains(existing.IP) {
+				return &validationError{
+					message: fmt.Sprintf("overlapping internalSubnet CIDRs: %s and %s", existing, ipnet),
 				}
 			}
-			allNets = append(allNets, ipnet)
 		}
+		allNets = append(allNets, ipnet)
 	}
 	return nil
 }

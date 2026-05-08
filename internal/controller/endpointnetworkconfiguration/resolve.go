@@ -274,14 +274,12 @@ func (r *Reconciler) getNetworkContexts(ctx context.Context, gw *gatewayv1.Gatew
 		return subnetToType, client.IgnoreNotFound(err)
 	}
 
-	for _, subnet := range gwConfig.Spec.NetworkSubnets {
-		for _, cidr := range subnet.CIDRs {
-			normalized, err := normalizeCIDR(cidr)
-			if err != nil {
-				continue
-			}
-			subnetToType[normalized] = subnet.AttachmentType
+	for _, subnet := range gwConfig.Spec.InternalSubnets {
+		normalized, err := normalizeCIDR(subnet.CIDR)
+		if err != nil {
+			continue
 		}
+		subnetToType[normalized] = subnet.AttachmentType
 	}
 
 	return subnetToType, nil

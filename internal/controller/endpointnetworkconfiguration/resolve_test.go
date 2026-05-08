@@ -88,15 +88,17 @@ func newDG(name string, selector map[string]string, parentGateway string) *merid
 }
 
 func newGatewayConfig(cidrs []string) *meridio2v1alpha1.GatewayConfiguration {
+	subnets := make([]meridio2v1alpha1.InternalSubnet, len(cidrs))
+	for i, cidr := range cidrs {
+		subnets[i] = meridio2v1alpha1.InternalSubnet{AttachmentType: "NAD", CIDR: cidr}
+	}
 	gc := &meridio2v1alpha1.GatewayConfiguration{
 		ObjectMeta: metav1.ObjectMeta{Name: "sllb-a-config", Namespace: testNamespace},
 		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 			NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 				{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Interface: "net1", Name: "nad-1", Namespace: testNamespace}},
 			},
-			NetworkSubnets: []meridio2v1alpha1.NetworkSubnet{
-				{AttachmentType: "NAD", CIDRs: cidrs},
-			},
+			InternalSubnets:   subnets,
 			HorizontalScaling: meridio2v1alpha1.HorizontalScaling{Replicas: 1},
 		},
 	}
@@ -517,8 +519,9 @@ func TestSidecarContract_DualStack(t *testing.T) {
 			NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 				{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Interface: "net1", Name: "nad-1", Namespace: testNamespace}},
 			},
-			NetworkSubnets: []meridio2v1alpha1.NetworkSubnet{
-				{AttachmentType: "NAD", CIDRs: []string{testSubnetV4, testSubnetV6}},
+			InternalSubnets: []meridio2v1alpha1.InternalSubnet{
+				{AttachmentType: "NAD", CIDR: testSubnetV4},
+				{AttachmentType: "NAD", CIDR: testSubnetV6},
 			},
 			HorizontalScaling: meridio2v1alpha1.HorizontalScaling{Replicas: 1},
 		},
