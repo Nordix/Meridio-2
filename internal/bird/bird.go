@@ -41,18 +41,23 @@ type BirdInterface interface {
 }
 
 type Bird struct {
-	SocketPath string
-	ConfigFile string
-	LogParams  BirdLogParams
-	nl         abstractNetlink
-	running    bool
-	mu         sync.Mutex
+	SocketPath     string
+	ConfigFile     string
+	LogParams      BirdLogParams
+	KernelScanTime int
+	nl             abstractNetlink
+	running        bool
+	mu             sync.Mutex
 }
 
 type Option func(*Bird)
 
 func WithLogParams(params BirdLogParams) Option {
 	return func(b *Bird) { b.LogParams = params }
+}
+
+func WithKernelScanTime(seconds int) Option {
+	return func(b *Bird) { b.KernelScanTime = seconds }
 }
 
 func New(opts ...Option) *Bird {
@@ -143,7 +148,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 }
 
 func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) (string, error) {
-	data := birdConfigData{KernelTableID: defaultKernelTableID, LogParams: b.LogParams}
+	data := birdConfigData{KernelTableID: defaultKernelTableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
 
 	for _, vip := range vips {
 		if isIPv6(vip) {

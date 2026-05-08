@@ -33,11 +33,12 @@ const (
 )
 
 type birdConfigData struct {
-	KernelTableID int
-	LogParams     BirdLogParams
-	IPv4VIPs      []string
-	IPv6VIPs      []string
-	Routers       []routerData
+	KernelTableID  int
+	KernelScanTime int
+	LogParams      BirdLogParams
+	IPv4VIPs       []string
+	IPv6VIPs       []string
+	Routers        []routerData
 }
 
 type routerData struct {
@@ -98,6 +99,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time {{.KernelScanTime}};
 	kernel table {{.KernelTableID}};
 	merge paths on;
 }
@@ -107,6 +109,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time {{.KernelScanTime}};
 	kernel table {{.KernelTableID}};
 	merge paths on;
 }

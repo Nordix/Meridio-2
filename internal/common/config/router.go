@@ -26,17 +26,18 @@ import (
 
 // RouterConfig holds configuration for the router
 type RouterConfig struct {
-	GatewayName      string
-	GatewayNamespace string
-	ProbeAddr        string
-	LogLevel         string
-	MetricsAddr      string
-	SecureMetrics    bool
-	MetricsCertPath  string
-	MetricsCertName  string
-	MetricsCertKey   string
-	EnableHTTP2      bool
-	BirdLogs         bird.BirdLogParams
+	GatewayName        string
+	GatewayNamespace   string
+	ProbeAddr          string
+	LogLevel           string
+	MetricsAddr        string
+	SecureMetrics      bool
+	MetricsCertPath    string
+	MetricsCertName    string
+	MetricsCertKey     string
+	EnableHTTP2        bool
+	BirdLogs           bird.BirdLogParams
+	BirdKernelScanTime int
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -62,6 +63,8 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"The name of the metrics server key file.")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	fs.IntVar(&c.BirdKernelScanTime, "bird-kernel-scan-time", 10,
+		"Interval in seconds for BIRD kernel protocol route table scanning")
 	fs.Var(&c.BirdLogs, "bird-log",
 		"BIRD log destination (repeatable).\n"+
 			"Format: type:params:classes\n"+
@@ -96,6 +99,7 @@ func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
+	bindInt(fs, "bird-kernel-scan-time", "MERIDIO_BIRD_KERNEL_SCAN_TIME", &c.BirdKernelScanTime)
 	bindBirdLogs(fs, "bird-log", "MERIDIO_BIRD_LOG", &c.BirdLogs)
 }
 
