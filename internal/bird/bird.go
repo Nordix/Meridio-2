@@ -62,10 +62,9 @@ func WithKernelScanTime(seconds int) Option {
 
 func New(opts ...Option) *Bird {
 	b := &Bird{
-		SocketPath:     "/var/run/bird/bird.ctl",
-		ConfigFile:     "/etc/bird/bird.conf",
-		KernelScanTime: defaultKernelScanTime,
-		nl:             &netlink.Handle{},
+		SocketPath: "/var/run/bird/bird.ctl",
+		ConfigFile: "/etc/bird/bird.conf",
+		nl:         &netlink.Handle{},
 	}
 	for _, o := range opts {
 		o(b)

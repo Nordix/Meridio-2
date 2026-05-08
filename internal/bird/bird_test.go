@@ -26,7 +26,7 @@ import (
 )
 
 func TestGenerateConfig(t *testing.T) {
-	b := New()
+	b := New(WithKernelScanTime(10))
 
 	t.Run("empty config", func(t *testing.T) {
 		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{})
@@ -85,7 +85,7 @@ func TestGenerateConfig(t *testing.T) {
 		bWithLogs := New(WithLogParams(BirdLogParams{
 			{Type: "stderr", Classes: []string{"info", "warning", "error", "fatal"}},
 			{Type: "file", Path: "/var/log/bird.log", Size: 1048576, BackupPath: "/var/log/bird.log.1", Classes: []string{"all"}},
-		}))
+		}), WithKernelScanTime(10))
 		router := &meridio2v1alpha1.GatewayRouter{
 			ObjectMeta: metav1.ObjectMeta{Name: "gatewayrouter-sample"},
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
