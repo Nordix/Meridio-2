@@ -37,10 +37,9 @@ spec:
       name: app-net-a1
       namespace: e2e-separate-appnet
       interface: net-a1
-  networkSubnets:
+  internalSubnets:
   - attachmentType: NAD
-    cidrs:
-    - "169.111.100.0/24"
+    cidr: "169.111.100.0/24"
   horizontalScaling:
     replicas: 2
 ---
@@ -82,9 +81,8 @@ spec:
       name: app-net-a2
       namespace: e2e-separate-appnet
       interface: net-a2
-  networkSubnets:
+  internalSubnets:
   - attachmentType: NAD
-    cidrs:
-    - "169.111.200.0/24"
+    cidr: "169.111.200.0/24"
   horizontalScaling:
     replicas: 2

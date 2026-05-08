@@ -36,9 +36,8 @@ spec:
       name: app-net-mtu1200
       namespace: e2e-low-mtu
       interface: net-m
-  networkSubnets:
+  internalSubnets:
   - attachmentType: NAD
-    cidrs:
-    - "169.111.50.0/24"
+    cidr: "169.111.50.0/24"
   horizontalScaling:
     replicas: 1
