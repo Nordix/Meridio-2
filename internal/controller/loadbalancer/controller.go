@@ -88,7 +88,7 @@ type nftablesManager interface {
 
 const (
 	kindDistributionGroup = "DistributionGroup"
-	groupGatewayAPI       = "gateway.networking.k8s.io"
+	groupGatewayAPI       = gatewayv1.GroupName
 	kindGateway           = "Gateway"
 )
 
