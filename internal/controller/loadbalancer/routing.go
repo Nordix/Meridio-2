@@ -29,6 +29,21 @@ type RoutingManager struct {
 	configuredFwmarks map[int]routeInfo
 	// Allow disabling for tests
 	disabled bool
+	// Netlink operations (abstracted for testing).
+	// *netlink.Handle satisfies this interface directly.
+	nl netlinkOps
+}
+
+// netlinkOps abstracts netlink operations for testability.
+// *netlink.Handle satisfies this interface directly.
+type netlinkOps interface {
+	RuleAdd(rule *netlink.Rule) error
+	RuleDel(rule *netlink.Rule) error
+	RuleList(family int) ([]netlink.Rule, error)
+	RouteReplace(route *netlink.Route) error
+	RouteDel(route *netlink.Route) error
+	NeighList(link, family int) ([]netlink.Neigh, error)
+	NeighDel(neigh *netlink.Neigh) error
 }
 
 type routeInfo struct {
@@ -41,6 +56,7 @@ func NewRoutingManager() *RoutingManager {
 	return &RoutingManager{
 		configuredFwmarks: make(map[int]routeInfo),
 		disabled:          false,
+		nl:                &netlink.Handle{},
 	}
 }
 
@@ -49,15 +65,17 @@ func NewMockRoutingManager() *RoutingManager {
 	return &RoutingManager{
 		configuredFwmarks: make(map[int]routeInfo),
 		disabled:          true,
+		nl:                &netlink.Handle{},
 	}
 }
 
 // AddRoute configures policy routing for a target
 // Creates: ip rule add fwmark <fwmark> table <tableID>
 //
-//	ip route add default via <targetIP> table <tableID>
+//	ip route replace default via <targetIP> table <tableID>
 //
-// Kernel will determine the interface based on target IP subnet
+// Uses RouteReplace to atomically handle stale routes (e.g., target IP change,
+// container restart with kernel state surviving).
 func (r *RoutingManager) AddRoute(fwmark int, targetIP string) error {
 	// Skip if disabled (for tests)
 	if r.disabled {
@@ -73,18 +91,6 @@ func (r *RoutingManager) AddRoute(fwmark int, targetIP string) error {
 		return fmt.Errorf("invalid target IP: %s", targetIP)
 	}
 
-	// Check if route already exists and is valid
-	if r.isValidRoute(fwmark, ip) {
-		r.configuredFwmarks[fwmark] = routeInfo{
-			tableID: tableID,
-			gateway: ip,
-		}
-		return nil
-	}
-
-	// Cleanup old route if exists (might be stale)
-	r.deleteRouteInternal(fwmark, ip)
-
 	// Clean stale neighbor entries
 	_ = r.cleanNeighbor(ip)
 
@@ -94,27 +100,32 @@ func (r *RoutingManager) AddRoute(fwmark int, targetIP string) error {
 		family = netlink.FAMILY_V4
 	}
 
-	// Add policy routing rule: fwmark -> table
+	// Ensure policy routing rule: fwmark -> table
+	// Linux ip rule allows duplicates (no EEXIST), so we must check existing rules.
+	// If a rule for this fwmark already exists with the correct table, skip.
+	// If it exists with a different table, delete it and add the correct one.
+	// If no rule exists, add it.
 	rule := netlink.NewRule()
 	rule.Mark = uint32(fwmark)
 	rule.Table = tableID
 	rule.Family = family
 	rule.Priority = 32000 // Standard priority for fwmark rules
 
-	if err := netlink.RuleAdd(rule); err != nil {
-		return fmt.Errorf("failed to add routing rule for fwmark %d: %w", fwmark, err)
+	if err := r.ensureRule(rule); err != nil {
+		return fmt.Errorf("failed to ensure routing rule for fwmark %d: %w", fwmark, err)
 	}
 
-	// Add default route in custom table (kernel finds interface)
+	// Replace route in custom table — atomically overwrites any existing route
+	// regardless of current gateway IP (fixes stale route bug)
 	route := &netlink.Route{
 		Gw:    ip,
 		Table: tableID,
 	}
 
-	if err := netlink.RouteAdd(route); err != nil {
-		// Cleanup rule on failure
-		_ = netlink.RuleDel(rule)
-		return fmt.Errorf("failed to add route for fwmark %d: %w", fwmark, err)
+	if err := r.nl.RouteReplace(route); err != nil {
+		// Cleanup rule on failure to avoid orphaned rule pointing to empty table
+		_ = r.nl.RuleDel(rule)
+		return fmt.Errorf("failed to replace route for fwmark %d: %w", fwmark, err)
 	}
 
 	r.configuredFwmarks[fwmark] = routeInfo{
@@ -124,41 +135,35 @@ func (r *RoutingManager) AddRoute(fwmark int, targetIP string) error {
 	return nil
 }
 
-// isValidRoute checks if the route already exists and is correct
-func (r *RoutingManager) isValidRoute(fwmark int, ip net.IP) bool {
-	info, exists := r.configuredFwmarks[fwmark]
-	if !exists {
-		return false
-	}
-
-	family := netlink.FAMILY_V6
-	if ip.To4() != nil {
-		family = netlink.FAMILY_V4
-	}
-
-	route := &netlink.Route{
-		Gw:    ip,
-		Table: info.tableID,
-	}
-
-	routes, err := netlink.RouteListFiltered(family, route, netlink.RT_FILTER_GW|netlink.RT_FILTER_TABLE)
+// ensureRule adds the desired rule only if it doesn't already exist.
+// Linux allows duplicate ip rules, so we check first to avoid accumulating duplicates
+// across reconciles.
+func (r *RoutingManager) ensureRule(desired *netlink.Rule) error {
+	rules, err := r.nl.RuleList(desired.Family)
 	if err != nil {
-		return false
+		// Can't list rules — fall through to add (best effort)
+		return r.nl.RuleAdd(desired)
 	}
 
-	return len(routes) == 1 && routes[0].Gw.Equal(ip)
+	for _, existing := range rules {
+		if existing.Mark == desired.Mark && existing.Table == desired.Table && existing.Priority == desired.Priority {
+			return nil // Already exists
+		}
+	}
+
+	return r.nl.RuleAdd(desired)
 }
 
 // cleanNeighbor removes stale ARP/NDP entries for the IP
 func (r *RoutingManager) cleanNeighbor(ip net.IP) error {
-	neighbors, err := netlink.NeighList(0, 0)
+	neighbors, err := r.nl.NeighList(0, 0)
 	if err != nil {
 		return err
 	}
 
 	for _, neighbor := range neighbors {
 		if neighbor.IP.Equal(ip) {
-			_ = netlink.NeighDel(&neighbor)
+			_ = r.nl.NeighDel(&neighbor)
 		}
 	}
 
@@ -180,14 +185,14 @@ func (r *RoutingManager) deleteRouteInternal(fwmark int, ip net.IP) {
 	rule.Family = family
 	rule.Priority = 32000
 
-	_ = netlink.RuleDel(rule)
+	_ = r.nl.RuleDel(rule)
 
 	route := &netlink.Route{
 		Gw:    ip,
 		Table: tableID,
 	}
 
-	_ = netlink.RouteDel(route)
+	_ = r.nl.RouteDel(route)
 }
 
 // DeleteRoute removes policy routing for a target
