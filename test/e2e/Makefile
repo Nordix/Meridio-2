@@ -277,7 +277,7 @@ deploy-all: ## Deploy all suites.
 	@for suite in $(SUITES); do $(MAKE) deploy-$$suite || exit 1; done
 
 .PHONY: test
-test: deploy-all ## Run all e2e tests in parallel.
+test: ## Run all e2e tests in parallel.
 	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e $(GINKGO_FLAGS)
 
 .PHONY: undeploy-all

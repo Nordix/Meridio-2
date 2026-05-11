@@ -37,10 +37,9 @@ spec:
       name: app-net-sctp1
       namespace: e2e-sctp-multihoming
       interface: net1
-  networkSubnets:
+  internalSubnets:
   - attachmentType: NAD
-    cidrs:
-    - "169.111.100.0/24"
+    cidr: "169.111.100.0/24"
   horizontalScaling:
     replicas: 2
     enforceReplicas: true
@@ -83,10 +82,9 @@ spec:
       name: app-net-sctp2
       namespace: e2e-sctp-multihoming
       interface: net2
-  networkSubnets:
+  internalSubnets:
   - attachmentType: NAD
-    cidrs:
-    - "169.111.200.0/24"
+    cidr: "169.111.200.0/24"
   horizontalScaling:
     replicas: 2
     enforceReplicas: true
