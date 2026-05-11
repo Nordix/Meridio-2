@@ -25,7 +25,7 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - |
-          netperfmeter 9000 --control-over-tcp
+          netperfmeter 9000 -L 0.0.0.0
         securityContext:
           runAsNonRoot: true
           runAsUser: 10011

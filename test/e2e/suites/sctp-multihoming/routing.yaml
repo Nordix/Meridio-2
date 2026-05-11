@@ -50,7 +50,7 @@ spec:
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
 metadata:
-  name: sctp-gw1-tcp-control
+  name: sctp-gw1-sctp-control
 spec:
   parentRefs:
   - name: sctp-gw1
@@ -67,7 +67,7 @@ spec:
   destinationPorts:
   - "9001"
   protocols:
-  - TCP
+  - SCTP
   priority: 10
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
@@ -123,7 +123,7 @@ spec:
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
 metadata:
-  name: sctp-gw2-tcp-control
+  name: sctp-gw2-sctp-control
 spec:
   parentRefs:
   - name: sctp-gw2
@@ -140,7 +140,7 @@ spec:
   destinationPorts:
   - "9001"
   protocols:
-  - TCP
+  - SCTP
   priority: 10
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
