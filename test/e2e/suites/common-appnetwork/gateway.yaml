@@ -37,10 +37,9 @@ spec:
       name: app-net-b
       namespace: e2e-common-appnet
       interface: net-b
-  networkSubnets:
+  internalSubnets:
   - attachmentType: NAD
-    cidrs:
-    - "169.111.100.0/24"
+    cidr: "169.111.100.0/24"
   horizontalScaling:
     replicas: 2
 ---
@@ -82,9 +81,8 @@ spec:
       name: app-net-b
       namespace: e2e-common-appnet
       interface: net-b
-  networkSubnets:
+  internalSubnets:
   - attachmentType: NAD
-    cidrs:
-    - "169.111.100.0/24"
+    cidr: "169.111.100.0/24"
   horizontalScaling:
     replicas: 2

@@ -19,10 +19,9 @@ spec:
         name: macvlan-nad-1
         namespace: default
         interface: net1
-  networkSubnets:
+  internalSubnets:
     - attachmentType: NAD
-      cidrs:
-        - 169.111.100.0/24
+      cidr: "169.111.100.0/24"
   horizontalScaling:
     replicas: 2
     enforceReplicas: true
