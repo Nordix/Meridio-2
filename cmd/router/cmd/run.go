@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -151,18 +152,28 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	setupLog.Info("starting router", "gateway", cfg.GatewayName, "namespace", cfg.GatewayNamespace)
 
 	ctx = ctrl.SetupSignalHandler()
+	g, ctx := errgroup.WithContext(ctx)
 
-	go func() {
+	g.Go(func() error {
 		if err := birdInstance.Run(ctx); err != nil {
-			setupLog.Error(err, "BIRD stopped")
+			return fmt.Errorf("BIRD stopped: %w", err)
 		}
-	}()
+		if ctx.Err() == nil {
+			return fmt.Errorf("BIRD exited unexpectedly")
+		}
+		return nil
+	})
 
-	// Start monitoring BGP connectivity
-	go monitorConnectivity(ctx, mgr, birdInstance)
+	g.Go(func() error {
+		return monitorConnectivity(ctx, mgr, birdInstance)
+	})
 
-	if err := mgr.Start(ctx); err != nil {
-		setupLog.Error(err, "problem running manager")
+	g.Go(func() error {
+		return mgr.Start(ctx)
+	})
+
+	if err := g.Wait(); err != nil {
+		setupLog.Error(err, "router exited")
 		return err
 	}
 
@@ -170,20 +181,18 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 }
 
 // monitorConnectivity monitors BGP connectivity and logs status changes
-func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird) {
+func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird) error {
 	log := ctrl.Log.WithName("monitor")
 
 	// Wait for manager cache to sync
 	if !mgr.GetCache().WaitForCacheSync(ctx) {
-		log.Error(nil, "failed to wait for cache sync")
-		return
+		return fmt.Errorf("failed to wait for cache sync")
 	}
 
 	// Start monitoring with 1 second interval
 	statusCh, err := birdInstance.Monitor(ctx, 1*time.Second)
 	if err != nil {
-		log.Error(err, "failed to start monitoring")
-		return
+		return fmt.Errorf("failed to start monitoring: %w", err)
 	}
 
 	var lastCount int
@@ -192,10 +201,13 @@ func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bi
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case status, ok := <-statusCh:
 			if !ok {
-				return
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("monitor channel closed unexpectedly")
 			}
 
 			count := protocolsUp(status.Protocols)
