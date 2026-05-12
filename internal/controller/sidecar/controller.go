@@ -23,6 +23,7 @@ import (
 	"net"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/vishvananda/netlink"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,7 +76,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		c.managedVIPs = make(map[string]map[string]bool)
 	}
 	if c.nl == nil {
-		c.nl = defaultNetlinkOps{}
+		c.nl = &netlink.Handle{}
 	}
 
 	var enc meridio2v1alpha1.EndpointNetworkConfiguration

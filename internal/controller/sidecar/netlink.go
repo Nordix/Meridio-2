@@ -19,6 +19,7 @@ package sidecar
 import "github.com/vishvananda/netlink"
 
 // netlinkOps abstracts netlink syscalls for testing.
+// *netlink.Handle satisfies this interface directly.
 type netlinkOps interface {
 	LinkByName(name string) (netlink.Link, error)
 	LinkList() ([]netlink.Link, error)
@@ -32,30 +33,3 @@ type netlinkOps interface {
 	RouteReplace(route *netlink.Route) error
 	RouteDel(route *netlink.Route) error
 }
-
-// defaultNetlinkOps delegates to the real netlink package.
-type defaultNetlinkOps struct{}
-
-func (defaultNetlinkOps) LinkByName(name string) (netlink.Link, error) {
-	return netlink.LinkByName(name)
-}
-func (defaultNetlinkOps) LinkList() ([]netlink.Link, error) { return netlink.LinkList() }
-func (defaultNetlinkOps) AddrList(link netlink.Link, family int) ([]netlink.Addr, error) {
-	return netlink.AddrList(link, family)
-}
-func (defaultNetlinkOps) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
-	return netlink.AddrAdd(link, addr)
-}
-func (defaultNetlinkOps) AddrDel(link netlink.Link, addr *netlink.Addr) error {
-	return netlink.AddrDel(link, addr)
-}
-func (defaultNetlinkOps) RuleList(family int) ([]netlink.Rule, error) {
-	return netlink.RuleList(family)
-}
-func (defaultNetlinkOps) RuleAdd(rule *netlink.Rule) error { return netlink.RuleAdd(rule) }
-func (defaultNetlinkOps) RuleDel(rule *netlink.Rule) error { return netlink.RuleDel(rule) }
-func (defaultNetlinkOps) RouteListFiltered(family int, filter *netlink.Route, filterMask uint64) ([]netlink.Route, error) {
-	return netlink.RouteListFiltered(family, filter, filterMask)
-}
-func (defaultNetlinkOps) RouteReplace(route *netlink.Route) error { return netlink.RouteReplace(route) }
-func (defaultNetlinkOps) RouteDel(route *netlink.Route) error     { return netlink.RouteDel(route) }
