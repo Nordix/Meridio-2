@@ -16,7 +16,7 @@ require (
 	sigs.k8s.io/gateway-api v1.4.1
 )
 
-require github.com/vishvananda/netns v0.0.5 // indirect
+require github.com/vishvananda/netns v0.0.5
 
 require (
 	github.com/josharian/native v1.1.0 // indirect

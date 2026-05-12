@@ -1,0 +1,41 @@
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-m1-router-v4
+spec:
+  gatewayRef:
+    name: gw-m1
+  interface: "vlan-500"
+  address: "169.254.50.150"
+  bgp:
+    localASN: 64516
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-m1
+spec:
+  parentRefs:
+  - name: gw-m1
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-m1
+  destinationCIDRs:
+  - "40.0.0.1/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100

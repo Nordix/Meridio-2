@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 	"golang.org/x/sys/unix"
 )
@@ -29,6 +30,7 @@ import (
 const (
 	preroutingChainName = "prerouting"
 	outputChainName     = "output"
+	pmtudChainName      = "snat-local"
 	ipv4VIPSetName      = "ipv4-vips"
 	ipv6VIPSetName      = "ipv6-vips"
 )
@@ -41,6 +43,7 @@ type Manager struct {
 	table       *nftables.Table
 	preChain    *nftables.Chain
 	outputChain *nftables.Chain
+	pmtudChain  *nftables.Chain
 	ipv4Set     *nftables.Set
 	ipv6Set     *nftables.Set
 	ipv4PreRule *nftables.Rule
@@ -75,6 +78,9 @@ func (m *Manager) Setup() error {
 		return err
 	}
 	if err := m.createOutputChain(); err != nil {
+		return err
+	}
+	if err := m.createPMTUDChain(); err != nil {
 		return err
 	}
 	return nil
@@ -214,6 +220,148 @@ func (m *Manager) createOutputChain() error {
 	})
 
 	return m.conn.Flush()
+}
+
+// createPMTUDChain creates the PMTU discovery chain.
+// Rewrites source address of locally generated ICMP Frag Needed / ICMPv6 Packet Too Big
+// replies to use the VIP from the encapsulated original packet. This ensures external
+// clients receive PMTU feedback with the correct source (VIP, not LB pod IP).
+//
+// Chain type is "route" (not "filter") so the kernel re-evaluates routing after rewrite.
+// Requires net.ipv4.fwmark_reflect=1 and net.ipv6.fwmark_reflect=1 sysctls.
+//
+// Notes:
+//   - If src of ICMP reply is already a VIP address then leave it unchanged.
+//   - Avoid mangling locally generated ICMPv4/v6 replies destined to VIP addresses.
+//     (Those shall be handled by nfqlb.)
+//   - Checking non-zero fwmark makes sure that offending packet got processed by nfqlb.
+//     Thus, checks if original packet was destined to a VIP address (provides early skip
+//     for packets not relevant, therefore no need to walk through most of the matches
+//     in vain and do an additional transport lookup verifying if orig dst was VIP).
+//     REQUIRES enabling fwmark_reflect sysctl for both IPv4 and IPv6!
+//     (Note: Sysctls also allows for an early successful route lookup to generate the reply.)
+//   - Additional safety check verifies that encapsulated destination address is a VIP address.
+//   - Resetting packet mark at the end makes sure policy based routes related to Targets
+//     do not interfere.
+func (m *Manager) createPMTUDChain() error {
+	m.pmtudChain = m.conn.AddChain(&nftables.Chain{
+		Name:     pmtudChainName,
+		Table:    m.table,
+		Type:     nftables.ChainTypeRoute,
+		Hooknum:  nftables.ChainHookOutput,
+		Priority: nftables.ChainPriorityRaw,
+	})
+
+	// IPv4: ICMP Dest Unreachable / Frag Needed → rewrite src to VIP from encapsulated packet
+	m.conn.AddRule(&nftables.Rule{
+		Table: m.table,
+		Chain: m.pmtudChain,
+		Exprs: buildPMTUDIPv4Exprs(m.ipv4Set),
+	})
+
+	// IPv6: ICMPv6 Packet Too Big → rewrite src to VIP from encapsulated packet
+	m.conn.AddRule(&nftables.Rule{
+		Table: m.table,
+		Chain: m.pmtudChain,
+		Exprs: buildPMTUDIPv6Exprs(m.ipv6Set),
+	})
+
+	return m.conn.Flush()
+}
+
+// buildPMTUDIPv4Exprs builds nftables expressions for IPv4 PMTU SNAT.
+// Matches: ICMP type 3 (Dest Unreachable) code 4 (Frag Needed), mark != 0,
+// dst NOT VIP, src NOT VIP, encapsulated dst IS VIP.
+// Action: rewrite IP src to encapsulated dst (the VIP), reset mark to 0.
+func buildPMTUDIPv4Exprs(ipv4Set *nftables.Set) []expr.Any {
+	return []expr.Any{
+		// Match IPv4
+		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.AF_INET}},
+		// Match ICMP
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_ICMP}},
+		// Non-zero fwmark (packet was processed by nfqlb)
+		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: []byte{0x0}},
+		// dst NOT in VIP set (avoid mangling ICMP destined to VIPs)
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+		&expr.Lookup{SourceRegister: 1, SetName: ipv4Set.Name, SetID: ipv4Set.ID, Invert: true},
+		// src NOT in VIP set (skip if source is already a VIP)
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 12, Len: 4},
+		&expr.Lookup{SourceRegister: 1, SetName: ipv4Set.Name, SetID: ipv4Set.ID, Invert: true},
+		// ICMP type == 3 (Destination Unreachable)
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0x3}},
+		// ICMP code == 4 (Fragmentation Needed)
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 1, Len: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0x4}},
+		// Encapsulated dst (offset 24 in ICMP payload) IS a VIP
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 24, Len: 4},
+		&expr.Lookup{SourceRegister: 1, SetName: ipv4Set.Name, SetID: ipv4Set.ID},
+		// Counter
+		&expr.Counter{},
+		// Load encapsulated dst again → write to IP source with checksum update
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 24, Len: 4},
+		&expr.Payload{
+			OperationType:  expr.PayloadWrite,
+			SourceRegister: 1,
+			Base:           expr.PayloadBaseNetworkHeader,
+			Offset:         12, // IP source address
+			Len:            4,
+			CsumType:       expr.CsumTypeInet,
+			CsumOffset:     10, // IP header checksum offset
+			CsumFlags:      unix.NFT_PAYLOAD_L4CSUM_PSEUDOHDR,
+		},
+		// Reset mark to 0 (prevent policy routing interference)
+		&expr.Immediate{Register: 1, Data: binaryutil.NativeEndian.PutUint32(0)},
+		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+	}
+}
+
+// buildPMTUDIPv6Exprs builds nftables expressions for IPv6 PMTU SNAT.
+// Matches: ICMPv6 type 2 (Packet Too Big), mark != 0,
+// dst NOT VIP, src NOT VIP, encapsulated dst IS VIP.
+// Action: rewrite IPv6 src to encapsulated dst (the VIP), reset mark to 0.
+func buildPMTUDIPv6Exprs(ipv6Set *nftables.Set) []expr.Any {
+	return []expr.Any{
+		// Match IPv6
+		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.AF_INET6}},
+		// Match ICMPv6
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_ICMPV6}},
+		// Non-zero fwmark
+		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: []byte{0x0}},
+		// dst NOT in VIP set
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 24, Len: 16},
+		&expr.Lookup{SourceRegister: 1, SetName: ipv6Set.Name, SetID: ipv6Set.ID, Invert: true},
+		// src NOT in VIP set
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 8, Len: 16},
+		&expr.Lookup{SourceRegister: 1, SetName: ipv6Set.Name, SetID: ipv6Set.ID, Invert: true},
+		// ICMPv6 type == 2 (Packet Too Big)
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0x2}},
+		// Encapsulated dst (offset 32 in ICMPv6 payload) IS a VIP
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 32, Len: 16},
+		&expr.Lookup{SourceRegister: 1, SetName: ipv6Set.Name, SetID: ipv6Set.ID},
+		// Counter
+		&expr.Counter{},
+		// Load encapsulated dst again → write to IPv6 source
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 32, Len: 16},
+		&expr.Payload{
+			OperationType:  expr.PayloadWrite,
+			SourceRegister: 1,
+			Base:           expr.PayloadBaseNetworkHeader,
+			Offset:         8, // IPv6 source address
+			Len:            16,
+			CsumType:       expr.CsumTypeNone, // IPv6 has no header checksum
+		},
+		// Reset mark to 0
+		&expr.Immediate{Register: 1, Data: binaryutil.NativeEndian.PutUint32(0)},
+		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+	}
 }
 
 func (m *Manager) updateSet(set *nftables.Set, cidrs []string) error {

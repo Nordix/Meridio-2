@@ -157,15 +157,13 @@ func (r *DistributionGroupReconciler) getNetworkContexts(ctx context.Context, ga
 		}
 
 		// Extract subnet CIDRs with their attachment types
-		for _, subnet := range gwConfig.Spec.NetworkSubnets {
-			for _, cidr := range subnet.CIDRs {
-				normalized, err := normalizeCIDR(cidr)
-				if err != nil {
-					logger.Info("Skipping invalid CIDR in GatewayConfiguration", "gateway", gw.Name, "gwconfig", gwConfig.Name, "cidr", cidr, "error", err)
-					continue
-				}
-				networkContexts[normalized] = subnet.AttachmentType
+		for _, subnet := range gwConfig.Spec.InternalSubnets {
+			normalized, err := normalizeCIDR(subnet.CIDR)
+			if err != nil {
+				logger.Info("Skipping invalid CIDR in GatewayConfiguration", "gateway", gw.Name, "gwconfig", gwConfig.Name, "cidr", subnet.CIDR, "error", err)
+				continue
 			}
+			networkContexts[normalized] = subnet.AttachmentType
 		}
 	}
 

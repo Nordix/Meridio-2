@@ -28,7 +28,10 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES ?= common-appnetwork separate-appnetwork
+SUITES ?= common-appnetwork separate-appnetwork low-mtu
+
+# Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
+GINKGO_FLAGS ?=
 
 # Paths
 PROJECT_ROOT := $(shell cd ../.. && pwd)
@@ -40,7 +43,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 ################################################################################
 
 .PHONY: cluster
-cluster: kustomize multus cni-plugins whereabouts cert-manager gateway-api kind-network vpn-gateway ## Setup cluster dependencies.
+cluster: kustomize multus cni-plugins whereabouts cert-manager gateway-api kind-network vpn-gateway rp-filter ## Setup cluster dependencies.
 
 .PHONY: kustomize
 kustomize: ## Install kustomize from parent Makefile.
@@ -108,6 +111,18 @@ vpn-gateway: ## Deploy VPN gateway container.
 		docker compose up -d; \
 	}
 
+.PHONY: rp-filter
+rp-filter: ## Configure rp_filter=2 on all Kind nodes.
+	@echo "Configuring rp_filter=2 on all nodes..."; \
+	for node in $$($(KIND) get nodes --name $(CLUSTER_NAME)); do \
+		docker exec $$node sh -c ' \
+			sysctl -w net.ipv4.conf.all.rp_filter=2 && \
+			sysctl -w net.ipv4.conf.default.rp_filter=2 && \
+			echo "net.ipv4.conf.all.rp_filter=2" >> /etc/sysctl.conf && \
+			echo "net.ipv4.conf.default.rp_filter=2" >> /etc/sysctl.conf \
+		'; \
+	done
+
 .PHONY: cluster-cleanup
 cluster-cleanup: ## Cleanup cluster dependencies.
 	cd $(PROJECT_ROOT)/hack/vpn-gateway && docker compose down 2>/dev/null || true
@@ -136,7 +151,7 @@ define deploy-suite
 	if ! $(KUBECTL) get deployment meridio-2-controller-manager-$$SUITE_LABEL -n $$NS -o jsonpath='{.spec.template.spec.volumes[*].name}' | grep -q templates-override; then \
 		$(KUBECTL) patch deployment meridio-2-controller-manager-$$SUITE_LABEL -n $$NS --type=json -p='[{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"templates-override","mountPath":"/templates-override"}},{"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"templates-override","configMap":{"name":"lb-template-override-'$$SUITE_LABEL'"}}}]'; \
 	fi; \
-	$(KUBECTL) wait --for=condition=Available --timeout=120s -n $$NS deployment/meridio-2-controller-manager-$$SUITE_LABEL; \
+	$(KUBECTL) wait --for=condition=Available --timeout=180s -n $$NS deployment/meridio-2-controller-manager-$$SUITE_LABEL; \
 	$(KUBECTL) wait --for=condition=Ready --timeout=60s -n $$NS certificate/meridio-2-serving-cert-$$SUITE_LABEL; \
 	$(KUBECTL) apply -f $$SUITE_DIR/rbac.yaml; \
 	$(KUBECTL) apply -f $$SUITE_DIR/nad.yaml -n $$NS; \
@@ -166,7 +181,7 @@ deploy-common-appnetwork: cluster ## Deploy common-appnetwork topology.
 
 .PHONY: test-common-appnetwork
 test-common-appnetwork: ## Run e2e tests for common-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Common App Network"
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Common App Network" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-common-appnetwork
 undeploy-common-appnetwork: ## Undeploy common-appnetwork topology.
@@ -187,12 +202,33 @@ deploy-separate-appnetwork: cluster ## Deploy separate-appnetwork topology.
 
 .PHONY: test-separate-appnetwork
 test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network"
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-separate-appnetwork
 undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 	@NS=e2e-separate-appnet; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
+##@ Suite: low-mtu
+################################################################################
+
+.PHONY: low-mtu
+low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
+
+.PHONY: deploy-low-mtu
+deploy-low-mtu: cluster ## Deploy low-mtu topology (1200 MTU app network for PMTU testing).
+	$(call deploy-suite,e2e-low-mtu,$(shell pwd)/suites/low-mtu,low-mtu,sllb-gw-m1)
+
+.PHONY: test-low-mtu
+test-low-mtu: ## Run e2e tests for low-mtu suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Low MTU"
+
+.PHONY: undeploy-low-mtu
+undeploy-low-mtu: ## Undeploy low-mtu topology.
+	@NS=e2e-low-mtu; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-low-mtu --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
@@ -205,7 +241,7 @@ deploy-all: ## Deploy all suites.
 
 .PHONY: test
 test: deploy-all ## Run all e2e tests in parallel.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e $(GINKGO_FLAGS)
 
 .PHONY: undeploy-all
 undeploy-all: ## Undeploy all suites.

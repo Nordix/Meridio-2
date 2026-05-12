@@ -40,16 +40,16 @@ const (
 // with a fallback to blackhole table (4097) if no BGP routes exist.
 // Errors are accumulated best-effort (partial progress over rollback);
 // the next reconcile retries any failed operations.
-func setPolicyRoutes(vips []string) error {
+func setPolicyRoutes(nl abstractNetlink, vips []string) error {
 	// Setup blackhole routes as fallback
-	if err := setupBlackholeRoutes(); err != nil {
+	if err := setupBlackholeRoutes(nl); err != nil {
 		return err
 	}
 
 	log.V(1).Info("setting policy routes", "vipCount", len(vips))
 
 	// Get existing BGP table rules
-	bgpRules, err := netlink.RuleListFiltered(netlink.FAMILY_ALL, &netlink.Rule{
+	bgpRules, err := nl.RuleListFiltered(netlink.FAMILY_ALL, &netlink.Rule{
 		Table: kernelTableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
@@ -57,7 +57,7 @@ func setPolicyRoutes(vips []string) error {
 	}
 
 	// Get existing blackhole table rules
-	blackholeRules, err := netlink.RuleListFiltered(netlink.FAMILY_ALL, &netlink.Rule{
+	blackholeRules, err := nl.RuleListFiltered(netlink.FAMILY_ALL, &netlink.Rule{
 		Table: blackholeKernelTableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
@@ -88,7 +88,7 @@ func setPolicyRoutes(vips []string) error {
 	for _, rule := range bgpRules {
 		if _, exists := vipMap[rule.Src.String()]; !exists {
 			log.V(1).Info("deleting BGP rule", "src", rule.Src.String())
-			if err := netlink.RuleDel(&rule); err != nil {
+			if err := nl.RuleDel(&rule); err != nil {
 				errFinal = errors.Join(errFinal, err)
 			}
 		} else {
@@ -100,7 +100,7 @@ func setPolicyRoutes(vips []string) error {
 	for _, rule := range blackholeRules {
 		if _, exists := vipMap[rule.Src.String()]; !exists {
 			log.V(1).Info("deleting blackhole rule", "src", rule.Src.String())
-			if err := netlink.RuleDel(&rule); err != nil {
+			if err := nl.RuleDel(&rule); err != nil {
 				errFinal = errors.Join(errFinal, err)
 			}
 		} else {
@@ -115,7 +115,7 @@ func setPolicyRoutes(vips []string) error {
 		bgpRule.Table = kernelTableID
 		bgpRule.Src = ipNet
 		log.V(1).Info("adding BGP rule", "src", ipNet.String())
-		if err := netlink.RuleAdd(bgpRule); err != nil {
+		if err := nl.RuleAdd(bgpRule); err != nil {
 			errFinal = errors.Join(errFinal, err)
 		}
 	}
@@ -127,7 +127,7 @@ func setPolicyRoutes(vips []string) error {
 		blackholeRule.Table = blackholeKernelTableID
 		blackholeRule.Src = ipNet
 		log.V(1).Info("adding blackhole rule", "src", ipNet.String())
-		if err := netlink.RuleAdd(blackholeRule); err != nil {
+		if err := nl.RuleAdd(blackholeRule); err != nil {
 			errFinal = errors.Join(errFinal, err)
 		}
 	}
@@ -137,7 +137,7 @@ func setPolicyRoutes(vips []string) error {
 
 // setupBlackholeRoutes adds blackhole default routes to table 4097.
 // These act as a fallback when no BGP routes are available in table 4096.
-func setupBlackholeRoutes() error {
+func setupBlackholeRoutes(nl abstractNetlink) error {
 	var errFinal error
 
 	// IPv4 blackhole
@@ -147,7 +147,7 @@ func setupBlackholeRoutes() error {
 		Table: blackholeKernelTableID,
 		Type:  unix.RTN_BLACKHOLE,
 	}
-	if err := netlink.RouteReplace(route4); err != nil {
+	if err := nl.RouteReplace(route4); err != nil {
 		errFinal = errors.Join(errFinal, fmt.Errorf("failed to add IPv4 blackhole: %w", err))
 	}
 
@@ -158,7 +158,7 @@ func setupBlackholeRoutes() error {
 		Table: blackholeKernelTableID,
 		Type:  unix.RTN_BLACKHOLE,
 	}
-	if err := netlink.RouteReplace(route6); err != nil {
+	if err := nl.RouteReplace(route6); err != nil {
 		errFinal = errors.Join(errFinal, fmt.Errorf("failed to add IPv6 blackhole: %w", err))
 	}
 

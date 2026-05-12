@@ -55,5 +55,5 @@ const (
 	messageNoMatchingPods       = "No Pods match selector"
 	messageNoReferencedGateways = "No Gateways reference this DistributionGroup (check parentRefs or L34Route backendRefs)"
 	messageNoAcceptedGateways   = "No accepted Gateways found (Gateways may not exist or lack Accepted=True status condition)"
-	messageNoNetworkContext     = "No network context available (check GatewayConfiguration networkSubnets)"
+	messageNoNetworkContext     = "No network context available (check GatewayConfiguration internalSubnets)"
 )

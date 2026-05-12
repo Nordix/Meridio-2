@@ -15,37 +15,52 @@ import (
 	e2eutils "github.com/nordix/meridio-2/test/e2e/utils"
 )
 
+const maglevIDFormat = `^maglev:\d+$`
+
 type gwTestCase struct {
 	name    string
 	vip     string
 	targets int
+	dgName  string
 }
 
 type suiteTestCase struct {
-	name      string
-	namespace string
-	targetApp string
-	gateways  []gwTestCase
+	name           string
+	namespace      string
+	targetApp      string
+	targetReplicas int
+	gateways       []gwTestCase
 }
 
 var testCases = []suiteTestCase{
 	{
-		name:      "Common App Network",
-		namespace: "e2e-common-appnet",
-		targetApp: "target-b",
+		name:           "Common App Network",
+		namespace:      "e2e-common-appnet",
+		targetApp:      "target-b",
+		targetReplicas: 2,
 		gateways: []gwTestCase{
-			{name: "gw-b1", vip: "30.0.0.1", targets: 2},
-			{name: "gw-b2", vip: "30.0.0.2", targets: 2},
+			{name: "gw-b1", vip: "30.0.0.1", targets: 2, dgName: "dg-b1"},
+			{name: "gw-b2", vip: "30.0.0.2", targets: 2, dgName: "dg-b2"},
 		},
 	},
 	{
-		name:      "Separate App Network",
-		namespace: "e2e-separate-appnet",
-		targetApp: "target-a",
+		name:           "Separate App Network",
+		namespace:      "e2e-separate-appnet",
+		targetApp:      "target-a",
+		targetReplicas: 2,
 		gateways: []gwTestCase{
-			{name: "gw-a1", vip: "20.0.0.1", targets: 2},
-			{name: "gw-a2", vip: "20.0.0.2", targets: 2},
+			{name: "gw-a1", vip: "20.0.0.1", targets: 2, dgName: "dg-a1"},
+			{name: "gw-a2", vip: "20.0.0.2", targets: 2, dgName: "dg-a2"},
 		},
+	},
+}
+
+var lowMTUTestCase = suiteTestCase{
+	name:      "Low MTU",
+	namespace: "e2e-low-mtu",
+	targetApp: "target-m",
+	gateways: []gwTestCase{
+		{name: "gw-m1", vip: "40.0.0.1", targets: 2},
 	},
 }
 
@@ -69,6 +84,16 @@ var _ = Describe("E2E Test Suites", func() {
 						}).Should(Succeed())
 					})
 
+					It(fmt.Sprintf("should have %s Programmed", gw.name), func() {
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"))
+						}).Should(Succeed())
+					})
+
 					It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
@@ -79,26 +104,112 @@ var _ = Describe("E2E Test Suites", func() {
 							g.Expect(out).To(ContainSubstring("Running"))
 						}).Should(Succeed())
 					})
+
+					It(fmt.Sprintf("should have %s LB Pod containers ready", gw.name), func() {
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
+								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
+								"-o", "jsonpath={.items[*].status.containerStatuses[*].ready}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).NotTo(ContainSubstring("false"), "all containers should be ready")
+						}).Should(Succeed())
+					})
 				}
 
-				It(fmt.Sprintf("should create %d ENCs with %d gateways each", len(suite.gateways), len(suite.gateways)), func() {
+				It("should have Gateway status.addresses populated with VIPs", func() {
+					for _, gw := range suite.gateways {
+						gw := gw
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
+								"-o", "jsonpath={.status.addresses[*].value}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(ContainSubstring(gw.vip), "Gateway %s should have VIP %s in status", gw.name, gw.vip)
+						}).Should(Succeed())
+					}
+				})
+
+				It("should have DistributionGroups Ready", func() {
+					for _, gw := range suite.gateways {
+						gw := gw
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "distg", gw.dgName, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"), "%s should be Ready", gw.dgName)
+						}).Should(Succeed())
+					}
+				})
+
+				It(fmt.Sprintf("should create %d ENCs (one per target pod)", suite.targetReplicas), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "enc", "-n", suite.namespace,
 							"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
 						out, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
-						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(len(suite.gateways)))
+						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(suite.targetReplicas))
 					}).Should(Succeed())
 				})
 
-				It(fmt.Sprintf("should have %d target Pods running with sidecar", len(suite.gateways)), func() {
+				It("should create EndpointSlices with Maglev IDs for each DistributionGroup", func() {
+					for _, gw := range suite.gateways {
+						gw := gw
+						Eventually(func(g Gomega) {
+							// Get EndpointSlices for this DistributionGroup
+							cmd := exec.Command("kubectl", "get", "endpointslice", "-n", suite.namespace,
+								"-l", fmt.Sprintf("meridio-2.nordix.org/distribution-group=%s", gw.dgName),
+								"-o", "json")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+
+							// Parse JSON to verify Maglev IDs
+							var result struct {
+								Items []struct {
+									Endpoints []struct {
+										Addresses []string `json:"addresses"`
+										Zone      *string  `json:"zone"`
+									} `json:"endpoints"`
+								} `json:"items"`
+							}
+							err = utils.ParseJSON(out, &result)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(result.Items).NotTo(BeEmpty(), "no EndpointSlices found for %s", gw.dgName)
+
+							// Verify Maglev ID format for all endpoints
+							for _, slice := range result.Items {
+								for _, ep := range slice.Endpoints {
+									g.Expect(ep.Zone).NotTo(BeNil(), "endpoint missing zone field")
+									g.Expect(*ep.Zone).To(MatchRegexp(maglevIDFormat), "invalid Maglev ID format")
+								}
+							}
+						}).Should(Succeed())
+					}
+				})
+
+				It(fmt.Sprintf("should have %d target Pods running with sidecar", suite.targetReplicas), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 							"-l", fmt.Sprintf("app=%s", suite.targetApp), "--field-selector=status.phase=Running",
 							"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
 						out, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
-						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(len(suite.gateways)))
+						g.Expect(len(utils.GetNonEmptyLines(out))).To(Equal(suite.targetReplicas))
+					}).Should(Succeed())
+				})
+
+				It("should have all ENCs Ready", func() {
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "enc", "-n", suite.namespace,
+							"-o", "jsonpath={range .items[*]}{.status.conditions[?(@.type=='Ready')].status}{\"\\n\"}{end}")
+						out, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						lines := utils.GetNonEmptyLines(out)
+						g.Expect(len(lines)).To(Equal(suite.targetReplicas), "expected %d ENCs", suite.targetReplicas)
+						for _, status := range lines {
+							g.Expect(status).To(Equal("True"), "all ENCs should be Ready")
+						}
 					}).Should(Succeed())
 				})
 			})
@@ -115,7 +226,8 @@ var _ = Describe("E2E Test Suites", func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						It("handles ping on "+gw.name+" VIP", func() {
-							Expect(e2eutils.Ping(gw.vip)).To(Succeed())
+							Eventually(func() error { return e2eutils.Ping(gw.vip) }).
+								WithTimeout(30 * time.Second).Should(Succeed())
 						})
 					}
 				})
@@ -148,4 +260,67 @@ var _ = Describe("E2E Test Suites", func() {
 			})
 		})
 	}
+
+	// Low MTU suite: tests PMTU discovery with 1200 MTU internal network.
+	// A 1400-byte ping (DF set) exceeds the 1200 MTU app network, so the LB
+	// must return ICMP Frag Needed with the VIP as source address.
+	Describe(lowMTUTestCase.name, Ordered, func() {
+		suite := lowMTUTestCase
+
+		Context("Deployment", func() {
+			for _, gw := range suite.gateways {
+				gw := gw
+				It(fmt.Sprintf("should have %s Accepted", gw.name), func() {
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
+							"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
+						out, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(out).To(Equal("True"))
+					}).Should(Succeed())
+				})
+
+				It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
+							"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
+							"-o", "jsonpath={.items[*].status.phase}")
+						out, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(out).To(ContainSubstring("Running"))
+					}).Should(Succeed())
+				})
+			}
+		})
+
+		Context("Traffic", func() {
+			BeforeAll(func() {
+				By("waiting for BGP routes to propagate to VPN gateway")
+				for _, gw := range suite.gateways {
+					Eventually(func() error { return e2eutils.Ping(gw.vip) }).Should(Succeed())
+				}
+			})
+
+			Context("ICMP reachability", func() {
+				for _, gw := range suite.gateways {
+					gw := gw
+					It("handles ping on "+gw.name+" VIP", func() {
+						Eventually(func() error { return e2eutils.Ping(gw.vip) }).
+							WithTimeout(30 * time.Second).Should(Succeed())
+					})
+				}
+			})
+
+			Context("PMTU discovery", func() {
+				for _, gw := range suite.gateways {
+					gw := gw
+					It("returns ICMP Frag Needed from VIP on "+gw.name+" (1400 bytes > 1200 MTU)", func() {
+						// 1400 payload + 28 headers = 1428 > 1200 MTU.
+						// LB must return ICMP Frag Needed with VIP as source (not LB pod IP).
+						Expect(e2eutils.VerifyPMTU(gw.vip, 1400)).To(Succeed())
+					})
+				}
+			})
+		})
+	})
 })

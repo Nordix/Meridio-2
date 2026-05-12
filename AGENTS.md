@@ -10,7 +10,8 @@ api/<version>/zz_generated.*   Auto-generated (DO NOT EDIT)
 internal/controller/*          Reconciliation logic
 internal/webhook/*             Validation/defaulting (if present)
 config/crd/bases/*             Generated CRDs (DO NOT EDIT)
-config/rbac/role.yaml          Generated RBAC (DO NOT EDIT)
+config/rbac/manager-role.yaml   Hand-maintained namespace-scoped Role
+config/rbac/manager-clusterrole.yaml  Hand-maintained ClusterRole (GatewayClass only)
 config/samples/*               Example CRs (edit these)
 Makefile                       Build/test/deploy commands
 PROJECT                        Kubebuilder metadata Auto-generated (DO NOT EDIT)
@@ -38,10 +39,14 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 
 ### Never Edit These (Auto-Generated)
 - `config/crd/bases/*.yaml` - from `make manifests`
-- `config/rbac/role.yaml` - from `make manifests`
 - `config/webhook/manifests.yaml` - from `make manifests`
 - `**/zz_generated.*.go` - from `make generate`
 - `PROJECT` - from `kubebuilder [OPTIONS]`
+
+### Hand-Maintained RBAC
+- `config/rbac/manager-role.yaml` - namespace-scoped Role (edit manually)
+- `config/rbac/manager-clusterrole.yaml` - ClusterRole for cluster-scoped resources (edit manually)
+- RBAC is NOT generated from kubebuilder markers — `make manifests` does not produce RBAC files
 
 ### Never Remove Scaffold Markers
 Do NOT delete `// +kubebuilder:scaffold:*` comments. CLI injects code at these markers.
@@ -60,7 +65,7 @@ Ensure you run them against a dedicated [Kind](https://kind.sigs.k8s.io/) cluste
 
 **After editing `*_types.go` or markers:**
 ```
-make manifests  # Regenerate CRDs/RBAC from markers
+make manifests  # Regenerate CRDs/webhooks from markers
 make generate   # Regenerate DeepCopy methods
 ```
 

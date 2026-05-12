@@ -81,10 +81,10 @@ func newGatewayConfiguration() *meridio2v1alpha1.GatewayConfiguration {
 			Namespace: testNamespace,
 		},
 		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
-			NetworkSubnets: []meridio2v1alpha1.NetworkSubnet{
+			InternalSubnets: []meridio2v1alpha1.InternalSubnet{
 				{
 					AttachmentType: "NAD",
-					CIDRs:          []string{"192.168.100.0/24"},
+					CIDR:           "192.168.100.0/24",
 				},
 			},
 			HorizontalScaling: meridio2v1alpha1.HorizontalScaling{

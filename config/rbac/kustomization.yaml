@@ -5,8 +5,9 @@ resources:
 # runtime. Be sure to update RoleBinding and ClusterRoleBinding
 # subjects if changing service account names.
 - service_account.yaml
-- role.yaml
-- role_binding.yaml
+- manager-clusterrole.yaml
+- manager-role.yaml
+- manager-role-binding.yaml
 - leader_election_role.yaml
 - leader_election_role_binding.yaml
 # ServiceAccount for LB Deployment pods (loadbalancer + router containers)

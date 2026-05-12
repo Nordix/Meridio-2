@@ -33,12 +33,12 @@ const (
 )
 
 type birdConfigData struct {
-	KernelTableID int
-	LogFile       string
-	LogFileSize   int // bytes; if >0, enables rotation with 1 backup
-	IPv4VIPs      []string
-	IPv6VIPs      []string
-	Routers       []routerData
+	KernelTableID  int
+	KernelScanTime int
+	LogParams      BirdLogParams
+	IPv4VIPs       []string
+	IPv6VIPs       []string
+	Routers        []routerData
 }
 
 type routerData struct {
@@ -55,13 +55,8 @@ type routerData struct {
 }
 
 //nolint:lll
-var birdConfigTmpl = template.Must(template.New("bird.conf").Parse(`log stderr all;
-{{- if .LogFile}}
-{{- if .LogFileSize}}
-log "{{.LogFile}}" {{.LogFileSize}} "{{.LogFile}}.1" all;
-{{- else}}
-log "{{.LogFile}}" all;
-{{- end}}
+var birdConfigTmpl = template.Must(template.New("bird.conf").Parse(`{{- range .LogParams}}
+{{.FmtParams}}
 {{- end}}
 
 protocol device {}
@@ -104,6 +99,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time {{.KernelScanTime}};
 	kernel table {{.KernelTableID}};
 	merge paths on;
 }
@@ -113,6 +109,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time {{.KernelScanTime}};
 	kernel table {{.KernelTableID}};
 	merge paths on;
 }

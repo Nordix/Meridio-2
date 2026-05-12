@@ -77,6 +77,9 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	if cfg.GatewayName == "" || cfg.GatewayNamespace == "" {
 		return fmt.Errorf("gateway-name and gateway-namespace are required")
 	}
+	if cfg.BirdKernelScanTime < 1 {
+		return fmt.Errorf("bird-kernel-scan-time must be at least 1 second (got %d)", cfg.BirdKernelScanTime)
+	}
 
 	setupLog.Info("Starting Router controller", "config", cfg)
 
@@ -122,7 +125,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		return err
 	}
 
-	birdInstance := bird.New(bird.WithLogFile(cfg.BirdLogFile), bird.WithLogFileSize(cfg.BirdLogFileSize))
+	birdInstance := bird.New(bird.WithLogParams(cfg.BirdLogs), bird.WithKernelScanTime(cfg.BirdKernelScanTime))
 
 	if err = (&router.RouterReconciler{
 		Client:           mgr.GetClient(),

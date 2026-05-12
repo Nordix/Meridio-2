@@ -41,38 +41,104 @@ spec:
             description: spec defines the desired state of GatewayConfiguration
             properties:
               horizontalScaling:
+                description: |-
+                  horizontalScaling controls the replica count of the LB Deployment.
+                  For further details on horizontal scaling, see the Kubernetes documentation:
+                  https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/
                 properties:
                   enforceReplicas:
                     default: false
                     description: |-
-                      Control Knob: If true, the controller enforces 'replicas'.
-                      If false, the controller steps aside, allowing HPA to control the Deployment.
+                      enforceReplicas controls whether the controller manages the replica count.
+                      If true, the controller enforces the replicas value on every reconcile.
+                      If false, the controller only sets replicas on initial creation, allowing
+                      HPA or other autoscalers to manage the count afterward.
                     type: boolean
                   replicas:
                     default: 2
+                    description: replicas is the desired number of LB Deployment Pods.
                     minimum: 1
                     type: integer
                 required:
                 - enforceReplicas
                 - replicas
                 type: object
+              internalSubnets:
+                description: |-
+                  internalSubnets identifies the subnet(s) where application endpoint IPs reside.
+                  Used by the ENC controller to match secondary interfaces in application Pods
+                  and to determine IP family (IPv4/IPv6) for VIP and next-hop assignment.
+                  Each entry represents a single subnet of one IP family. For dual-stack, use two
+                  separate entries (one IPv4, one IPv6).
+                items:
+                  description: |-
+                    InternalSubnet identifies a network segment where application endpoints are reachable.
+                    Each entry represents a single subnet of one IP family. For dual-stack, use two separate
+                    InternalSubnet entries (one IPv4, one IPv6).
+                  properties:
+                    attachmentType:
+                      default: NAD
+                      description: |-
+                        attachmentType specifies how the network is attached to Pods.
+                        Currently only NAD (NetworkAttachmentDefinition) is supported.
+                      enum:
+                      - NAD
+                      - DRA
+                      type: string
+                    cidr:
+                      description: |-
+                        cidr is the subnet CIDR for this network segment (e.g. "192.168.100.0/24").
+                        Must not overlap with CIDRs in other InternalSubnets. Default routes (0.0.0.0/0,
+                        ::/0) and IPv6 link-local addresses (fe80::/10) are not allowed.
+                      maxLength: 43
+                      type: string
+                      x-kubernetes-validations:
+                      - message: Must be a valid CIDR notation!
+                        rule: isCIDR(self)
+                  required:
+                  - attachmentType
+                  - cidr
+                  type: object
+                maxItems: 2
+                minItems: 1
+                type: array
+                x-kubernetes-validations:
+                - message: Each internalSubnet must represent a different IP family
+                  rule: self.size() <= 1 || cidr(self[0].cidr).ip().family() != cidr(self[1].cidr).ip().family()
               networkAttachments:
                 description: |-
-                  Support multiple external interfaces per LB-FE Pod plus internal networks
-                  (e.g. dedicated internal networks per IP family).
+                  networkAttachments defines the secondary network interfaces for the LB
+                  Deployment managed by the gateway controller. These only affect the LB Pods
+                  and have no relation to network attachments on user application Pods.
                 items:
+                  description: NetworkAttachment defines a secondary network interface
+                    for the LB Deployment Pods.
                   properties:
                     description:
+                      description: description is a human-readable description of
+                        this network attachment.
                       type: string
                     dra:
+                      description: dra specifies Dynamic Resource Allocation parameters.
+                        Not yet implemented.
                       type: object
                     nad:
+                      description: |-
+                        nad specifies the NetworkAttachmentDefinition reference and interface name.
+                        Required when type is NAD.
                       properties:
                         interface:
+                          description: interface is the name to assign to the network
+                            interface inside the Pod (e.g. "net1").
                           type: string
                         name:
+                          description: name is the name of the NetworkAttachmentDefinition
+                            resource.
                           type: string
                         namespace:
+                          description: |-
+                            namespace is the namespace of the NetworkAttachmentDefinition resource.
+                            Defaults to the GatewayConfiguration's namespace if empty.
                           type: string
                       required:
                       - interface
@@ -81,6 +147,8 @@ spec:
                       type: object
                     type:
                       default: NAD
+                      description: type specifies the attachment mechanism. Currently
+                        only NAD is supported.
                       enum:
                       - NAD
                       - DRA
@@ -95,48 +163,35 @@ spec:
                       && self.dra != null
                 maxItems: 10
                 type: array
-              networkSubnets:
-                description: Indicates in which subnet(s) the application endpoint
-                  IP(s) are, is distinc for each type of network
-                items:
-                  properties:
-                    attachmentType:
-                      default: NAD
-                      enum:
-                      - NAD
-                      - DRA
-                      type: string
-                    cidrs:
-                      items:
-                        type: string
-                        x-kubernetes-validations:
-                        - message: Must be a valid CIDR notation!
-                          rule: isCIDR(self)
-                      maxItems: 15
-                      minItems: 1
-                      type: array
-                  required:
-                  - attachmentType
-                  - cidrs
-                  type: object
-                maxItems: 2
-                minItems: 1
-                type: array
               verticalScaling:
+                description: |-
+                  verticalScaling configures per-container resource requests, limits, and resize
+                  policies for the LB Deployment. When omitted, containers use the resources
+                  defined in the LB Deployment template.
                 properties:
                   containers:
+                    description: |-
+                      containers lists per-container resource overrides. Each entry targets a
+                      container by name in the LB Deployment template.
                     items:
+                      description: ContainerArgs defines resource requirements and
+                        resize policy for a single container.
                       properties:
                         enforceResources:
                           default: false
                           description: |-
-                            Control Knob for VPA Deferral for THIS container
-                            If true, controller enforces 'resources' via patch/template.
-                            If false, controller ignores 'resources', deferring to VPA/other external tool.
+                            enforceResources controls whether the controller manages this container's resources.
+                            If true, the controller enforces the resources value on every reconcile.
+                            If false, the controller only sets resources on initial creation, allowing
+                            VPA or other tools to manage resources afterward.
                           type: boolean
                         name:
+                          description: name is the container name in the LB Deployment
+                            template to configure.
                           type: string
                         resizePolicy:
+                          description: resizePolicy specifies the restart policy for
+                            in-place resource resizing per resource type.
                           items:
                             description: ContainerResizePolicy represents resource
                               resize policy for the container.
@@ -157,8 +212,8 @@ spec:
                             type: object
                           type: array
                         resources:
-                          description: ResourceRequirements describes the compute
-                            resource requirements.
+                          description: resources specifies the CPU and memory requests
+                            and limits for this container.
                           properties:
                             claims:
                               description: |-
@@ -225,8 +280,8 @@ spec:
                 type: object
             required:
             - horizontalScaling
+            - internalSubnets
             - networkAttachments
-            - networkSubnets
             type: object
           status:
             description: status defines the observed state of GatewayConfiguration

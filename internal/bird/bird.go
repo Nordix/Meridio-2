@@ -28,6 +28,7 @@ import (
 	"time"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/vishvananda/netlink"
 )
 
 var errBirdRunning = errors.New("bird is already running")
@@ -40,28 +41,30 @@ type BirdInterface interface {
 }
 
 type Bird struct {
-	SocketPath  string
-	ConfigFile  string
-	LogFile     string
-	LogFileSize int // bytes; if >0, enables rotation with 1 backup file
-	running     bool
-	mu          sync.Mutex
+	SocketPath     string
+	ConfigFile     string
+	LogParams      BirdLogParams
+	KernelScanTime int
+	nl             abstractNetlink
+	running        bool
+	mu             sync.Mutex
 }
 
 type Option func(*Bird)
 
-func WithLogFile(path string) Option {
-	return func(b *Bird) { b.LogFile = path }
+func WithLogParams(params BirdLogParams) Option {
+	return func(b *Bird) { b.LogParams = params }
 }
 
-func WithLogFileSize(bytes int) Option {
-	return func(b *Bird) { b.LogFileSize = bytes }
+func WithKernelScanTime(seconds int) Option {
+	return func(b *Bird) { b.KernelScanTime = seconds }
 }
 
 func New(opts ...Option) *Bird {
 	b := &Bird{
 		SocketPath: "/var/run/bird/bird.ctl",
 		ConfigFile: "/etc/bird/bird.conf",
+		nl:         &netlink.Handle{},
 	}
 	for _, o := range opts {
 		o(b)
@@ -125,7 +128,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	// Install policy routes first to minimize misrouting window.
 	// Blackhole fallback ensures VIP traffic is dropped rather than
 	// leaked before BGP routes are available.
-	if err := setPolicyRoutes(vips); err != nil {
+	if err := setPolicyRoutes(b.nl, vips); err != nil {
 		return err
 	}
 
@@ -145,7 +148,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 }
 
 func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) (string, error) {
-	data := birdConfigData{KernelTableID: defaultKernelTableID, LogFile: b.LogFile, LogFileSize: b.LogFileSize}
+	data := birdConfigData{KernelTableID: defaultKernelTableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
 
 	for _, vip := range vips {
 		if isIPv6(vip) {

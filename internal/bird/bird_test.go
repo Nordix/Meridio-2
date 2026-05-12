@@ -26,7 +26,7 @@ import (
 )
 
 func TestGenerateConfig(t *testing.T) {
-	b := New()
+	b := New(WithKernelScanTime(10))
 
 	t.Run("empty config", func(t *testing.T) {
 		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{})
@@ -82,6 +82,10 @@ func TestGenerateConfig(t *testing.T) {
 	})
 
 	t.Run("matches reference config", func(t *testing.T) {
+		bWithLogs := New(WithLogParams(BirdLogParams{
+			{Type: "stderr", Classes: []string{"info", "warning", "error", "fatal"}},
+			{Type: "file", Path: "/var/log/bird.log", Size: 1048576, BackupPath: "/var/log/bird.log.1", Classes: []string{"all"}},
+		}), WithKernelScanTime(10))
 		router := &meridio2v1alpha1.GatewayRouter{
 			ObjectMeta: metav1.ObjectMeta{Name: "gatewayrouter-sample"},
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
@@ -104,12 +108,14 @@ func TestGenerateConfig(t *testing.T) {
 		}
 		vips := []string{"20.0.0.1/32"}
 
-		got, err := b.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router})
+		got, err := bWithLogs.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router})
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
 
-		want := `log stderr all;
+		want := `
+log stderr { info, warning, error, fatal };
+log "/var/log/bird.log" 1048576 "/var/log/bird.log.1" all;
 
 protocol device {}
 
@@ -151,6 +157,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time 10;
 	kernel table 4096;
 	merge paths on;
 }
@@ -160,6 +167,7 @@ protocol kernel {
 		import none;
 		export filter gateway_routes;
 	};
+	scan time 10;
 	kernel table 4096;
 	merge paths on;
 }

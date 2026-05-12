@@ -254,6 +254,76 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeFalse())
 		})
+
+		It("should return true when DistributionGroup has direct parentRef to this Gateway", func() {
+			distGroup := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-distgroup",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.DistributionGroupSpec{
+					ParentRefs: []meridio2v1alpha1.ParentReference{
+						{Name: gatewayName},
+					},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				Build()
+			controller.Client = fakeClient
+
+			result, err := controller.belongsToGateway(ctx, distGroup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeTrue())
+		})
+
+		It("should return false when DistributionGroup has parentRef to different Gateway", func() {
+			distGroup := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-distgroup",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.DistributionGroupSpec{
+					ParentRefs: []meridio2v1alpha1.ParentReference{
+						{Name: "other-gateway"},
+					},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				Build()
+			controller.Client = fakeClient
+
+			result, err := controller.belongsToGateway(ctx, distGroup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeFalse())
+		})
+
+		It("should return true via direct parentRef even without L34Routes", func() {
+			distGroup := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-distgroup",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.DistributionGroupSpec{
+					ParentRefs: []meridio2v1alpha1.ParentReference{
+						{Name: gatewayName},
+					},
+				},
+			}
+
+			// No L34Routes exist — direct parentRef should still match
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				Build()
+			controller.Client = fakeClient
+
+			result, err := controller.belongsToGateway(ctx, distGroup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeTrue())
+		})
 	})
 
 	Describe("reconcileNFQLBInstance", func() {
