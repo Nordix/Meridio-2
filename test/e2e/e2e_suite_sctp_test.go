@@ -234,16 +234,17 @@ var _ = Describe("E2E SCTP Multihoming Suites", func() {
 						}()
 
 						By("waiting for SCTP association to establish")
-						time.Sleep(3 * time.Second)
-
-						By("verifying SCTP association exists")
-						found, details, err := e2eutils.CheckSCTPAssociationWithVIPs(
-							9000,
-							[]string{"200.100.0.100", "200.100.1.100"},
-							[]string{suite.gateways[0].vip, suite.gateways[1].vip},
-						)
-						Expect(err).NotTo(HaveOccurred())
-						Expect(found).To(BeTrue(), "SCTP association not found with all local addresses and VIPs")
+						var details string
+						Eventually(func(g Gomega) {
+							found, d, err := e2eutils.CheckSCTPAssociationWithVIPs(
+								9000,
+								[]string{"200.100.0.100", "200.100.1.100"},
+								[]string{suite.gateways[0].vip, suite.gateways[1].vip},
+							)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(found).To(BeTrue(), "SCTP association not found with all local addresses and VIPs")
+							details = d
+						}).Should(Succeed())
 						GinkgoWriter.Printf("SCTP association found:\n%s\n", details)
 
 						By("waiting for NetPerfMeter to complete")

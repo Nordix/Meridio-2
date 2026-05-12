@@ -1,28 +1,30 @@
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: meridio-2-network-sidecar-sctp-multihoming
+  namespace: e2e-sctp-multihoming
 rules:
-- apiGroups: ["meridio-2.nordix.org"]
-  resources: ["endpointnetworkconfigurations"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["meridio-2.nordix.org"]
-  resources: ["endpointnetworkconfigurations/status"]
-  verbs: ["get", "update", "patch"]
+  - apiGroups: ["meridio-2.nordix.org"]
+    resources: ["endpointnetworkconfigurations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["meridio-2.nordix.org"]
+    resources: ["endpointnetworkconfigurations/status"]
+    verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: meridio-2-network-sidecar-sctp-multihoming
+  namespace: e2e-sctp-multihoming
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: meridio-2-network-sidecar-sctp-multihoming
 subjects:
-- kind: ServiceAccount
-  name: meridio-2-network-sidecar
-  namespace: e2e-sctp-multihoming
+  - kind: ServiceAccount
+    name: meridio-2-network-sidecar
+    namespace: e2e-sctp-multihoming
 ---
 apiVersion: v1
 kind: ServiceAccount

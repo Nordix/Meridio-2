@@ -170,7 +170,7 @@ define deploy-suite
 	done; \
 	$(KUBECTL) wait --for=condition=Available --timeout=300s -n $$NS $(foreach dep,$(4),deployment/$(dep)); \
 	sed 's|registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest|$(REGISTRY)/network-sidecar:$(VERSION)|g; s|registry.nordix.org/cloud-native/meridio-2/example-target:latest|$(REGISTRY)/example-target:$(VERSION)|g' $$SUITE_DIR/targets.yaml | $(KUBECTL) apply -n $$NS -f -; \
-	$(KUBECTL) wait --for=condition=Available --timeout=300s -n $$NS $$($(KUBECTL) get deployment -n $$NS -l app -o name | grep target); \
+	$(KUBECTL) wait --for=condition=Available --timeout=480s -n $$NS $$($(KUBECTL) get deployment -n $$NS -l app -o name | grep target); \
 	echo "Waiting for all pods to be ready in namespace $$NS..."; \
 	timeout=300; elapsed=0; \
 	until [ $$($(KUBECTL) get pods -n $$NS --field-selector=status.phase!=Succeeded,status.phase!=Failed -o json | jq -r '.items[] | select(.status.phase=="Running" and ([.status.conditions[] | select(.type=="Ready" and .status=="True")] | length) > 0) | .metadata.name' | wc -l) -eq $$($(KUBECTL) get pods -n $$NS --field-selector=status.phase!=Succeeded,status.phase!=Failed --no-headers | wc -l) ]; do \

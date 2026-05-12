@@ -55,7 +55,7 @@ spec:
   parentRefs:
   - name: sctp-gw1
   backendRefs:
-  - name: sctp-dg1
+  - name: sctp-dg1-control
     group: meridio-2.nordix.org
     kind: DistributionGroup
   destinationCIDRs:
@@ -78,7 +78,7 @@ spec:
   parentRefs:
   - name: sctp-gw1
   backendRefs:
-  - name: sctp-dg1
+  - name: sctp-dg1-init
     group: meridio-2.nordix.org
     kind: DistributionGroup
   destinationCIDRs:
@@ -92,6 +92,7 @@ spec:
   protocols:
   - SCTP
   byteMatches:
+  - "sctp[4:4] = 0"
   - "sctp[12:1] = 1"
   priority: 30
 ---
@@ -128,7 +129,7 @@ spec:
   parentRefs:
   - name: sctp-gw2
   backendRefs:
-  - name: sctp-dg2
+  - name: sctp-dg2-control
     group: meridio-2.nordix.org
     kind: DistributionGroup
   destinationCIDRs:
@@ -151,7 +152,7 @@ spec:
   parentRefs:
   - name: sctp-gw2
   backendRefs:
-  - name: sctp-dg2
+  - name: sctp-dg2-init
     group: meridio-2.nordix.org
     kind: DistributionGroup
   destinationCIDRs:
@@ -165,6 +166,7 @@ spec:
   protocols:
   - SCTP
   byteMatches:
+  - "sctp[4:4] = 0"
   - "sctp[12:1] = 1"
   priority: 30
 ---
