@@ -19,6 +19,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/spf13/pflag"
 )
@@ -51,6 +52,18 @@ func bindInt(fs *pflag.FlagSet, flagName, envName string, target *int) {
 	if !fs.Changed(flagName) {
 		if val := os.Getenv(envName); val != "" {
 			if parsed, err := strconv.Atoi(val); err == nil {
+				*target = parsed
+			}
+		}
+	}
+}
+
+// bindDuration binds an environment variable to a time.Duration configuration field
+// Only applies if the corresponding flag was not explicitly set
+func bindDuration(fs *pflag.FlagSet, flagName, envName string, target *time.Duration) {
+	if !fs.Changed(flagName) {
+		if val := os.Getenv(envName); val != "" {
+			if parsed, err := time.ParseDuration(val); err == nil {
 				*target = parsed
 			}
 		}
