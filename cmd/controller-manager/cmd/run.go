@@ -151,13 +151,17 @@ func runManager(cfg *config.ManagerConfig) error {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Cache:                  cacheOptions,
-		Metrics:                metricsServerOptions,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: cfg.ProbeAddr,
-		LeaderElection:         cfg.EnableLeaderElection,
-		LeaderElectionID:       "e9d059a3.nordix.org",
+		Scheme:                        scheme,
+		Cache:                         cacheOptions,
+		Metrics:                       metricsServerOptions,
+		WebhookServer:                 webhookServer,
+		HealthProbeBindAddress:        cfg.ProbeAddr,
+		LeaderElection:                cfg.EnableLeaderElection,
+		LeaderElectionID:              "e9d059a3.nordix.org",
+		LeaseDuration:                 &cfg.LeaseDuration,
+		RenewDeadline:                 &cfg.RenewDeadline,
+		RetryPeriod:                   &cfg.RetryPeriod,
+		LeaderElectionReleaseOnCancel: cfg.LeaderElectionReleaseOnCancel,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

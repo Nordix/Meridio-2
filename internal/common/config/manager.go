@@ -17,6 +17,8 @@ limitations under the License.
 package config
 
 import (
+	"time"
+
 	"github.com/spf13/pflag"
 )
 
@@ -29,6 +31,12 @@ type ManagerConfig struct {
 	ProbeAddr            string
 	EnableLeaderElection bool
 	EnableWebhooks       bool
+
+	// Leader election tuning
+	LeaseDuration                 time.Duration
+	RenewDeadline                 time.Duration
+	RetryPeriod                   time.Duration
+	LeaderElectionReleaseOnCancel bool
 
 	// Security
 	SecureMetrics bool
@@ -65,6 +73,14 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"The address the probe endpoint binds to.")
 	fs.BoolVar(&c.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager.")
+	fs.DurationVar(&c.LeaseDuration, "leader-elect-lease-duration", 15*time.Second,
+		"Duration that non-leader candidates will wait to force acquire leadership.")
+	fs.DurationVar(&c.RenewDeadline, "leader-elect-renew-deadline", 10*time.Second,
+		"Duration that the acting leader will retry refreshing leadership before giving up.")
+	fs.DurationVar(&c.RetryPeriod, "leader-elect-retry-period", 2*time.Second,
+		"Duration between each leader election retry.")
+	fs.BoolVar(&c.LeaderElectionReleaseOnCancel, "leader-elect-release-on-cancel", true,
+		"Release the leader lease on graceful shutdown for faster failover.")
 	fs.BoolVar(&c.EnableWebhooks, "enable-webhooks", true,
 		"Enable webhook server. Set to false for testing.")
 	fs.BoolVar(&c.SecureMetrics, "metrics-secure", true,
@@ -102,6 +118,10 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindBool(fs, "leader-elect", "MERIDIO_LEADER_ELECT", &c.EnableLeaderElection)
+	bindDuration(fs, "leader-elect-lease-duration", "MERIDIO_LEADER_ELECT_LEASE_DURATION", &c.LeaseDuration)
+	bindDuration(fs, "leader-elect-renew-deadline", "MERIDIO_LEADER_ELECT_RENEW_DEADLINE", &c.RenewDeadline)
+	bindDuration(fs, "leader-elect-retry-period", "MERIDIO_LEADER_ELECT_RETRY_PERIOD", &c.RetryPeriod)
+	bindBool(fs, "leader-elect-release-on-cancel", "MERIDIO_LEADER_ELECT_RELEASE_ON_CANCEL", &c.LeaderElectionReleaseOnCancel)
 	bindBool(fs, "enable-webhooks", "MERIDIO_ENABLE_WEBHOOKS", &c.EnableWebhooks)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
