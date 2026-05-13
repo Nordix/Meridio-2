@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,7 +27,7 @@ func SendTraffic(vip string, port int, protocol string, nconn int) (map[string]i
 	}
 
 	cmdStr := fmt.Sprintf(
-		"docker exec vpn-gateway /opt/ctraffic %s -address %s -nconn %d -timeout 10s -stats all",
+		"docker exec vpn-gateway ctraffic %s -address %s -nconn %d -timeout 10s -stats all",
 		protoFlag, addr, nconn,
 	)
 	cmd := exec.Command("/bin/sh", "-c", cmdStr)
@@ -171,4 +173,211 @@ func parseCtrafficOutput(output []byte) (map[string]int, int, error) {
 	}
 
 	return hostCounts, result.FailedConnects, nil
+}
+
+// NetPerfMeterConfig holds configuration for NetPerfMeter client.
+type NetPerfMeterConfig struct {
+	Target         string   // "VIP:port"
+	LocalAddrs     []string // Client local addresses for multihoming
+	Protocol       string   // "sctp", "tcp", "udp"
+	Duration       int      // Test duration in seconds
+	FrameRate      string   // e.g., "const0" (saturated), "const25"
+	FrameSize      string   // e.g., "const1400"
+	ControlOverTCP bool     // Use TCP for control channel instead of SCTP
+}
+
+// NetPerfMeterResult holds parsed NetPerfMeter output.
+type NetPerfMeterResult struct {
+	RawOutput        string
+	TransmittedBytes int64
+	ReceivedBytes    int64
+	PacketLoss       int
+	FrameLoss        int
+}
+
+// RunNetPerfMeterClient runs NetPerfMeter client from vpn-gateway container.
+func RunNetPerfMeterClient(cfg NetPerfMeterConfig) (*NetPerfMeterResult, error) {
+	localAddrsArg := ""
+	if len(cfg.LocalAddrs) > 0 {
+		localAddrsArg = fmt.Sprintf("--local=%s", strings.Join(cfg.LocalAddrs, ","))
+	}
+
+	controlOverTCPArg := ""
+	if cfg.ControlOverTCP {
+		controlOverTCPArg = "--control-over-tcp"
+	}
+
+	trafficSpec := fmt.Sprintf("%s:%s:%s:%s", cfg.FrameRate, cfg.FrameSize, cfg.FrameRate, cfg.FrameSize)
+
+	cmdStr := fmt.Sprintf(
+		"docker exec vpn-gateway netperfmeter %s %s %s -runtime=%d -%s %s",
+		cfg.Target, localAddrsArg, controlOverTCPArg, cfg.Duration, cfg.Protocol, trafficSpec,
+	)
+
+	cmd := exec.Command("/bin/sh", "-c", cmdStr)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("netperfmeter failed: %w\noutput: %s", err, string(out))
+	}
+
+	result := &NetPerfMeterResult{RawOutput: string(out)}
+	if parseErr := parseNetPerfMeterOutput(result); parseErr != nil {
+		return result, fmt.Errorf("failed to parse output: %w", parseErr)
+	}
+
+	return result, nil
+}
+
+// parseNetPerfMeterOutput extracts key metrics from NetPerfMeter output.
+func parseNetPerfMeterOutput(result *NetPerfMeterResult) error {
+	lines := strings.Split(result.RawOutput, "\n")
+
+	// Parse "Bytes: X B" (may have trailing content like "-> Y B/s")
+	bytesRe := regexp.MustCompile(`^\s*\*\s+Bytes:\s+(\d+)\s+B`)
+	// Parse "Packet Loss: X packets" or "Packets: X packets"
+	pktLossRe := regexp.MustCompile(`^\s*\*\s+Packets:\s+(\d+)\s+packets`)
+	// Parse "Frame Loss: X frames" or "Frames: X frames"
+	frameLossRe := regexp.MustCompile(`^\s*\*\s+Frames:\s+(\d+)\s+frames`)
+
+	inTransmission := false
+	inReception := false
+	inLoss := false
+
+	for _, line := range lines {
+		if strings.Contains(line, "- Transmission:") {
+			inTransmission = true
+			inReception = false
+			inLoss = false
+			continue
+		}
+		if strings.Contains(line, "- Reception:") {
+			inTransmission = false
+			inReception = true
+			inLoss = false
+			continue
+		}
+		if strings.Contains(line, "- Loss:") {
+			inTransmission = false
+			inReception = false
+			inLoss = true
+			continue
+		}
+
+		if inTransmission {
+			if match := bytesRe.FindStringSubmatch(line); match != nil {
+				val, _ := strconv.ParseInt(match[1], 10, 64)
+				result.TransmittedBytes = val
+			}
+		}
+
+		if inReception {
+			if match := bytesRe.FindStringSubmatch(line); match != nil {
+				val, _ := strconv.ParseInt(match[1], 10, 64)
+				result.ReceivedBytes = val
+			}
+		}
+
+		if inLoss {
+			if match := pktLossRe.FindStringSubmatch(line); match != nil {
+				val, _ := strconv.Atoi(match[1])
+				result.PacketLoss = val
+			}
+			if match := frameLossRe.FindStringSubmatch(line); match != nil {
+				val, _ := strconv.Atoi(match[1])
+				result.FrameLoss = val
+			}
+		}
+	}
+
+	return nil
+}
+
+// CheckSCTPAssociation checks if an SCTP association exists on vpn-gateway for the given port and local addresses.
+// Returns true if found, along with the association details.
+func CheckSCTPAssociation(port int, localAddrs []string) (bool, string, error) {
+	cmdStr := "docker exec vpn-gateway cat /proc/net/sctp/assocs"
+	cmd := exec.Command("/bin/sh", "-c", cmdStr)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, "", fmt.Errorf("failed to read SCTP associations: %w\noutput: %s", err, string(out))
+	}
+
+	lines := strings.Split(string(out), "\n")
+	portStr := fmt.Sprintf(" %d ", port) // Space-padded to match column format
+
+	for _, line := range lines {
+		// Skip header line
+		if strings.Contains(line, "ASSOC") && strings.Contains(line, "SOCK") {
+			continue
+		}
+
+		// Check if line contains the remote port (RPORT column)
+		if !strings.Contains(line, portStr) {
+			continue
+		}
+
+		// Check if ALL local addresses appear in LADDRS
+		allLocalAddrsFound := true
+		for _, addr := range localAddrs {
+			if !strings.Contains(line, addr) {
+				allLocalAddrsFound = false
+				break
+			}
+		}
+
+		if allLocalAddrsFound {
+			return true, line, nil
+		}
+	}
+
+	return false, "", nil
+}
+
+// CheckSCTPAssociationWithVIPs checks SCTP association and verifies both local addresses and VIPs are present.
+func CheckSCTPAssociationWithVIPs(port int, localAddrs []string, vips []string) (bool, string, error) {
+	cmdStr := "docker exec vpn-gateway cat /proc/net/sctp/assocs"
+	cmd := exec.Command("/bin/sh", "-c", cmdStr)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, "", fmt.Errorf("failed to read SCTP associations: %w\noutput: %s", err, string(out))
+	}
+
+	lines := strings.Split(string(out), "\n")
+	portStr := fmt.Sprintf(" %d ", port)
+
+	for _, line := range lines {
+		// Skip header line
+		if strings.Contains(line, "ASSOC") && strings.Contains(line, "SOCK") {
+			continue
+		}
+
+		// Check remote port
+		if !strings.Contains(line, portStr) {
+			continue
+		}
+
+		// Check ALL local addresses are present
+		allLocalAddrsFound := true
+		for _, addr := range localAddrs {
+			if !strings.Contains(line, addr) {
+				allLocalAddrsFound = false
+				break
+			}
+		}
+
+		// Check ALL VIPs are present
+		allVIPsFound := true
+		for _, vip := range vips {
+			if !strings.Contains(line, vip) {
+				allVIPsFound = false
+				break
+			}
+		}
+
+		if allLocalAddrsFound && allVIPsFound {
+			return true, line, nil
+		}
+	}
+
+	return false, "", nil
 }

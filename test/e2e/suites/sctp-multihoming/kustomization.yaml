@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: e2e-separate-appnet
+namespace: e2e-sctp-multihoming
 
 resources:
 - ../../../../config/default
@@ -11,11 +11,11 @@ images:
   newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
   newTag: latest
 
-nameSuffix: -separate-appnet
+nameSuffix: -sctp-multihoming
 
 labels:
 - pairs:
-    e2e-suite: separate-appnet
+    e2e-suite: sctp-multihoming
 
 patches:
 - patch: |-
@@ -24,27 +24,27 @@ patches:
     metadata:
       name: not-important
       annotations:
-        cert-manager.io/inject-ca-from: e2e-separate-appnet/meridio-2-serving-cert-separate-appnet
+        cert-manager.io/inject-ca-from: e2e-sctp-multihoming/meridio-2-serving-cert-sctp-multihoming
     webhooks:
     - name: vl34route-v1alpha1.kb.io
       namespaceSelector:
         matchLabels:
-          e2e-suite: separate-appnet
+          e2e-suite: sctp-multihoming
       clientConfig:
         service:
-          name: meridio-2-webhook-service-separate-appnet
-          namespace: e2e-separate-appnet
+          name: meridio-2-webhook-service-sctp-multihoming
+          namespace: e2e-sctp-multihoming
   target:
     kind: ValidatingWebhookConfiguration
 - patch: |-
     - op: replace
       path: /spec/dnsNames
       value:
-      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnet.svc
-      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnet.svc.cluster.local
+      - meridio-2-webhook-service-sctp-multihoming.e2e-sctp-multihoming.svc
+      - meridio-2-webhook-service-sctp-multihoming.e2e-sctp-multihoming.svc.cluster.local
     - op: replace
       path: /spec/secretName
-      value: webhook-server-cert-separate-appnet
+      value: webhook-server-cert-sctp-multihoming
   target:
     group: cert-manager.io
     kind: Certificate
@@ -61,11 +61,11 @@ patches:
           - name: manager
             env:
             - name: MERIDIO_LB_SERVICE_ACCOUNT
-              value: meridio-2-stateless-load-balancer-separate-appnet
+              value: meridio-2-stateless-load-balancer-sctp-multihoming
           volumes:
           - name: webhook-certs
             secret:
-              secretName: webhook-server-cert-separate-appnet
+              secretName: webhook-server-cert-sctp-multihoming
   target:
     kind: Deployment
     labelSelector: control-plane=controller-manager

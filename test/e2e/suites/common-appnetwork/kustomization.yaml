@@ -17,8 +17,6 @@ labels:
 - pairs:
     e2e-suite: common-appnet
 
-
-
 patches:
 - patch: |-
     apiVersion: admissionregistration.k8s.io/v1

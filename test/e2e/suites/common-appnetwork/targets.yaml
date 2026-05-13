@@ -19,18 +19,20 @@ spec:
     spec:
       serviceAccountName: meridio-2-network-sidecar
       containers:
-      - name: ctraffic
-        image: registry.nordix.org/cloud-native/meridio/ctraffic:latest
-        command: ["/bin/sh", "-c"]
+      - name: example-target
+        image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
         args:
         - |
-          /home/tapa-user/ctraffic -server -address [::]:5000 &
-          /home/tapa-user/ctraffic -server -udp -address [::]:5001 &
-          wait
+          screen -d -m bash -c "./ctraffic -server -address [::]:5000" ;
+          screen -d -m bash -c "./ctraffic -server -udp -address [::]:5001" ;
+          tail -f /dev/null
         securityContext:
           runAsNonRoot: true
           capabilities:
             drop: ["ALL"]
+            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
       - name: network-sidecar
         image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
         imagePullPolicy: IfNotPresent
