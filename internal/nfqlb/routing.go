@@ -26,33 +26,49 @@ import (
 
 var errInvalidIP = errors.New("the ip address is invalid")
 
-// createPolicyRoute creates a new policy route based on the fowarding mark.
-// If the policy route if already existing and correspond to the parameters,
-// nothing will happen, otherwise the previous one will be deleted.
+// createPolicyRoute creates or replaces a policy route for the given fwmark.
+// Uses RouteReplace to atomically handle stale routes (e.g., target IP change,
+// container restart with kernel state surviving).
+// Uses ensureRule to avoid accumulating duplicate ip rules across reconciles.
 func createPolicyRoute(fwMark int, ip string) error {
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
 		return errInvalidIP
 	}
 
-	if validPolicyRoute(fwMark, ipAddr) {
-		return nil
-	}
-
-	_ = deletePolicyRoute(fwMark, ip)
 	_ = cleanNeighbor(ipAddr)
 
-	err := netlink.RuleAdd(getRule(fwMark, ipAddr))
-	if err != nil {
-		return fmt.Errorf("failed to RuleAdd: %w", err)
+	rule := getRule(fwMark, ipAddr)
+	if err := ensureRule(rule); err != nil {
+		return fmt.Errorf("failed to ensure rule for fwmark %d: %w", fwMark, err)
 	}
 
-	err = netlink.RouteAdd(getRoute(fwMark, ipAddr))
-	if err != nil {
-		return fmt.Errorf("failed to RouteAdd: %w", err)
+	if err := netlink.RouteReplace(getRoute(fwMark, ipAddr)); err != nil {
+		// Cleanup rule on failure to avoid orphaned rule pointing to empty table
+		_ = netlink.RuleDel(rule)
+		return fmt.Errorf("failed to RouteReplace for fwmark %d: %w", fwMark, err)
 	}
 
 	return nil
+}
+
+// ensureRule adds the desired rule only if it doesn't already exist.
+// Linux allows duplicate ip rules, so we check first to avoid accumulating duplicates
+// across reconciles.
+func ensureRule(desired *netlink.Rule) error {
+	rules, err := netlink.RuleList(desired.Family)
+	if err != nil {
+		// Can't list rules — fall through to add (best effort)
+		return netlink.RuleAdd(desired)
+	}
+
+	for _, existing := range rules {
+		if existing.Mark == desired.Mark && existing.Table == desired.Table && existing.Priority == desired.Priority {
+			return nil // Already exists
+		}
+	}
+
+	return netlink.RuleAdd(desired)
 }
 
 func deletePolicyRoute(fwMark int, ip string) error {
@@ -72,25 +88,6 @@ func deletePolicyRoute(fwMark int, ip string) error {
 	}
 
 	return nil
-}
-
-func validPolicyRoute(fwMark int, ip net.IP) bool {
-	family := netlink.FAMILY_V6
-
-	if ip.To4() != nil {
-		family = netlink.FAMILY_V4
-	}
-
-	routes, err := netlink.RouteListFiltered(family, getRoute(fwMark, ip), netlink.RT_FILTER_GW|netlink.RT_FILTER_TABLE)
-	if err != nil {
-		return false
-	}
-
-	if len(routes) != 1 || !routes[0].Gw.Equal(ip) {
-		return false
-	}
-
-	return true
 }
 
 func getRoute(tableID int, ip net.IP) *netlink.Route {
