@@ -1,0 +1,88 @@
+---
+# Gateway B1 on VLAN 800 with TCP-AO
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-b1
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-b1
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-b1
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-tcp-ao
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-800
+      namespace: e2e-tcp-ao
+      interface: vlan-800
+  - type: NAD
+    nad:
+      name: app-net-b
+      namespace: e2e-tcp-ao
+      interface: net-b
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.100.0/24"
+  horizontalScaling:
+    replicas: 2
+---
+# Gateway B2 on VLAN 900 with TCP-AO
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-b2
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-b2
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-b2
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-tcp-ao
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-900
+      namespace: e2e-tcp-ao
+      interface: vlan-900
+  - type: NAD
+    nad:
+      name: app-net-b
+      namespace: e2e-tcp-ao
+      interface: net-b
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.100.0/24"
+  horizontalScaling:
+    replicas: 2
