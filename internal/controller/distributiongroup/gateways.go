@@ -137,9 +137,9 @@ func (r *DistributionGroupReconciler) isGatewayAccepted(gw *gatewayv1.Gateway) b
 
 // getNetworkContexts extracts network context from GatewayConfigurations
 // Returns map: subnet CIDR → attachment type (NAD/DRA)
-func (r *DistributionGroupReconciler) getNetworkContexts(ctx context.Context, gateways []gatewayv1.Gateway) (map[string]string, error) {
+func (r *DistributionGroupReconciler) getNetworkContexts(ctx context.Context, gateways []gatewayv1.Gateway) ([]gatewayNetworkContext, error) {
 	logger := log.FromContext(ctx)
-	networkContexts := make(map[string]string)
+	result := make([]gatewayNetworkContext, 0, len(gateways))
 
 	for _, gw := range gateways {
 		if gw.Spec.Infrastructure == nil || gw.Spec.Infrastructure.ParametersRef == nil {
@@ -156,16 +156,23 @@ func (r *DistributionGroupReconciler) getNetworkContexts(ctx context.Context, ga
 			return nil, client.IgnoreNotFound(err)
 		}
 
-		// Extract subnet CIDRs with their attachment types
+		networks := make(map[string]string, len(gwConfig.Spec.InternalSubnets))
 		for _, subnet := range gwConfig.Spec.InternalSubnets {
 			normalized, err := normalizeCIDR(subnet.CIDR)
 			if err != nil {
 				logger.Info("Skipping invalid CIDR in GatewayConfiguration", "gateway", gw.Name, "gwconfig", gwConfig.Name, "cidr", subnet.CIDR, "error", err)
 				continue
 			}
-			networkContexts[normalized] = subnet.AttachmentType
+			networks[normalized] = subnet.AttachmentType
+		}
+
+		if len(networks) > 0 {
+			result = append(result, gatewayNetworkContext{
+				gateway:  client.ObjectKeyFromObject(&gw),
+				networks: networks,
+			})
 		}
 	}
 
-	return networkContexts, nil
+	return result, nil
 }

@@ -321,6 +321,34 @@ func TestReconcile_NoReferencedGateways(t *testing.T) {
 	assert.Equal(t, messageNoReferencedGateways, cond.Message)
 }
 
+func TestReconcile_MultipleGateways_SkipsReconciliation(t *testing.T) {
+	dg := newDG()
+	gw1 := newGateway(true)
+	gw2 := newGateway(true)
+	gw2.Name = "second-gateway"
+	gwConfig := newGatewayConfig()
+	route1 := newL34Route(testGatewayName, testDGName)
+	route2 := newL34Route("second-gateway", testDGName)
+	route2.Name = "route-2"
+	pod := newPod("pod-1", "192.168.100.10", true)
+
+	r, c := setupReconciler(dg, gw1, gw2, gwConfig, route1, route2, pod)
+	result, err := r.Reconcile(context.Background(), reconcileRequest())
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+
+	updated := getDGStatus(t, c)
+	cond := findCondition(updated.Status.Conditions, conditionTypeReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, reasonMultipleGateways, cond.Reason)
+	assert.Equal(t, messageMultipleGateways, cond.Message)
+
+	// No EndpointSlices created
+	slices := listEndpointSlices(t, c)
+	assert.Empty(t, slices)
+}
+
 func TestReconcile_HappyPath_CreatesEndpointSlice(t *testing.T) {
 	dg := newDG()
 	gw := newGateway(true)
