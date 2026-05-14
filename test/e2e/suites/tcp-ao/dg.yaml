@@ -1,0 +1,26 @@
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-t1
+spec:
+  selector:
+    matchLabels:
+      app: target-tao
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-t1
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-t2
+spec:
+  selector:
+    matchLabels:
+      app: target-tao
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-t2
