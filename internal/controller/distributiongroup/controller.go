@@ -134,25 +134,39 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	log.Info("found accepted gateways", "count", len(acceptedGateways))
 
-	// 7. For each accepted Gateway, fetch GatewayConfiguration to determine network context
-	networkContexts, err := r.getNetworkContexts(ctx, acceptedGateways)
+	// 7. Enforce single-Gateway restriction
+	if len(acceptedGateways) > 1 {
+		if err := r.updateStatus(ctx, &dg, false, nil, messageMultipleGateways); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			log.Error(err, "failed to update status")
+			return ctrl.Result{}, err
+		}
+		log.Info("DistributionGroup references multiple Gateways, skipping reconciliation",
+			"gateways", len(acceptedGateways))
+		return ctrl.Result{}, nil
+	}
+
+	// 8. For each accepted Gateway, fetch GatewayConfiguration to determine network context
+	gwContexts, err := r.getNetworkContexts(ctx, acceptedGateways)
 	if err != nil {
 		log.Error(err, "failed to get network contexts")
 		return ctrl.Result{}, err
 	}
-	log.Info("extracted network contexts", "contexts", networkContexts)
+	log.Info("extracted network contexts", "gatewayCount", len(gwContexts))
 
-	// 8. List existing EndpointSlices owned by this DG
+	// 9. List existing EndpointSlices owned by this DG
 	existingSlices, err := r.listOwnedSlices(ctx, &dg)
 	if err != nil {
 		log.Error(err, "failed to list owned endpointslices")
 		return ctrl.Result{}, err
 	}
 
-	// 9. Calculate desired EndpointSlices
-	desiredSlices, capacityInfo := r.calculateDesiredSlices(ctx, &dg, pods, networkContexts, existingSlices)
+	// 10. Calculate desired EndpointSlices
+	desiredSlices, capacityInfo := r.calculateDesiredSlices(ctx, &dg, pods, gwContexts, existingSlices)
 
-	// 10. Reconcile EndpointSlices (create/update/delete)
+	// 11. Reconcile EndpointSlices (create/update/delete)
 	if err := r.reconcileSlices(ctx, &dg, desiredSlices, existingSlices); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true}, nil
@@ -161,7 +175,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	// 11. Update DG status
+	// 12. Update DG status
 	msg := ""
 	if len(desiredSlices) == 0 {
 		// Determine specific reason for no endpoints
@@ -169,7 +183,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			msg = messageNoReferencedGateways
 		} else if len(acceptedGateways) == 0 {
 			msg = messageNoAcceptedGateways
-		} else if len(networkContexts) == 0 {
+		} else if len(gwContexts) == 0 {
 			msg = messageNoNetworkContext
 		}
 		// If msg still empty, Pods probably have no secondary IPs (leave default message)

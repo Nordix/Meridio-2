@@ -16,12 +16,24 @@ limitations under the License.
 
 package distributiongroup
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
 
 // podWithNetworkIP pairs a Pod with its scraped secondary IP for a specific network context
 type podWithNetworkIP struct {
 	pod corev1.Pod
 	ip  string
+}
+
+// gatewayNetworkContext groups network contexts for a single Gateway.
+// Used to scope Maglev ID allocation per Gateway.
+type gatewayNetworkContext struct {
+	// gateway is the namespaced name of the Gateway object.
+	gateway client.ObjectKey
+	// networks maps normalized CIDR → attachment type for this Gateway.
+	networks map[string]string
 }
 
 // maglevCapacityInfo tracks Maglev capacity issues per network

@@ -23,17 +23,17 @@ import (
 	"sort"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 
 // sortPodsByCreationTime sorts Pods by CreationTimestamp, tiebreak by namespace/name
-func sortPodsByCreationTime(podsWithIP []podWithNetworkIP) {
-	sort.Slice(podsWithIP, func(i, j int) bool {
-		pi, pj := &podsWithIP[i].pod, &podsWithIP[j].pod
-		if pi.CreationTimestamp.Equal(&pj.CreationTimestamp) {
-			return pi.Namespace+"/"+pi.Name < pj.Namespace+"/"+pj.Name
+func sortPodsByCreationTime(pods []corev1.Pod) {
+	sort.Slice(pods, func(i, j int) bool {
+		if pods[i].CreationTimestamp.Equal(&pods[j].CreationTimestamp) {
+			return pods[i].Namespace+"/"+pods[i].Name < pods[j].Namespace+"/"+pods[j].Name
 		}
-		return pi.CreationTimestamp.Before(&pj.CreationTimestamp)
+		return pods[i].CreationTimestamp.Before(&pods[j].CreationTimestamp)
 	})
 }
 

@@ -20,22 +20,27 @@ import (
 	"strconv"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 )
 
-// assignMaglevIDs assigns stable Maglev IDs to Pods for a specific network
-func assignMaglevIDs(podsWithIP []podWithNetworkIP, existingAssignments map[string]int32, maxEndpoints int32) map[string]int32 {
-	podToID := make(map[string]int32)
-	usedIDs := make(map[int32]bool)
-	var newPods []podWithNetworkIP
+// assignMaglevIDs assigns stable Maglev IDs to Pods.
+// IDs are preserved for Pods with existing assignments; new Pods are sorted
+// by CreationTimestamp and assigned from the available pool.
+func assignMaglevIDs(pods []corev1.Pod, existingAssignments map[string]int32, maxEndpoints int32) map[string]int32 {
+	capacity := min(int32(len(pods)), maxEndpoints)
+	podToID := make(map[string]int32, capacity)
+	usedIDs := make(map[int32]bool, capacity)
+	newPods := make([]corev1.Pod, 0, len(pods))
 
-	// Preserve existing assignments
-	for _, pwip := range podsWithIP {
-		if id, exists := existingAssignments[string(pwip.pod.UID)]; exists {
-			podToID[string(pwip.pod.UID)] = id
+	// Preserve existing assignments (ignore out-of-range IDs)
+	for i := range pods {
+		uid := string(pods[i].UID)
+		if id, exists := existingAssignments[uid]; exists && id >= 0 && id < maxEndpoints {
+			podToID[uid] = id
 			usedIDs[id] = true
 		} else {
-			newPods = append(newPods, pwip)
+			newPods = append(newPods, pods[i])
 		}
 	}
 
@@ -51,11 +56,11 @@ func assignMaglevIDs(podsWithIP []podWithNetworkIP, existingAssignments map[stri
 	}
 
 	// Assign IDs to new Pods from available pool
-	for i, pwip := range newPods {
+	for i := range newPods {
 		if i >= len(availableIDs) {
 			break // Capacity exceeded
 		}
-		podToID[string(pwip.pod.UID)] = availableIDs[i]
+		podToID[string(newPods[i].UID)] = availableIDs[i]
 	}
 
 	return podToID
