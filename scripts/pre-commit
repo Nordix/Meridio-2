@@ -20,6 +20,13 @@ if [ -n "$KUSTOM_FILES" ]; then
     echo ""
 fi
 
+# Auto-format staged Go files
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$')
+if [ -n "$STAGED_GO_FILES" ]; then
+    gofmt -w $STAGED_GO_FILES
+    git add $STAGED_GO_FILES
+fi
+
 echo ""
 echo "Running 'make check' before commit..."
 
