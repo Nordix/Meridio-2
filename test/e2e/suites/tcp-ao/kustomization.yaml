@@ -1,0 +1,71 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: e2e-tcp-ao
+
+resources:
+- ../../../../config/default
+
+images:
+- name: controller-manager
+  newName: localhost:5000/controller-manager
+  newTag: latest
+
+nameSuffix: -tcp-ao
+
+labels:
+- pairs:
+    e2e-suite: tcp-ao
+
+patches:
+- patch: |-
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingWebhookConfiguration
+    metadata:
+      name: not-important
+      annotations:
+        cert-manager.io/inject-ca-from: e2e-tcp-ao/meridio-2-serving-cert-tcp-ao
+    webhooks:
+    - name: vl34route-v1alpha1.kb.io
+      namespaceSelector:
+        matchLabels:
+          e2e-suite: tcp-ao
+      clientConfig:
+        service:
+          name: meridio-2-webhook-service-tcp-ao
+          namespace: e2e-tcp-ao
+  target:
+    kind: ValidatingWebhookConfiguration
+- patch: |-
+    - op: replace
+      path: /spec/dnsNames
+      value:
+      - meridio-2-webhook-service-tcp-ao.e2e-tcp-ao.svc
+      - meridio-2-webhook-service-tcp-ao.e2e-tcp-ao.svc.cluster.local
+    - op: replace
+      path: /spec/secretName
+      value: webhook-server-cert-tcp-ao
+  target:
+    group: cert-manager.io
+    kind: Certificate
+    name: serving-cert
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: not-important
+    spec:
+      template:
+        spec:
+          containers:
+          - name: manager
+            env:
+            - name: MERIDIO_LB_SERVICE_ACCOUNT
+              value: meridio-2-stateless-load-balancer-tcp-ao
+          volumes:
+          - name: webhook-certs
+            secret:
+              secretName: webhook-server-cert-tcp-ao
+  target:
+    kind: Deployment
+    labelSelector: control-plane=controller-manager

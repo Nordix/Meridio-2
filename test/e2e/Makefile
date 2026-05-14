@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
 SUITES_DS ?= dual-stack-simple
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
@@ -304,6 +304,27 @@ test-low-mtu: ## Run PMTU discovery tests.
 
 .PHONY: undeploy-low-mtu
 undeploy-low-mtu: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+
+################################################################################
+##@ Suite: TCP-AO
+################################################################################
+
+.PHONY: tcp-ao
+tcp-ao: deploy-tcp-ao test-tcp-ao ## Deploy and test TCP-AO suite.
+
+.PHONY: deploy-tcp-ao
+deploy-tcp-ao: cluster ## Deploy tcp-ao topology.
+	$(call deploy-suite,e2e-tcp-ao,$(shell pwd)/suites/tcp-ao,tcp-ao,sllbr-gw-t1 sllbr-gw-t2)
+
+.PHONY: test-tcp-ao
+test-tcp-ao: ## Run e2e tests for tcp-ao suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="TCP-AO" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-tcp-ao
+undeploy-tcp-ao: ## Undeploy tcp-ao topology.
+	@NS=e2e-tcp-ao; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-tcp-ao --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
 ##@ Suite: resiliency
