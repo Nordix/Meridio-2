@@ -17,9 +17,12 @@ limitations under the License.
 package cmd
 
 import (
+	"context"
 	"crypto/tls"
 	goflag "flag"
 	"fmt"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -102,6 +105,34 @@ func NewRunCmd() *cobra.Command {
 
 func runManager(cfg *config.ManagerConfig) error {
 	setupLog.Info("starting controller-manager", "config", cfg)
+
+	// Wait for certificate files if configured
+	if cfg.CertWaitTimeout > 0 {
+		var certFiles []string
+		if cfg.EnableWebhooks && cfg.WebhookCertPath != "" {
+			certFiles = append(certFiles,
+				filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertName),
+				filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertKey),
+			)
+		}
+		if cfg.MetricsAddr != "0" && cfg.SecureMetrics && cfg.MetricsCertPath != "" {
+			certFiles = append(certFiles,
+				filepath.Join(cfg.MetricsCertPath, cfg.MetricsCertName),
+				filepath.Join(cfg.MetricsCertPath, cfg.MetricsCertKey),
+			)
+		}
+		if len(certFiles) > 0 {
+			timeout := min(cfg.CertWaitTimeout, time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			setupLog.Info("waiting for certificate files", "files", certFiles, "timeout", timeout)
+			if err := prerequisites.WaitForCerts(ctx, certFiles); err != nil {
+				return fmt.Errorf("certificate wait failed: %w", err)
+			}
+			setupLog.Info("all certificate files are available")
+		}
+	}
+
 	var tlsOpts []func(*tls.Config)
 	if !cfg.EnableHTTP2 {
 		disableHTTP2 := func(c *tls.Config) {
