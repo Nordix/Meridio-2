@@ -18,6 +18,7 @@ package loadbalancer
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -85,10 +86,12 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	}
 
 	// Deactivate removed targets (nfqlb handles policy route cleanup internally)
+	var errFinal error
 	for identifier, ips := range currentTargets {
 		if _, exists := newTargets[identifier]; !exists {
 			if err := service.DeleteTarget(ctx, ips, identifier); err != nil {
 				logr.Error(err, "Failed to deactivate target", "identifier", identifier)
+				errFinal = errors.Join(errFinal, err)
 			} else {
 				logr.Info("Deactivated target", "distGroup", distGroup.Name, "identifier", identifier)
 			}
@@ -99,6 +102,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	for identifier, ips := range newTargets {
 		if err := service.AddTarget(ctx, ips, identifier); err != nil {
 			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
+			errFinal = errors.Join(errFinal, err)
 		} else {
 			logr.Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
 		}
@@ -119,5 +123,5 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	}
 
 	logr.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
-	return nil
+	return errFinal
 }
