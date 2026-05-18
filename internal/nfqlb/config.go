@@ -16,14 +16,9 @@ limitations under the License.
 
 package nfqlb
 
-import (
-	"time"
-)
-
 type nfqlbConfig struct {
 	queue          string
 	qlength        uint
-	healInterval   time.Duration
 	startingOffset int
 	nfqlbPath      string
 }
@@ -32,7 +27,6 @@ func newNFQLBConfig() *nfqlbConfig {
 	return &nfqlbConfig{
 		queue:          defaultQueue,
 		qlength:        defaultQLength,
-		healInterval:   defaultHealInterval,
 		startingOffset: defaultStartingOffset,
 		nfqlbPath:      nfqlbCmd,
 	}

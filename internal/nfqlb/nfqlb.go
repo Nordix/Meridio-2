@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -81,52 +80,12 @@ func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 		fmt.Sprintf("--qlength=%d", nfqlb.qlength), // gosec: qlength is secured since it is an int.
 	)
 
-	var wg sync.WaitGroup
-
-	wg.Go(func() {
-		nfqlb.heal(ctx)
-	})
-
-	var errFinal error
-
 	stdoutStderr, err := cmd.CombinedOutput()
 	if err != nil && !errors.Is(err, context.Cause(ctx)) {
-		errFinal = fmt.Errorf("failed starting nfqlb with flowlb ; %w; %s", err, stdoutStderr)
+		return fmt.Errorf("failed starting nfqlb with flowlb ; %w; %s", err, stdoutStderr)
 	}
 
-	wg.Wait()
-
-	return errFinal
-}
-
-func (nfqlb *NFQueueLoadBalancer) heal(ctx context.Context) {
-	for {
-		select {
-		case <-time.After(nfqlb.healInterval):
-			nfqlb.mu.Lock()
-			for _, instance := range nfqlb.instances {
-				instance.mu.Lock()
-				for identifier, ips := range instance.targets {
-					fwmark := identifier + instance.offset
-
-					for _, ip := range ips {
-						err := instance.doCreatePolicyRoute(fwmark, ip)
-						if err != nil {
-							nfqlb.logger.Error(err, "failed creating policy route, will retry in next heal",
-								"instance", instance.name,
-								"fwmark", fwmark,
-								"ip", ip,
-							)
-						}
-					}
-				}
-				instance.mu.Unlock()
-			}
-			nfqlb.mu.Unlock()
-		case <-ctx.Done():
-			return
-		}
-	}
+	return nil
 }
 
 // updateNfQueueDestinationCIDRs is a no-op when nftables VIP management is external.
@@ -501,23 +460,33 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 	existingIPs, exists := s.targets[identifier]
 	if exists {
 		if slicesEqual(existingIPs, ips) {
-			return nil
+			// IPs unchanged — re-apply routes to recover from potential kernel drift.
+			// RouteReplace and ensureRule are idempotent — no traffic disruption.
+			fwmark := identifier + s.offset
+			var errFinal error
+			for _, ip := range ips {
+				if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
+					errFinal = errors.Join(errFinal, err)
+				}
+			}
+			return errFinal
 		}
-		// IPs changed — update policy routes only (fwmark stays the same)
+		// IPs changed — clean old neighbors, delete old routes, apply new ones
 		ctrl.LoggerFrom(ctx).Info("nfqlb: target IPs changed, updating routes",
 			"instance", s.name, "identifier", identifier, "oldIPs", existingIPs, "newIPs", ips)
 		fwmark := identifier + s.offset
 		for _, ip := range existingIPs {
+			_ = cleanNeighbor(net.ParseIP(ip))
 			_ = s.doDeletePolicyRoute(fwmark, ip)
 		}
 		s.targets[identifier] = ips
+		var errFinal error
 		for _, ip := range ips {
 			if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
-				ctrl.LoggerFrom(ctx).Error(err, "failed creating policy route, will retry in next heal",
-					"instance", s.name, "fwmark", fwmark, "ip", ip)
+				errFinal = errors.Join(errFinal, err)
 			}
 		}
-		return nil
+		return errFinal
 	}
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: add target", "instance", s.name, "ips", ips, "identifier", identifier)
@@ -535,19 +504,16 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 
 	fwmark := identifier + s.offset
 
+	var errFinal error
 	for _, ip := range ips {
 		if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
-			ctrl.LoggerFrom(ctx).Error(err, "failed creating policy route, will retry in next heal",
-				"instance", s.name,
-				"fwmark", fwmark,
-				"ip", ip,
-			)
+			errFinal = errors.Join(errFinal, err)
 		}
 	}
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: target added", "instance", s.name, "ips", ips, "identifier", identifier)
 
-	return nil
+	return errFinal
 }
 
 // doCreatePolicyRoute uses the injected function or falls back to the package-level one.

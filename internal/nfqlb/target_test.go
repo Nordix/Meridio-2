@@ -96,15 +96,15 @@ var _ = Describe("Instance.AddTarget", func() {
 		Expect(routing.created).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
 	})
 
-	It("should be a no-op when identifier exists with same IPs", func() {
+	It("should re-apply routes when identifier exists with same IPs", func() {
 		instance.targets[0] = []string{"10.0.0.1"}
 
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		// No exec calls, no routing changes
+		// No exec calls (no re-activation), but routes are re-applied for drift recovery
 		Expect(executor.calls).To(BeEmpty())
-		Expect(routing.created).To(BeEmpty())
+		Expect(routing.created).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
 		Expect(routing.deleted).To(BeEmpty())
 	})
 
@@ -141,15 +141,14 @@ var _ = Describe("Instance.AddTarget", func() {
 		Expect(instance.targets[1]).To(Equal([]string{"10.0.0.1", "10.0.0.3"}))
 	})
 
-	It("should handle route creation failure gracefully on IP change", func() {
+	It("should return error on route creation failure during IP change", func() {
 		routing.createErr = fmt.Errorf("netlink error")
 		instance.targets[0] = []string{"10.0.0.1"}
 
-		// Should not return error (route creation failures are non-fatal, heal loop retries)
 		err := instance.AddTarget(ctx, []string{"10.0.0.2"}, 0)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).To(HaveOccurred())
 
-		// IPs should still be updated (heal loop will fix routes)
+		// IPs should still be updated (reconcile will retry)
 		Expect(instance.targets[0]).To(Equal([]string{"10.0.0.2"}))
 	})
 })

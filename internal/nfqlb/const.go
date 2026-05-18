@@ -16,8 +16,6 @@ limitations under the License.
 
 package nfqlb
 
-import "time"
-
 const (
 	ownfw          = 0
 	nfqlbCmd       = "nfqlb"
@@ -31,7 +29,6 @@ const (
 	defaultQueue          = "0:3"
 	defaultQLength        = 1024
 	defaultStartingOffset = 5000
-	defaultHealInterval   = 10 * time.Second
 	defaultMaxTargets     = 100
 
 	maglevMMultiplier = 100
