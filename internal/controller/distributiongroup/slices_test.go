@@ -182,6 +182,98 @@ func TestCalculateMaglevSlices_StableAcrossReconciles(t *testing.T) {
 	}
 }
 
+func TestCalculateMaglevSlices_AsymmetricNetworkPresence(t *testing.T) {
+	r := &DistributionGroupReconciler{}
+	dg := &meridio2v1alpha1.DistributionGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Spec: meridio2v1alpha1.DistributionGroupSpec{
+			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
+			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 32},
+		},
+	}
+
+	// Pod-1 and Pod-2 are dual-stack, Pod-3 is IPv4 only, Pod-4 is IPv6 only
+	podsByNetwork := map[string][]podWithNetworkIP{
+		"192.168.100.0/24": {
+			{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-1", Name: "pod-1"}}, ip: "192.168.100.10"},
+			{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-2", Name: "pod-2"}}, ip: "192.168.100.11"},
+			{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-3", Name: "pod-3"}}, ip: "192.168.100.12"},
+		},
+		"2001:db8:100::/64": {
+			{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-1", Name: "pod-1"}}, ip: "2001:db8:100::10"},
+			{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-2", Name: "pod-2"}}, ip: "2001:db8:100::11"},
+			{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-4", Name: "pod-4"}}, ip: "2001:db8:100::14"},
+		},
+	}
+
+	slices, _ := r.calculateMaglevSlices(dg, podsByNetwork, nil)
+
+	// Should produce 2 slices (one per network)
+	if len(slices) != 2 {
+		t.Fatalf("Expected 2 slices, got %d", len(slices))
+	}
+
+	// Extract per-network endpoints
+	endpointsByNetwork := make(map[string]map[string]string) // CIDR → uid → zone
+	for _, slice := range slices {
+		network := decodeCIDRFromLabel(slice.Labels[labelNetworkSubnet])
+		if endpointsByNetwork[network] == nil {
+			endpointsByNetwork[network] = make(map[string]string)
+		}
+		for _, ep := range slice.Endpoints {
+			if ep.TargetRef != nil && ep.Zone != nil {
+				endpointsByNetwork[network][string(ep.TargetRef.UID)] = *ep.Zone
+			}
+		}
+	}
+
+	ipv4, ok := endpointsByNetwork["192.168.100.0/24"]
+	if !ok {
+		t.Fatal("Expected IPv4 slice for 192.168.100.0/24")
+	}
+	ipv6, ok := endpointsByNetwork["2001:db8:100::/64"]
+	if !ok {
+		t.Fatal("Expected IPv6 slice for 2001:db8:100::/64")
+	}
+
+	// Pod-3 (IPv4 only): present in IPv4, absent from IPv6
+	if _, exists := ipv4["uid-3"]; !exists {
+		t.Error("Pod-3 should be in IPv4 slice")
+	}
+	if _, exists := ipv6["uid-3"]; exists {
+		t.Error("Pod-3 should NOT be in IPv6 slice")
+	}
+
+	// Pod-4 (IPv6 only): absent from IPv4, present in IPv6
+	if _, exists := ipv4["uid-4"]; exists {
+		t.Error("Pod-4 should NOT be in IPv4 slice")
+	}
+	if _, exists := ipv6["uid-4"]; !exists {
+		t.Error("Pod-4 should be in IPv6 slice")
+	}
+
+	// Dual-stack Pods: same ID across both slices
+	for _, uid := range []string{"uid-1", "uid-2"} {
+		if ipv4[uid] != ipv6[uid] {
+			t.Errorf("Dual-stack pod %s has different IDs: IPv4=%s, IPv6=%s", uid, ipv4[uid], ipv6[uid])
+		}
+	}
+
+	// All 4 Pods get unique IDs (no collision)
+	allIDs := make(map[string]string) // zone → uid (first seen)
+	for _, endpoints := range endpointsByNetwork {
+		for uid, zone := range endpoints {
+			if prev, exists := allIDs[zone]; exists && prev != uid {
+				t.Errorf("ID collision: %s used by both %s and %s", zone, prev, uid)
+			}
+			allIDs[zone] = uid
+		}
+	}
+	if len(allIDs) != 4 {
+		t.Errorf("Expected 4 unique IDs, got %d", len(allIDs))
+	}
+}
+
 func TestCalculateMaglevSlices_PartialPodReplacement(t *testing.T) {
 	r := &DistributionGroupReconciler{}
 	dg := &meridio2v1alpha1.DistributionGroup{
@@ -339,6 +431,93 @@ func TestCreateSlicesForNetwork_MaglevCapacityEnforcement(t *testing.T) {
 				t.Error("pod-3 should be excluded (capacity exceeded)")
 			}
 		}
+	}
+}
+
+func TestCalculateMaglevSlices_CapacityExceededDualStack(t *testing.T) {
+	r := &DistributionGroupReconciler{}
+	dg := &meridio2v1alpha1.DistributionGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Spec: meridio2v1alpha1.DistributionGroupSpec{
+			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
+			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 4},
+		},
+	}
+
+	// 6 dual-stack Pods, capacity 4 — 2 should be excluded from BOTH slices
+	ipv4Pods := make([]podWithNetworkIP, 6)
+	ipv6Pods := make([]podWithNetworkIP, 6)
+	for i := range 6 {
+		uid := types.UID("uid-" + strconv.Itoa(i))
+		name := "pod-" + strconv.Itoa(i)
+		pod := corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: uid, Name: name, Namespace: "default"}}
+		ipv4Pods[i] = podWithNetworkIP{pod: pod, ip: "192.168.100." + strconv.Itoa(10+i)}
+		ipv6Pods[i] = podWithNetworkIP{pod: pod, ip: "2001:db8:100::" + strconv.Itoa(10+i)}
+	}
+
+	podsByNetwork := map[string][]podWithNetworkIP{
+		"192.168.100.0/24":  ipv4Pods,
+		"2001:db8:100::/64": ipv6Pods,
+	}
+
+	slices, capacityInfo := r.calculateMaglevSlices(dg, podsByNetwork, nil)
+
+	if capacityInfo == nil || len(capacityInfo.networkIssues) == 0 {
+		t.Fatal("Expected capacity exceeded info")
+	}
+
+	// Extract UIDs per network
+	uidsByNetwork := make(map[string]map[string]string)
+	for _, slice := range slices {
+		network := decodeCIDRFromLabel(slice.Labels[labelNetworkSubnet])
+		if uidsByNetwork[network] == nil {
+			uidsByNetwork[network] = make(map[string]string)
+		}
+		for _, ep := range slice.Endpoints {
+			if ep.TargetRef != nil && ep.Zone != nil {
+				uidsByNetwork[network][string(ep.TargetRef.UID)] = *ep.Zone
+			}
+		}
+	}
+
+	ipv4, ok := uidsByNetwork["192.168.100.0/24"]
+	if !ok {
+		t.Fatal("Expected IPv4 slice")
+	}
+	ipv6, ok := uidsByNetwork["2001:db8:100::/64"]
+	if !ok {
+		t.Fatal("Expected IPv6 slice")
+	}
+
+	// Exactly 4 Pods included in each slice
+	if len(ipv4) != 4 {
+		t.Errorf("Expected 4 endpoints in IPv4 slice, got %d", len(ipv4))
+	}
+	if len(ipv6) != 4 {
+		t.Errorf("Expected 4 endpoints in IPv6 slice, got %d", len(ipv6))
+	}
+
+	// Same Pods included in both slices (same set excluded from both)
+	for uid := range ipv4 {
+		if _, exists := ipv6[uid]; !exists {
+			t.Errorf("Pod %s included in IPv4 but excluded from IPv6", uid)
+		}
+	}
+
+	// Included Pods have consistent IDs across slices
+	for uid, v4Zone := range ipv4 {
+		if v6Zone := ipv6[uid]; v4Zone != v6Zone {
+			t.Errorf("Pod %s has different IDs: IPv4=%s, IPv6=%s", uid, v4Zone, v6Zone)
+		}
+	}
+
+	// All assigned IDs are unique
+	usedIDs := make(map[string]bool)
+	for _, zone := range ipv4 {
+		if usedIDs[zone] {
+			t.Errorf("Duplicate ID: %s", zone)
+		}
+		usedIDs[zone] = true
 	}
 }
 
@@ -723,5 +902,80 @@ func TestCreateSlicesForNetwork_CompactionPreservesFullSlices(t *testing.T) {
 	}
 	if len(slices[1].Endpoints) != 2 {
 		t.Errorf("Expected slice-1 to keep 2 endpoints, got %d", len(slices[1].Endpoints))
+	}
+}
+
+func TestCreateSlicesForNetwork_CompactionPreservesMaglevIDs(t *testing.T) {
+	r := &DistributionGroupReconciler{}
+	dg := &meridio2v1alpha1.DistributionGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Spec: meridio2v1alpha1.DistributionGroupSpec{
+			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
+			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 32},
+		},
+	}
+
+	zone0 := maglevIDPrefix + "0"
+	zone1 := maglevIDPrefix + "1"
+	zone2 := maglevIDPrefix + "2"
+	zone3 := maglevIDPrefix + "3"
+
+	// Two existing slices: slice-0 had [pod-0, pod-1, pod-2], slice-1 had [pod-3]
+	// After scale-in: pod-1 and pod-2 removed → slice-1's pod-3 should compact into slice-0
+	existingSlices := []discoveryv1.EndpointSlice{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
+			Endpoints: []discoveryv1.Endpoint{
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-0"}, Zone: &zone0},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-1"}, Zone: &zone1},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-2"}, Zone: &zone2},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "slice-1"},
+			Endpoints: []discoveryv1.Endpoint{
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-3"}, Zone: &zone3},
+			},
+		},
+	}
+
+	// Only pod-0 and pod-3 remain
+	remainingPods := []podWithNetworkIP{
+		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-0", Name: "pod-0"}}, ip: "10.0.0.1"},
+		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-3", Name: "pod-3"}}, ip: "10.0.0.4"},
+	}
+
+	podsByNetwork := map[string][]podWithNetworkIP{"192.168.1.0/24": remainingPods}
+	slicesByNetwork := map[string][]discoveryv1.EndpointSlice{"192.168.1.0/24": existingSlices}
+
+	// Reconcile: compaction should merge into 1 slice
+	slices, _ := r.calculateMaglevSlices(dg, podsByNetwork, slicesByNetwork)
+
+	// Verify compaction occurred: 2 slices → 1 slice
+	if len(slices) != 1 {
+		t.Fatalf("Expected compaction to 1 slice, got %d", len(slices))
+	}
+	if len(slices[0].Endpoints) != 2 {
+		t.Fatalf("Expected 2 endpoints after compaction, got %d", len(slices[0].Endpoints))
+	}
+
+	// Verify IDs are preserved for surviving Pods
+	for _, ep := range slices[0].Endpoints {
+		if ep.TargetRef == nil || ep.Zone == nil {
+			t.Error("Endpoint missing targetRef or zone after compaction")
+			continue
+		}
+		switch string(ep.TargetRef.UID) {
+		case "pod-0":
+			if *ep.Zone != zone0 {
+				t.Errorf("pod-0 ID changed after compaction: expected %s, got %s", zone0, *ep.Zone)
+			}
+		case "pod-3":
+			if *ep.Zone != zone3 {
+				t.Errorf("pod-3 ID changed after compaction: expected %s, got %s", zone3, *ep.Zone)
+			}
+		default:
+			t.Errorf("Unexpected pod in compacted slice: %s", ep.TargetRef.UID)
+		}
 	}
 }

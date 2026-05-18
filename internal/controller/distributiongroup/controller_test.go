@@ -18,6 +18,7 @@ package distributiongroup
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 
@@ -139,7 +140,7 @@ func newGateway(accepted bool) *gatewayv1.Gateway {
 			Infrastructure: &gatewayv1.GatewayInfrastructure{
 				ParametersRef: &gatewayv1.LocalParametersReference{
 					Group: gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group),
-					Kind:  "GatewayConfiguration",
+					Kind:  kindGatewayConfiguration,
 					Name:  testGWConfigName,
 				},
 			},
@@ -176,7 +177,7 @@ func newGatewayConfig() *meridio2v1alpha1.GatewayConfiguration {
 
 func newL34Route(gatewayName, dgName string) *meridio2v1alpha1.L34Route {
 	dgGroup := meridio2v1alpha1.GroupVersion.Group
-	dgKind := "DistributionGroup"
+	dgKind := kindDistributionGroup
 	return &meridio2v1alpha1.L34Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-route",
@@ -200,7 +201,7 @@ func newL34Route(gatewayName, dgName string) *meridio2v1alpha1.L34Route {
 	}
 }
 
-func newPod(name, ip string, ready bool) *corev1.Pod {
+func newPod(name string, ready bool, ips ...string) *corev1.Pod {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -210,11 +211,13 @@ func newPod(name, ip string, ready bool) *corev1.Pod {
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
-			PodIP: ip,
-			PodIPs: []corev1.PodIP{
-				{IP: ip},
-			},
 		},
+	}
+	if len(ips) > 0 {
+		pod.Status.PodIP = ips[0]
+		for _, ip := range ips {
+			pod.Status.PodIPs = append(pod.Status.PodIPs, corev1.PodIP{IP: ip})
+		}
 	}
 	if ready {
 		pod.Status.Conditions = []corev1.PodCondition{
@@ -287,7 +290,7 @@ func TestReconcile_NoAcceptedGateways(t *testing.T) {
 	gw := newGateway(false) // not accepted
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -307,7 +310,7 @@ func TestReconcile_NoAcceptedGateways(t *testing.T) {
 func TestReconcile_NoReferencedGateways(t *testing.T) {
 	dg := newDG()
 	// No L34Route, no parentRefs → no Gateways
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -330,7 +333,7 @@ func TestReconcile_MultipleGateways_SkipsReconciliation(t *testing.T) {
 	route1 := newL34Route(testGatewayName, testDGName)
 	route2 := newL34Route("second-gateway", testDGName)
 	route2.Name = "route-2"
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw1, gw2, gwConfig, route1, route2, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -349,12 +352,53 @@ func TestReconcile_MultipleGateways_SkipsReconciliation(t *testing.T) {
 	assert.Empty(t, slices)
 }
 
+func TestReconcile_MultipleGateways_RecoveryAfterConflictResolved(t *testing.T) {
+	dg := newDG()
+	gw1 := newGateway(true)
+	gw2 := newGateway(true)
+	gw2.Name = "second-gateway"
+	gwConfig := newGatewayConfig()
+	route1 := newL34Route(testGatewayName, testDGName)
+	route2 := newL34Route("second-gateway", testDGName)
+	route2.Name = "route-2"
+	pod := newPod("pod-1", true, "192.168.100.10")
+
+	r, c := setupReconciler(dg, gw1, gw2, gwConfig, route1, route2, pod)
+
+	// First reconcile: multiple Gateways → Ready=False
+	_, err := r.Reconcile(context.Background(), reconcileRequest())
+	require.NoError(t, err)
+
+	updated := getDGStatus(t, c)
+	cond := findCondition(updated.Status.Conditions, conditionTypeReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, reasonMultipleGateways, cond.Reason)
+
+	// Resolve conflict: delete the second route
+	require.NoError(t, c.Delete(context.Background(), route2))
+
+	// Second reconcile: single Gateway → Ready=True
+	_, err = r.Reconcile(context.Background(), reconcileRequest())
+	require.NoError(t, err)
+
+	updated = getDGStatus(t, c)
+	cond = findCondition(updated.Status.Conditions, conditionTypeReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	assert.Equal(t, reasonEndpointsAvailable, cond.Reason)
+
+	// EndpointSlices created
+	slices := listEndpointSlices(t, c)
+	assert.NotEmpty(t, slices)
+}
+
 func TestReconcile_HappyPath_CreatesEndpointSlice(t *testing.T) {
 	dg := newDG()
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -385,8 +429,8 @@ func TestReconcile_HappyPath_MaglevIDsAssigned(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod1 := newPod("pod-1", "192.168.100.10", true)
-	pod2 := newPod("pod-2", "192.168.100.11", true)
+	pod1 := newPod("pod-1", true, "192.168.100.10")
+	pod2 := newPod("pod-2", true, "192.168.100.11")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod1, pod2)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -404,6 +448,59 @@ func TestReconcile_HappyPath_MaglevIDsAssigned(t *testing.T) {
 	}
 }
 
+func TestReconcile_DualStack_SharedMaglevIDs(t *testing.T) {
+	dg := newDG()
+	gw := newGateway(true)
+	gwConfig := newGatewayConfig()
+	gwConfig.Spec.InternalSubnets = append(gwConfig.Spec.InternalSubnets,
+		meridio2v1alpha1.InternalSubnet{AttachmentType: "NAD", CIDR: testInternalSubnetV6})
+	route := newL34Route(testGatewayName, testDGName)
+
+	pods := make([]client.Object, 16)
+	for i := range 16 {
+		pods[i] = newPod(
+			fmt.Sprintf("pod-%d", i), true,
+			fmt.Sprintf("192.168.100.%d", 10+i),
+			fmt.Sprintf("2001:db8:100::%d", 10+i),
+		)
+	}
+
+	objs := append([]client.Object{dg, gw, gwConfig, route}, pods...)
+	r, c := setupReconciler(objs...)
+	_, err := r.Reconcile(context.Background(), reconcileRequest())
+	require.NoError(t, err)
+
+	slices := listEndpointSlices(t, c)
+	require.Len(t, slices, 2, "Expected 2 EndpointSlices (IPv4 + IPv6)")
+
+	// Collect UID→zone from each slice, keyed by address type
+	zonesByType := make(map[discoveryv1.AddressType]map[string]string)
+	for _, s := range slices {
+		m := make(map[string]string)
+		for _, ep := range s.Endpoints {
+			if ep.TargetRef != nil && ep.Zone != nil {
+				m[string(ep.TargetRef.UID)] = *ep.Zone
+			}
+		}
+		zonesByType[s.AddressType] = m
+	}
+
+	ipv4Zones, ok := zonesByType[discoveryv1.AddressTypeIPv4]
+	require.True(t, ok, "Expected IPv4 EndpointSlice")
+	ipv6Zones, ok := zonesByType[discoveryv1.AddressTypeIPv6]
+	require.True(t, ok, "Expected IPv6 EndpointSlice")
+
+	assert.Len(t, ipv4Zones, 16)
+	assert.Len(t, ipv6Zones, 16)
+
+	// Same Pod must have the same Maglev ID in both slices
+	for uid, v4Zone := range ipv4Zones {
+		v6Zone, exists := ipv6Zones[uid]
+		require.True(t, exists, "Pod %s missing from IPv6 slice", uid)
+		assert.Equal(t, v4Zone, v6Zone, "Pod %s should have same ID across families", uid)
+	}
+}
+
 func TestReconcile_MaglevCapacityExceeded(t *testing.T) {
 	dg := newDG(func(dg *meridio2v1alpha1.DistributionGroup) {
 		dg.Spec.Maglev.MaxEndpoints = 1 // only 1 slot
@@ -411,8 +508,8 @@ func TestReconcile_MaglevCapacityExceeded(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod1 := newPod("pod-1", "192.168.100.10", true)
-	pod2 := newPod("pod-2", "192.168.100.11", true)
+	pod1 := newPod("pod-1", true, "192.168.100.10")
+	pod2 := newPod("pod-2", true, "192.168.100.11")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod1, pod2)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -434,7 +531,7 @@ func TestReconcile_MaglevCapacityExceeded(t *testing.T) {
 
 func TestReconcile_DGWithDirectParentRef(t *testing.T) {
 	gwGroup := gatewayv1.GroupName
-	gwKind := "Gateway"
+	gwKind := kindGateway
 	dg := newDG(func(dg *meridio2v1alpha1.DistributionGroup) {
 		dg.Spec.ParentRefs = []meridio2v1alpha1.ParentReference{
 			{Name: testGatewayName, Group: &gwGroup, Kind: &gwKind},
@@ -443,7 +540,7 @@ func TestReconcile_DGWithDirectParentRef(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	// No L34Route — DG references Gateway directly
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -464,7 +561,7 @@ func TestReconcile_DualStack(t *testing.T) {
 		{AttachmentType: "NAD", CIDR: testInternalSubnetV6},
 	}
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 	// Add IPv6 address
 	pod.Status.PodIPs = append(pod.Status.PodIPs, corev1.PodIP{IP: "2001:db8:100::10"})
 
@@ -492,7 +589,7 @@ func TestReconcile_PodNotReady_EndpointNotReady(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", false) // not ready
+	pod := newPod("pod-1", false, "192.168.100.10") // not ready
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -510,7 +607,7 @@ func TestReconcile_RouteReferencesWrongGateway_NoEndpoints(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route("other-gateway", testDGName) // wrong gateway
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -526,7 +623,7 @@ func TestReconcile_RouteReferencesWrongDG_NoEndpoints(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, "other-dg") // wrong DG
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -543,7 +640,7 @@ func TestReconcile_PodIPOutsideSubnet_Excluded(t *testing.T) {
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
 	// Pod IP not in 192.168.100.0/24
-	pod := newPod("pod-1", "10.0.0.5", true)
+	pod := newPod("pod-1", true, "10.0.0.5")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 	result, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -565,7 +662,7 @@ func TestReconcile_Idempotent(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 
@@ -589,8 +686,8 @@ func TestReconcile_MaglevIDStability(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod1 := newPod("pod-1", "192.168.100.10", true)
-	pod2 := newPod("pod-2", "192.168.100.11", true)
+	pod1 := newPod("pod-1", true, "192.168.100.10")
+	pod2 := newPod("pod-2", true, "192.168.100.11")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod1, pod2)
 
@@ -624,7 +721,7 @@ func TestReconcile_CleanupWhenPodsDisappear(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 
@@ -648,6 +745,42 @@ func TestReconcile_CleanupWhenPodsDisappear(t *testing.T) {
 	assert.Equal(t, messageNoMatchingPods, cond.Message)
 }
 
+func TestReconcile_OrphanedSliceDeletedWhenNetworkRemoved(t *testing.T) {
+	dg := newDG()
+	gw := newGateway(true)
+	gwConfig := newGatewayConfig() // has 192.168.100.0/24
+	route := newL34Route(testGatewayName, testDGName)
+	pod := newPod("pod-1", true, "192.168.100.10")
+
+	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
+
+	// First reconcile: creates EndpointSlice for 192.168.100.0/24
+	_, err := r.Reconcile(context.Background(), reconcileRequest())
+	require.NoError(t, err)
+	slices := listEndpointSlices(t, c)
+	require.Len(t, slices, 1)
+
+	// Manually create a second "stale" EndpointSlice (simulates a previously valid network
+	// that no longer exists in GatewayConfiguration — e.g., IPv6 subnet removed)
+	staleSlice := slices[0].DeepCopy()
+	staleSlice.Name = "stale-slice"
+	staleSlice.ResourceVersion = ""
+	staleSlice.Labels[labelNetworkSubnet] = encodeCIDRForLabel("2001:db8:100::/64")
+	require.NoError(t, c.Create(context.Background(), staleSlice))
+
+	// Verify 2 slices exist
+	slices = listEndpointSlices(t, c)
+	require.Len(t, slices, 2)
+
+	// Third reconcile: stale slice should be deleted via reconcileSlices (not step 4)
+	_, err = r.Reconcile(context.Background(), reconcileRequest())
+	require.NoError(t, err)
+
+	slices = listEndpointSlices(t, c)
+	assert.Len(t, slices, 1, "Stale slice should be deleted, valid slice kept")
+	assert.NotEqual(t, "stale-slice", slices[0].Name)
+}
+
 func TestReconcile_CapacityExceededConditionRemovedOnRecovery(t *testing.T) {
 	dg := newDG(func(dg *meridio2v1alpha1.DistributionGroup) {
 		dg.Spec.Maglev.MaxEndpoints = 1
@@ -655,8 +788,8 @@ func TestReconcile_CapacityExceededConditionRemovedOnRecovery(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod1 := newPod("pod-1", "192.168.100.10", true)
-	pod2 := newPod("pod-2", "192.168.100.11", true)
+	pod1 := newPod("pod-1", true, "192.168.100.10")
+	pod2 := newPod("pod-2", true, "192.168.100.11")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod1, pod2)
 
@@ -686,7 +819,7 @@ func TestReconcile_NoNetworkContext(t *testing.T) {
 	gwConfig := newGatewayConfig()
 	gwConfig.Spec.InternalSubnets = nil // no internal subnets
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 	_, err := r.Reconcile(context.Background(), reconcileRequest())
@@ -717,7 +850,7 @@ func TestReconcile_EndpointSliceModifiedExternally(t *testing.T) {
 	gw := newGateway(true)
 	gwConfig := newGatewayConfig()
 	route := newL34Route(testGatewayName, testDGName)
-	pod := newPod("pod-1", "192.168.100.10", true)
+	pod := newPod("pod-1", true, "192.168.100.10")
 
 	r, c := setupReconciler(dg, gw, gwConfig, route, pod)
 

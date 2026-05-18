@@ -84,11 +84,11 @@ func TestExtractMaglevAssignments(t *testing.T) {
 		{
 			Endpoints: []discoveryv1.Endpoint{
 				{
-					TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: types.UID("pod-1")},
+					TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: types.UID("pod-1")},
 					Zone:      ptr(maglevIDPrefix + "5"),
 				},
 				{
-					TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: types.UID("pod-2")},
+					TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: types.UID("pod-2")},
 					Zone:      ptr(maglevIDPrefix + "10"),
 				},
 			},
@@ -111,9 +111,9 @@ func TestExtractMaglevAssignments_SkipInvalid(t *testing.T) {
 			Endpoints: []discoveryv1.Endpoint{
 				{TargetRef: nil, Zone: ptr(maglevIDPrefix + "5")},
 				{TargetRef: &corev1.ObjectReference{Kind: "Service", UID: "svc-1"}, Zone: ptr(maglevIDPrefix + "10")},
-				{TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: "pod-1"}, Zone: ptr("invalid")},
-				{TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: "pod-2"}, Zone: ptr(maglevIDPrefix + "abc")},
-				{TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: "pod-3"}, Zone: ptr(maglevIDPrefix + "15")},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-1"}, Zone: ptr("invalid")},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-2"}, Zone: ptr(maglevIDPrefix + "abc")},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-3"}, Zone: ptr(maglevIDPrefix + "15")},
 			},
 		},
 	}
