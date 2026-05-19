@@ -80,7 +80,7 @@ Only BGP-based GatewayRouter configuration is implemented. Static routing with B
 
 **17. BFD not fully restricted**
 
-BFD source ports are not restricted to the IANA-approved range (49152–65535) per RFC 5881 — BIRD on Linux does not support `IP_PORTRANGE`, requiring a `ip_local_port_range` sysctl workaround that is not yet configured. BFD is not restricted to single-hop mode port (3784), and BFD sessions are not restricted by configuration to the external interface(s) only.
+BFD source ports comply with the IANA-approved range (49152–65535) per RFC 5881 only when `net.ipv4.ip_local_port_range` is set to `49152 65535` in the LB Pod's network namespace. This can be achieved via a tuning NAD (e.g., the `sysctl-tuning` NAD example in [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods)) attached to the LB Pods through GatewayConfiguration. Without it, BIRD uses the kernel default range which violates the RFC. BFD is not restricted to single-hop mode port (3784), and BFD sessions are not restricted by configuration to the external interface(s) only.
 
 ## Sidecar Controller
 

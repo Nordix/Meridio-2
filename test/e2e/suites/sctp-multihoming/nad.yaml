@@ -21,7 +21,8 @@ spec:
             "net.ipv4.conf.default.rp_filter": "2",
             "net.ipv4.fwmark_reflect": "1",
             "net.ipv6.fwmark_reflect": "1",
-            "net.ipv6.conf.all.accept_dad": "0"
+            "net.ipv6.conf.all.accept_dad": "0",
+            "net.ipv4.ip_local_port_range": "49152 65535"
           }
         }
       ]
