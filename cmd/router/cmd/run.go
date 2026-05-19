@@ -20,7 +20,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -151,12 +150,6 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	}
 
 	setupLog.Info("starting router", "gateway", cfg.GatewayName, "namespace", cfg.GatewayNamespace)
-
-	// Set ephemeral port range to comply with RFC 5881 Section 4 (BFD source ports: 49152-65535).
-	if err := os.WriteFile("/proc/sys/net/ipv4/ip_local_port_range", []byte("49152 65535"), 0o644); err != nil {
-		setupLog.Error(err, "failed to set ip_local_port_range (requires NET_ADMIN)")
-		return err
-	}
 
 	ctx = ctrl.SetupSignalHandler()
 	g, ctx := errgroup.WithContext(ctx)
