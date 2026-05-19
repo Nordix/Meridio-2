@@ -66,7 +66,7 @@ func newCmdRun() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLoadBalancer(cmd.Context(), cfg)
+			return runLoadBalancer(cfg)
 		},
 	}
 
@@ -75,7 +75,7 @@ func newCmdRun() *cobra.Command {
 	return cmd
 }
 
-func runLoadBalancer(ctx context.Context, cfg *config.LoadBalancerConfig) error {
+func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	setupLog.Info("Starting LoadBalancer controller", "config", cfg)
 	var tlsOpts []func(*tls.Config)
 	if !cfg.EnableHTTP2 {
@@ -93,12 +93,22 @@ func runLoadBalancer(ctx context.Context, cfg *config.LoadBalancerConfig) error 
 	// Initialize NFQLB
 	lbFactory := nfqlb.NewLbFactory(nfqlb.WithNFQueue(cfg.NFQueue))
 
+	// NFQLB lifecycle: if the process fails, cancel context to crash the container.
+	// Kubernetes will restart via CrashLoopBackOff. A running LB Pod with dead NFQLB
+	// would black-hole traffic since the ENC controller includes it in next-hop lists.
+	// ctrl.SetupSignalHandler() provides OS signal handling (SIGTERM/SIGINT).
+	ctx, cancel := context.WithCancelCause(ctrl.SetupSignalHandler())
+	defer cancel(nil)
+
 	go func() {
 		setupLog.Info("Starting NFQLB process")
-		if err := lbFactory.Start(ctx); err != nil {
+		err := lbFactory.Start(ctx)
+		if err != nil && ctx.Err() == nil {
 			setupLog.Error(err, "NFQLB process failed")
+			cancel(fmt.Errorf("NFQLB process failed: %w", err))
+		} else {
+			setupLog.Info("NFQLB process terminated", "error", err)
 		}
-		setupLog.Info("NFQLB process terminated")
 	}()
 
 	// Initialize nftables
@@ -195,7 +205,11 @@ func runLoadBalancer(ctx context.Context, cfg *config.LoadBalancerConfig) error 
 	}
 
 	setupLog.Info("starting manager for Gateway %s/%s", cfg.GatewayName, cfg.GatewayNamespace)
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
+		// Check if the manager stopped because NFQLB crashed
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
 		setupLog.Error(err, "problem running manager")
 		return err
 	}
