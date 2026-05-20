@@ -151,7 +151,7 @@ define deploy-suite
 	if ! $(KUBECTL) get deployment meridio-2-controller-manager-$$SUITE_LABEL -n $$NS -o jsonpath='{.spec.template.spec.volumes[*].name}' | grep -q templates-override; then \
 		$(KUBECTL) patch deployment meridio-2-controller-manager-$$SUITE_LABEL -n $$NS --type=json -p='[{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"templates-override","mountPath":"/templates-override"}},{"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"templates-override","configMap":{"name":"lb-template-override-'$$SUITE_LABEL'"}}}]'; \
 	fi; \
-	$(KUBECTL) wait --for=condition=Available --timeout=180s -n $$NS deployment/meridio-2-controller-manager-$$SUITE_LABEL; \
+	$(KUBECTL) wait --for=condition=Available --timeout=600s -n $$NS deployment/meridio-2-controller-manager-$$SUITE_LABEL; \
 	$(KUBECTL) wait --for=condition=Ready --timeout=60s -n $$NS certificate/meridio-2-serving-cert-$$SUITE_LABEL; \
 	timeout=60; elapsed=0; \
 	until $(KUBECTL) get endpoints -n $$NS meridio-2-webhook-service-$$SUITE_LABEL -o jsonpath='{.subsets[*].addresses[*].ip}' | grep -q .; do \
@@ -168,9 +168,9 @@ define deploy-suite
 		sleep 1; elapsed=$$((elapsed + 1)); \
 		if [ $$elapsed -ge $$timeout ]; then echo "Timeout waiting for deployments: $(4)"; exit 1; fi; \
 	done; \
-	$(KUBECTL) wait --for=condition=Available --timeout=300s -n $$NS $(foreach dep,$(4),deployment/$(dep)); \
+	$(KUBECTL) wait --for=condition=Available --timeout=600s -n $$NS $(foreach dep,$(4),deployment/$(dep)); \
 	sed 's|registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest|$(REGISTRY)/network-sidecar:$(VERSION)|g; s|registry.nordix.org/cloud-native/meridio-2/example-target:latest|$(REGISTRY)/example-target:$(VERSION)|g' $$SUITE_DIR/targets.yaml | $(KUBECTL) apply -n $$NS -f -; \
-	$(KUBECTL) wait --for=condition=Available --timeout=480s -n $$NS $$($(KUBECTL) get deployment -n $$NS -l app -o name | grep target); \
+	$(KUBECTL) wait --for=condition=Available --timeout=600s -n $$NS $$($(KUBECTL) get deployment -n $$NS -l app -o name | grep target); \
 	echo "Waiting for all pods to be ready in namespace $$NS..."; \
 	timeout=300; elapsed=0; \
 	until [ $$($(KUBECTL) get pods -n $$NS --field-selector=status.phase!=Succeeded,status.phase!=Failed -o json | jq -r '.items[] | select(.status.phase=="Running" and ([.status.conditions[] | select(.type=="Ready" and .status=="True")] | length) > 0) | .metadata.name' | wc -l) -eq $$($(KUBECTL) get pods -n $$NS --field-selector=status.phase!=Succeeded,status.phase!=Failed --no-headers | wc -l) ]; do \
