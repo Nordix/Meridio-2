@@ -110,6 +110,14 @@ jobs:
         run: |
           make -C test/e2e deploy-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }}
           kubectl get all -A -o wide
+      - name: Diagnose deployment issues
+        if: failure()
+        run: |
+          NS="e2e-${{ matrix.suite }}"
+          kubectl get pods -n $NS -o wide
+          kubectl describe pods -n $NS
+          kubectl get events -n $NS --sort-by='.lastTimestamp'
+          kubectl logs -n $NS --all-containers --prefix --tail=200 -l app || true
       - name: Run ${{ matrix.suite }} tests
         run: make -C test/e2e test-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }} GINKGO_FLAGS="--junit-report=junit-${{ matrix.suite }}-${{ matrix.k8s_version }}.xml"
       - name: Upload test results

@@ -18,6 +18,7 @@ package distributiongroup
 
 import (
 	"context"
+	"maps"
 	"net"
 	"sort"
 	"strconv"
@@ -46,6 +47,11 @@ func (r *DistributionGroupReconciler) listOwnedSlices(ctx context.Context, dg *m
 		}
 	}
 
+	// Sort by name for deterministic processing order (cache List does not guarantee order)
+	sort.Slice(owned, func(i, j int) bool {
+		return owned[i].Name < owned[j].Name
+	})
+
 	return owned, nil
 }
 
@@ -66,77 +72,108 @@ func (r *DistributionGroupReconciler) deleteAllOwnedSlices(ctx context.Context, 
 }
 
 // calculateDesiredSlices computes the desired EndpointSlices
-func (r *DistributionGroupReconciler) calculateDesiredSlices(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup, pods []corev1.Pod, networkContexts map[string]string, existingSlices []discoveryv1.EndpointSlice) ([]discoveryv1.EndpointSlice, *maglevCapacityInfo) {
-	if len(networkContexts) == 0 {
+func (r *DistributionGroupReconciler) calculateDesiredSlices(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup, pods []corev1.Pod, gwContexts []gatewayNetworkContext, existingSlices []discoveryv1.EndpointSlice) ([]discoveryv1.EndpointSlice, *maglevCapacityInfo) {
+	if len(gwContexts) == 0 {
 		return nil, nil
 	}
 
-	// Group existing slices by network once (O(M) instead of O(N×M))
 	slicesByNetwork := groupSlicesByNetwork(ctx, existingSlices)
 
-	// Filter Pods per network (common for all DG types)
-	podsByNetwork := make(map[string][]podWithNetworkIP)
-	for cidr, attachmentType := range networkContexts {
-		podsWithIP := r.filterPodsWithNetworkContextIP(pods, cidr, attachmentType)
-		if len(podsWithIP) > 0 {
-			podsByNetwork[cidr] = podsWithIP
+	var allDesiredSlices []discoveryv1.EndpointSlice
+	var capacityInfo *maglevCapacityInfo
+
+	// Process each Gateway independently (scopes Maglev allocation per Gateway).
+	// Currently iterates once due to single-Gateway enforcement; the loop structure
+	// is intentional to keep multi-Gateway extensibility open. Supporting multiple
+	// Gateways per DG with the current EndpointSlice model would be problematic:
+	// Gateways sharing the same internal network would reference the same slices,
+	// causing per-Gateway iterations to interfere (conflicting ID assignments and
+	// updates on shared input). Clean endpoint representation separation between
+	// Gateways is required first.
+	for _, gwCtx := range gwContexts {
+		// Filter Pods per network for this Gateway
+		podsByNetwork := make(map[string][]podWithNetworkIP)
+		for cidr, attachmentType := range gwCtx.networks {
+			podsWithIP := r.filterPodsWithNetworkContextIP(pods, cidr, attachmentType)
+			if len(podsWithIP) > 0 {
+				podsByNetwork[cidr] = podsWithIP
+			}
+		}
+		if len(podsByNetwork) == 0 {
+			continue
+		}
+
+		if dg.Spec.Type == meridio2v1alpha1.DistributionGroupTypeMaglev {
+			slices, cap := r.calculateMaglevSlices(dg, podsByNetwork, slicesByNetwork)
+			allDesiredSlices = append(allDesiredSlices, slices...)
+			capacityInfo = cap
+		} else {
+			// Non-Maglev: no capacity restrictions, no stable IDs
+			for cidr, podsWithIP := range podsByNetwork {
+				slices := createSlicesForNetwork(dg, podsWithIP, nil, cidr, slicesByNetwork[cidr])
+				allDesiredSlices = append(allDesiredSlices, slices...)
+			}
 		}
 	}
 
-	// Early exit if no Pods have IPs in any network
-	if len(podsByNetwork) == 0 {
-		return nil, nil
-	}
-
-	// Maglev-specific assignment logic
-	if dg.Spec.Type == meridio2v1alpha1.DistributionGroupTypeMaglev {
-		return r.calculateMaglevSlices(dg, podsByNetwork, slicesByNetwork)
-	}
-
-	// Non-Maglev: no capacity restrictions, no stable IDs
-	var desiredSlices []discoveryv1.EndpointSlice
-	for cidr, podsWithIP := range podsByNetwork {
-		existingForNetwork := slicesByNetwork[cidr]
-		slices := createSlicesForNetwork(dg, podsWithIP, nil, cidr, existingForNetwork)
-		desiredSlices = append(desiredSlices, slices...)
-	}
-	return desiredSlices, nil
+	return allDesiredSlices, capacityInfo
 }
 
-// calculateMaglevSlices handles Maglev-specific endpoint assignment with stable IDs
+// calculateMaglevSlices handles Maglev-specific endpoint assignment with stable IDs.
+// IDs are assigned per Pod UID across all networks within a single Gateway (not per-network).
 func (r *DistributionGroupReconciler) calculateMaglevSlices(dg *meridio2v1alpha1.DistributionGroup, podsByNetwork map[string][]podWithNetworkIP, slicesByNetwork map[string][]discoveryv1.EndpointSlice) ([]discoveryv1.EndpointSlice, *maglevCapacityInfo) {
-	// Determine maxEndpoints (default to 32 if MaglevConfig is nil or MaxEndpoints is 0)
 	maxEndpoints := meridio2v1alpha1.DefaultMaglevMaxEndpoints
 	if dg.Spec.Maglev != nil && dg.Spec.Maglev.MaxEndpoints > 0 {
 		maxEndpoints = dg.Spec.Maglev.MaxEndpoints
 	}
 
-	var desiredSlices []discoveryv1.EndpointSlice
+	// Merge Pods across this Gateway's networks by UID. A Pod appearing in
+	// multiple subnets (dual-stack) is counted once.
+	// Use the largest network's Pod count as capacity hint (in dual-stack,
+	// most Pods appear in all networks so the largest is a good estimate).
+	var estimatedPods int
+	for _, podsWithIP := range podsByNetwork {
+		if len(podsWithIP) > estimatedPods {
+			estimatedPods = len(podsWithIP)
+		}
+	}
+	seen := make(map[string]bool, estimatedPods)
+	allPods := make([]corev1.Pod, 0, estimatedPods)
+	for _, podsWithIP := range podsByNetwork {
+		for _, p := range podsWithIP {
+			if uid := string(p.pod.UID); !seen[uid] {
+				seen[uid] = true
+				allPods = append(allPods, p.pod)
+			}
+		}
+	}
+
+	// Extract existing Pod→ID assignments from all network slices (merged view).
+	// All slices are expected to have consistent IDs for the same Pod UID,
+	// so iteration order over slicesByNetwork does not affect the result.
+	existingAssignments := make(map[string]int32)
+	for _, slices := range slicesByNetwork {
+		maps.Copy(existingAssignments, extractMaglevAssignments(slices))
+	}
+
+	// Assign Maglev IDs once on the merged Pod set
+	podToID := assignMaglevIDs(allPods, existingAssignments, maxEndpoints)
+
+	// Track capacity based on merged set
 	capacityInfo := &maglevCapacityInfo{
 		networkIssues: make(map[string]struct{ excluded, total int32 }),
 	}
-
-	for cidr, podsWithIP := range podsByNetwork {
-		existingForNetwork := slicesByNetwork[cidr]
-
-		// Extract existing Pod→ID assignments for this network
-		existingAssignments := extractMaglevAssignments(existingForNetwork)
-
-		// Assign Maglev IDs for this network context
-		podToID := assignMaglevIDs(podsWithIP, existingAssignments, maxEndpoints)
-
-		// Track capacity issues
-		total := int32(len(podsWithIP))
-		assigned := int32(len(podToID))
-		if assigned < total {
-			capacityInfo.networkIssues[cidr] = struct{ excluded, total int32 }{
-				excluded: total - assigned,
-				total:    total,
-			}
+	if total := int32(len(allPods)); int32(len(podToID)) < total {
+		capacityInfo.networkIssues["all"] = struct{ excluded, total int32 }{
+			excluded: total - int32(len(podToID)),
+			total:    total,
 		}
+	}
 
-		// Create slices for this network
-		slices := createSlicesForNetwork(dg, podsWithIP, podToID, cidr, existingForNetwork)
+	// Distribute shared IDs to per-network slices
+	desiredSlices := make([]discoveryv1.EndpointSlice, 0, len(podsByNetwork))
+	for cidr, podsWithIP := range podsByNetwork {
+		slices := createSlicesForNetwork(dg, podsWithIP, podToID, cidr, slicesByNetwork[cidr])
 		desiredSlices = append(desiredSlices, slices...)
 	}
 
@@ -306,7 +343,7 @@ func createSlicesForNetwork(dg *meridio2v1alpha1.DistributionGroup, podsWithIP [
 		return remainingEndpoints[i].TargetRef.UID < remainingEndpoints[j].TargetRef.UID
 	})
 
-	// Fill remaining capacity in existing slices
+	// Fill remaining capacity in existing slices with new endpoints.
 	for i := range slices {
 		capacity := maxEndpointsPerSlice - len(slices[i].endpoints)
 		if capacity > 0 && len(remainingEndpoints) > 0 {
@@ -315,6 +352,36 @@ func createSlicesForNetwork(dg *meridio2v1alpha1.DistributionGroup, podsWithIP [
 			remainingEndpoints = remainingEndpoints[toAdd:]
 		}
 	}
+
+	// Compact: move endpoints from later slices into earlier slices with free capacity.
+	// This prevents fragmentation after scale-in (mirrors core EndpointSlice controller behavior).
+	for i := 0; i < len(slices)-1; i++ {
+		capacity := maxEndpointsPerSlice - len(slices[i].endpoints)
+		if capacity <= 0 {
+			continue
+		}
+		for j := len(slices) - 1; j > i; j-- {
+			if len(slices[j].endpoints) == 0 {
+				continue
+			}
+			toMove := min(capacity, len(slices[j].endpoints))
+			slices[i].endpoints = append(slices[i].endpoints, slices[j].endpoints[:toMove]...)
+			slices[j].endpoints = slices[j].endpoints[toMove:]
+			capacity -= toMove
+			if capacity <= 0 {
+				break
+			}
+		}
+	}
+
+	// Remove empty slices after compaction
+	compacted := slices[:0]
+	for _, s := range slices {
+		if len(s.endpoints) > 0 {
+			compacted = append(compacted, s)
+		}
+	}
+	slices = compacted
 
 	// Create new slices for remaining endpoints
 	for len(remainingEndpoints) > 0 {

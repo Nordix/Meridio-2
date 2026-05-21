@@ -47,6 +47,7 @@ const (
 	// Status condition reasons
 	reasonEndpointsAvailable     = "EndpointsAvailable"
 	reasonNoEndpoints            = "NoEndpoints"
+	reasonMultipleGateways       = "MultipleGateways"
 	reasonMaglevCapacityExceeded = "MaglevCapacityExceeded"
 
 	// Status condition messages
@@ -56,4 +57,5 @@ const (
 	messageNoReferencedGateways = "No Gateways reference this DistributionGroup (check parentRefs or L34Route backendRefs)"
 	messageNoAcceptedGateways   = "No accepted Gateways found (Gateways may not exist or lack Accepted=True status condition)"
 	messageNoNetworkContext     = "No network context available (check GatewayConfiguration internalSubnets)"
+	messageMultipleGateways     = "DistributionGroup is referenced by multiple Gateways; only a single Gateway is supported"
 )

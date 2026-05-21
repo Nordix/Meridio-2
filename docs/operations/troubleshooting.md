@@ -365,6 +365,12 @@ table inet meridio-lb {
 		meta l4proto icmp ip daddr @ipv4-vips counter packets 0 bytes 0 queue to 0-3
 		meta l4proto ipv6-icmp ip6 daddr @ipv6-vips counter packets 0 bytes 0 queue to 0-3
 	}
+
+	chain snat-local {
+		type route hook output priority raw; policy accept;
+		meta mark != 0x00000000/8 ip daddr != @ipv4-vips ip saddr != @ipv4-vips icmp type destination-unreachable icmp code frag-needed @th,192,32 @ipv4-vips counter packets 0 bytes 0 ip saddr set @th,192,32 meta mark set 0x00000000
+		meta mark != 0x00000000/8 ip6 daddr != @ipv6-vips ip6 saddr != @ipv6-vips icmpv6 type packet-too-big @th,256,128 @ipv6-vips counter packets 0 bytes 0 ip6 saddr set @th,256,128 meta mark set 0x00000000
+	}
 }
 ```
 
@@ -529,7 +535,7 @@ Expected: default route with next-hops pointing to SLLBR Pod IPs (ECMP if multip
 ### Sidecar in backoff
 
 If the sidecar logs show repeated `InterfaceNotFoundError`, the ENC contains a domain for a subnet where the Pod has no matching interface. This triggers exponential backoff retries. Check:
-- Pod's Multus network-status annotation matches the GatewayConfiguration networkSubnets
+- Pod's Multus network-status annotation matches the GatewayConfiguration internalSubnets
 - The secondary interface exists and has an IP in the expected subnet
 
 ## Gateway and CRD Status
@@ -579,8 +585,9 @@ Two condition types are used:
   - `"No Pods match selector"` — no Pods match the DG's label selector.
   - `"No Gateways reference this DistributionGroup"` — no L34Route links this DG to a Gateway (check `parentRefs` or L34Route `backendRefs`).
   - `"No accepted Gateways found"` — referenced Gateways don't have `Accepted=True` (Gateway may not exist or GatewayConfiguration is invalid).
-  - `"No network context available"` — the GatewayConfiguration has no `networkSubnets` configured.
+  - `"No network context available"` — the GatewayConfiguration has no `internalSubnets` configured.
   - `"No endpoints available"` — Pods exist but none have an IP matching the network subnets.
+- `Ready=False`, reason `MultipleGateways` — the DG is referenced by more than one accepted Gateway. Reconciliation is skipped until the conflict is resolved.
 
 **`CapacityExceeded`** (Maglev only) — present only when the number of matching Pods exceeds `maxEndpoints`:
 - `CapacityExceeded=True`, reason `MaglevCapacityExceeded` — some Pods were excluded from EndpointSlices because the Maglev table is full. The message lists affected networks with counts (e.g., `"10.0.0.0/24: 5/37 pods excluded (32 capacity)"`).
@@ -614,7 +621,7 @@ Each endpoint should have:
 If EndpointSlices are missing:
 - Check the DistributionGroup status conditions for the specific reason (see "Check DistributionGroup status" above)
 - Verify Pods have the expected secondary network IP via Multus annotation: `kubectl get pod <name> -o jsonpath='{.metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}'`
-- Verify the Pod IP falls within a `GatewayConfiguration.spec.networkSubnets` CIDR
+- Verify the Pod IP falls within a `GatewayConfiguration.spec.internalSubnets` CIDR
 
 ### Verify GatewayConfiguration network setup
 
@@ -626,6 +633,6 @@ kubectl get gatewayconfiguration -n <ns> <name> -o yaml
 
 Check:
 - `spec.networkAttachments` — lists the secondary network interfaces (NADs) attached to LB Pods. Must include both the external interface (towards the gateway router) and the internal interface(s) (towards application Pods). Network attachments may also be defined in the LB deployment template; the GatewayConfiguration entries are merged on top.
-- `spec.networkSubnets` — lists the CIDRs of the internal network(s) where application Pod IPs reside. Used by the DistributionGroup controller to select the correct Pod IP when building EndpointSlices. Must cover all application Pod secondary IPs.
+- `spec.internalSubnets` — lists the CIDRs of the internal network(s) where application Pod IPs reside. Used by the DistributionGroup controller to select the correct Pod IP when building EndpointSlices. Must cover all application Pod secondary IPs.
 
 Missing or misconfigured entries here are a common cause of traffic issues even when all resources show healthy status.

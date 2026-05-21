@@ -61,7 +61,11 @@ func buildReadyCondition(hasEndpoints bool, generation int64, message string) me
 		condition.Message = messageEndpointsAvailable
 	} else {
 		condition.Status = metav1.ConditionFalse
-		condition.Reason = reasonNoEndpoints
+		if message == messageMultipleGateways {
+			condition.Reason = reasonMultipleGateways
+		} else {
+			condition.Reason = reasonNoEndpoints
+		}
 		if message != "" {
 			condition.Message = message
 		} else {

@@ -27,10 +27,10 @@ import (
 )
 
 func TestAssignMaglevIDs_NewPods(t *testing.T) {
-	pods := []podWithNetworkIP{
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}}, ip: "10.0.0.1"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}}, ip: "10.0.0.2"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}}, ip: "10.0.0.3"},
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}},
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}},
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}},
 	}
 
 	result := assignMaglevIDs(pods, nil, 32)
@@ -49,10 +49,10 @@ func TestAssignMaglevIDs_PreserveExisting(t *testing.T) {
 		"pod-2": 10,
 	}
 
-	pods := []podWithNetworkIP{
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}}, ip: "10.0.0.1"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}}, ip: "10.0.0.2"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}}, ip: "10.0.0.3"},
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}},
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}},
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}},
 	}
 
 	result := assignMaglevIDs(pods, existing, 32)
@@ -66,10 +66,10 @@ func TestAssignMaglevIDs_PreserveExisting(t *testing.T) {
 }
 
 func TestAssignMaglevIDs_CapacityLimit(t *testing.T) {
-	pods := []podWithNetworkIP{
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}}, ip: "10.0.0.1"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}}, ip: "10.0.0.2"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}}, ip: "10.0.0.3"},
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}},
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}},
+		{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}},
 	}
 
 	result := assignMaglevIDs(pods, nil, 2)
@@ -84,11 +84,11 @@ func TestExtractMaglevAssignments(t *testing.T) {
 		{
 			Endpoints: []discoveryv1.Endpoint{
 				{
-					TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: types.UID("pod-1")},
+					TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: types.UID("pod-1")},
 					Zone:      ptr(maglevIDPrefix + "5"),
 				},
 				{
-					TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: types.UID("pod-2")},
+					TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: types.UID("pod-2")},
 					Zone:      ptr(maglevIDPrefix + "10"),
 				},
 			},
@@ -111,9 +111,9 @@ func TestExtractMaglevAssignments_SkipInvalid(t *testing.T) {
 			Endpoints: []discoveryv1.Endpoint{
 				{TargetRef: nil, Zone: ptr(maglevIDPrefix + "5")},
 				{TargetRef: &corev1.ObjectReference{Kind: "Service", UID: "svc-1"}, Zone: ptr(maglevIDPrefix + "10")},
-				{TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: "pod-1"}, Zone: ptr("invalid")},
-				{TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: "pod-2"}, Zone: ptr(maglevIDPrefix + "abc")},
-				{TargetRef: &corev1.ObjectReference{Kind: "Pod", UID: "pod-3"}, Zone: ptr(maglevIDPrefix + "15")},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-1"}, Zone: ptr("invalid")},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-2"}, Zone: ptr(maglevIDPrefix + "abc")},
+				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-3"}, Zone: ptr(maglevIDPrefix + "15")},
 			},
 		},
 	}
@@ -136,16 +136,14 @@ func TestAssignMaglevIDs_CapacityEnforcement(t *testing.T) {
 	}
 
 	// 33 total Pods (32 existing + 1 new)
-	pods := make([]podWithNetworkIP, 33)
+	pods := make([]corev1.Pod, 33)
 	for i := range 32 {
-		pods[i] = podWithNetworkIP{
-			pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-" + strconv.Itoa(i))}},
-			ip:  "10.0.0." + strconv.Itoa(i),
+		pods[i] = corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-" + strconv.Itoa(i))},
 		}
 	}
-	pods[32] = podWithNetworkIP{
-		pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "pod-new"}},
-		ip:  "10.0.0.33",
+	pods[32] = corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{UID: "pod-new"},
 	}
 
 	result := assignMaglevIDs(pods, existing, 32)
