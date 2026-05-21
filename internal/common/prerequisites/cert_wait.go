@@ -20,12 +20,44 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 )
 
 const certPollInterval = 1 * time.Second
+
+// CertWaitConfig holds the configuration parameters needed to determine which certificate files to wait for.
+type CertWaitConfig struct {
+	EnableWebhooks  bool
+	WebhookCertPath string
+	WebhookCertName string
+	WebhookCertKey  string
+	MetricsAddr     string
+	SecureMetrics   bool
+	MetricsCertPath string
+	MetricsCertName string
+	MetricsCertKey  string
+}
+
+// CertFiles returns the list of certificate files that need to exist based on the configuration.
+func (c *CertWaitConfig) CertFiles() []string {
+	var certFiles []string
+	if c.EnableWebhooks && c.WebhookCertPath != "" {
+		certFiles = append(certFiles,
+			filepath.Join(c.WebhookCertPath, c.WebhookCertName),
+			filepath.Join(c.WebhookCertPath, c.WebhookCertKey),
+		)
+	}
+	if c.MetricsAddr != "0" && c.SecureMetrics && c.MetricsCertPath != "" {
+		certFiles = append(certFiles,
+			filepath.Join(c.MetricsCertPath, c.MetricsCertName),
+			filepath.Join(c.MetricsCertPath, c.MetricsCertKey),
+		)
+	}
+	return certFiles
+}
 
 // WaitForCerts polls for all specified files concurrently until they exist
 // or the context is cancelled. Returns nil if all files are found.

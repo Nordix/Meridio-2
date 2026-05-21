@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	goflag "flag"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -112,19 +111,17 @@ func runManager(cfg *config.ManagerConfig) error {
 
 	// Wait for certificate files if configured
 	if cfg.CertWaitTimeout > 0 {
-		var certFiles []string
-		if cfg.EnableWebhooks && cfg.WebhookCertPath != "" {
-			certFiles = append(certFiles,
-				filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertName),
-				filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertKey),
-			)
-		}
-		if cfg.MetricsAddr != "0" && cfg.SecureMetrics && cfg.MetricsCertPath != "" {
-			certFiles = append(certFiles,
-				filepath.Join(cfg.MetricsCertPath, cfg.MetricsCertName),
-				filepath.Join(cfg.MetricsCertPath, cfg.MetricsCertKey),
-			)
-		}
+		certFiles := (&prerequisites.CertWaitConfig{
+			EnableWebhooks:  cfg.EnableWebhooks,
+			WebhookCertPath: cfg.WebhookCertPath,
+			WebhookCertName: cfg.WebhookCertName,
+			WebhookCertKey:  cfg.WebhookCertKey,
+			MetricsAddr:     cfg.MetricsAddr,
+			SecureMetrics:   cfg.SecureMetrics,
+			MetricsCertPath: cfg.MetricsCertPath,
+			MetricsCertName: cfg.MetricsCertName,
+			MetricsCertKey:  cfg.MetricsCertKey,
+		}).CertFiles()
 		if len(certFiles) > 0 {
 			timeout := cfg.CertWaitTimeout
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
