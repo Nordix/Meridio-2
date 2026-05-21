@@ -112,9 +112,9 @@ When a Node becomes NotReady, the controller does not immediately reconcile affe
 
 Log level is set at startup via `--log-level` / `MERIDIO_LOG_LEVEL` and cannot be changed without restarting the process. All four controllers (controller-manager, router, loadbalancer, sidecar) share this limitation.
 
-**24. No cert-wait-timeout**
+**24. ~~No cert-wait-timeout~~** *(resolved)*
 
-The controller-manager crashes immediately if TLS certificates are not yet provisioned. When deployed simultaneously with cert-manager (e.g., via a single Helm chart), this causes several restart cycles before certs are ready.
+The controller-manager now waits for TLS certificates before starting (default: 10s, maximum: 1m, configurable via `--cert-wait-timeout`). This avoids unnecessary restart cycles when deployed simultaneously with cert-manager.
 
 **25. Minimum Kubernetes version 1.31** *(architectural constraint)*
 

@@ -86,6 +86,10 @@ func NewRunCmd() *cobra.Command {
 				return fmt.Errorf("LB deployment template not found: %w", err)
 			}
 
+			if cfg.CertWaitTimeout > time.Minute {
+				return fmt.Errorf("--cert-wait-timeout cannot exceed 1 minute (got %s)", cfg.CertWaitTimeout)
+			}
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -122,11 +126,12 @@ func runManager(cfg *config.ManagerConfig) error {
 			)
 		}
 		if len(certFiles) > 0 {
-			timeout := min(cfg.CertWaitTimeout, time.Minute)
+			timeout := cfg.CertWaitTimeout
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
 			setupLog.Info("waiting for certificate files", "files", certFiles, "timeout", timeout)
-			if err := prerequisites.WaitForCerts(ctx, certFiles); err != nil {
+			err := prerequisites.WaitForCerts(ctx, certFiles)
+			cancel()
+			if err != nil {
 				return fmt.Errorf("certificate wait failed: %w", err)
 			}
 			setupLog.Info("all certificate files are available")

@@ -541,6 +541,13 @@ spec:
 - Default: `stateless-load-balancer`
 - Injected by Kustomize replacement (handles namePrefix)
 
+**`--cert-wait-timeout`**:
+- Duration to wait for certificate files before starting
+- Default: `10s`
+- Set to `0` to disable waiting (fail immediately if certs are missing)
+- Maximum: `1m` (values above are rejected at startup)
+- Only waits for certs that are actually needed based on other flags
+
 ### Environment Variables
 All flags can be set via `MERIDIO_*` environment variables (e.g., `MERIDIO_NAMESPACE`).
 
