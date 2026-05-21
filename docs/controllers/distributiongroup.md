@@ -142,15 +142,15 @@ Maglev IDs are scoped **per DistributionGroup** and **per Gateway**. The same Po
 
 **Why this matters for the LoadBalancer controller:**
 
-The LoadBalancer controller uses **ID offsets per DistributionGroup** to differentiate target IP routes:
-- Each DistributionGroup gets a unique ID offset (e.g., DG-1: offset 0, DG-2: offset 1024)
+The LoadBalancer controller uses **dynamic ID offsets per DistributionGroup** to differentiate target IP routes:
+- Each DistributionGroup gets a contiguous fwmark range of size `maxEndpoints`, allocated dynamically starting at offset 5000
 - Routes are created with fwmarks: `fwmark = offset + maglev_id`
 - When NFQLB marks a packet based on distribution decision, the fwmark determines which route (and thus which endpoint) receives the packet
 - Changing `maxEndpoints` would:
   - Cause Maglev hash table reshuffle, potentially reassigning IDs for many endpoints
-  - Risk fwmark collisions with other DistributionGroups (e.g., if DG-1 grows from 32 to 128 endpoints, fwmarks 100-127 might collide with DG-2's range)
-  - Require offset reallocation for all DGs (unless fixed spacing like 1024 is used)
-  - Break active connections for this DG and potentially others
+  - Risk fwmark collisions with other DistributionGroups if the range grows into a neighbor's allocation
+  - Require NFQLB shared memory reinitialization (different M value)
+  - Break active connections for this DG
 
 ### 9. Create EndpointSlices
 **Per network context:**

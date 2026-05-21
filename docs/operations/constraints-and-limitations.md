@@ -44,9 +44,9 @@ Resource changes in `GatewayConfiguration.spec.verticalScaling` trigger Pod recr
 
 ## LB Controller
 
-**9. LB uses routing table/fwmark range starting at 5000** *(architectural constraint)*
+**9. LB uses dynamic routing table/fwmark ranges starting at 5000** *(architectural constraint)*
 
-The LB controller assigns fwmarks and routing table IDs using the formula `DG_ID × 1024 + 5000 + endpoint_identifier`, where DG_ID is assigned sequentially per DistributionGroup. The base offset (5000), multiplier (1024), and the use of fwmark as table ID are hardcoded and not configurable. The multiplier of 1024 imposes a hard limit of 1024 endpoints per DistributionGroup at the LB routing level. This range must not overlap with other fwmark or routing table usage on the LB Pod's network namespace. Note: DG_ID assignment is in-memory and sequential — when multiple DGs are created concurrently, different LB Pods may assign different DG_IDs to the same DistributionGroup, resulting in different routing table ranges per LB for the same DG. This is acceptable as the routing tables are local to each LB Pod.
+The LB controller assigns fwmarks and routing table IDs dynamically per DistributionGroup. Each DG gets a contiguous range of size `maxEndpoints` (from the DG's Maglev configuration, default 100). Ranges are allocated sequentially starting at offset 5000 and packed without gaps — the allocator finds the first non-overlapping range based on actual `maxEndpoints` values of existing instances. The formula is `offset + endpoint_identifier`, where `fwmark == tableID`. This range must not overlap with other fwmark or routing table usage in the LB Pod's network namespace. At startup, the LB cleans up all stale rules with `mark >= 5000` from a previous instance. DG offset assignment is in-memory — different LB Pods may assign different offsets to the same DistributionGroup. This is acceptable as routing tables are local to each Pod.
 
 ## Router Controller
 
