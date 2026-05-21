@@ -26,6 +26,25 @@ import (
 
 var errInvalidIP = errors.New("the ip address is invalid")
 
+// CleanupStaleRules removes all fwmark-based policy rules and their routing tables
+// left over from a previous LB instance. Called once at startup before reconciliation.
+// Any rule with Mark >= startingOffset is considered ours.
+func CleanupStaleRules(startingOffset int) error {
+	rules, err := netlink.RuleList(netlink.FAMILY_ALL)
+	if err != nil {
+		return fmt.Errorf("failed to list rules for cleanup: %w", err)
+	}
+
+	for _, rule := range rules {
+		if rule.Mark >= uint32(startingOffset) && rule.Mark > 0 {
+			tableID := int(rule.Mark)
+			_ = netlink.RouteDel(&netlink.Route{Table: tableID})
+			_ = netlink.RuleDel(&rule)
+		}
+	}
+	return nil
+}
+
 // createPolicyRoute creates or replaces a policy route for the given fwmark.
 // Uses RouteReplace to atomically handle stale routes (e.g., target IP change,
 // container restart with kernel state surviving).

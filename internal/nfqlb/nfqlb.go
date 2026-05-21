@@ -70,6 +70,11 @@ func New(options ...Option) (*NFQueueLoadBalancer, error) {
 // nfqlb process is supposed to run while the load-balancer container
 // is alive and vice versa, thus there's no need for a Stop() function.
 func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
+	// Clean up stale policy rules/routes from a previous instance (container restart)
+	if err := CleanupStaleRules(nfqlb.startingOffset); err != nil {
+		nfqlb.logger.Error(err, "failed to cleanup stale rules at startup")
+	}
+
 	//nolint:gosec
 	cmd := exec.CommandContext(
 		ctx,
