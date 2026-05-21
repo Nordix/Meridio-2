@@ -482,6 +482,7 @@ The LB Pod's network namespace requires specific sysctls for correct operation. 
 | `net.ipv4.conf.default.rp_filter` | `2` | Loose RPF for new interfaces |
 | `net.ipv4.fwmark_reflect` | `1` | Copy fwmark to locally generated ICMP replies (required for PMTU SNAT) |
 | `net.ipv6.fwmark_reflect` | `1` | Same for IPv6 |
+| `net.ipv4.ip_local_port_range` | `49152 65535` | RFC 5881 BFD source port compliance |
 
 **Example using Multus tuning plugin:**
 
@@ -504,7 +505,8 @@ spec:
           "net.ipv4.conf.all.rp_filter": "2",
           "net.ipv4.conf.default.rp_filter": "2",
           "net.ipv4.fwmark_reflect": "1",
-          "net.ipv6.fwmark_reflect": "1"
+          "net.ipv6.fwmark_reflect": "1",
+          "net.ipv4.ip_local_port_range": "49152 65535"
         }
       }]
   }'
