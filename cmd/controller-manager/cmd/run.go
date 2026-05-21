@@ -17,9 +17,11 @@ limitations under the License.
 package cmd
 
 import (
+	"context"
 	"crypto/tls"
 	goflag "flag"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -83,6 +85,10 @@ func NewRunCmd() *cobra.Command {
 				return fmt.Errorf("LB deployment template not found: %w", err)
 			}
 
+			if cfg.CertWaitTimeout > time.Minute {
+				return fmt.Errorf("--cert-wait-timeout cannot exceed 1 minute (got %s)", cfg.CertWaitTimeout)
+			}
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -102,6 +108,33 @@ func NewRunCmd() *cobra.Command {
 
 func runManager(cfg *config.ManagerConfig) error {
 	setupLog.Info("starting controller-manager", "config", cfg)
+
+	// Wait for certificate files if configured
+	if cfg.CertWaitTimeout > 0 {
+		certFiles := (&prerequisites.CertWaitConfig{
+			EnableWebhooks:  cfg.EnableWebhooks,
+			WebhookCertPath: cfg.WebhookCertPath,
+			WebhookCertName: cfg.WebhookCertName,
+			WebhookCertKey:  cfg.WebhookCertKey,
+			MetricsAddr:     cfg.MetricsAddr,
+			SecureMetrics:   cfg.SecureMetrics,
+			MetricsCertPath: cfg.MetricsCertPath,
+			MetricsCertName: cfg.MetricsCertName,
+			MetricsCertKey:  cfg.MetricsCertKey,
+		}).CertFiles()
+		if len(certFiles) > 0 {
+			timeout := cfg.CertWaitTimeout
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			setupLog.Info("waiting for certificate files", "files", certFiles, "timeout", timeout)
+			err := prerequisites.WaitForCerts(ctx, certFiles)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("certificate wait failed: %w", err)
+			}
+			setupLog.Info("all certificate files are available")
+		}
+	}
+
 	var tlsOpts []func(*tls.Config)
 	if !cfg.EnableHTTP2 {
 		disableHTTP2 := func(c *tls.Config) {

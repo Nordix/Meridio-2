@@ -52,6 +52,7 @@ type ManagerConfig struct {
 	LBServiceAccount string
 
 	// Certificates
+	CertWaitTimeout time.Duration
 	WebhookPort     int
 	WebhookCertPath string
 	WebhookCertName string
@@ -95,6 +96,8 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"ServiceAccount name for LB Deployment pods.")
 	fs.IntVar(&c.WebhookPort, "webhook-port", 9443,
 		"The port the webhook server binds to.")
+	fs.DurationVar(&c.CertWaitTimeout, "cert-wait-timeout", 10*time.Second,
+		"Duration to wait for certificate files before starting. 0 means no wait. Maximum 1 minute.")
 	fs.StringVar(&c.WebhookCertPath, "webhook-cert-path", "",
 		"The directory that contains the webhook certificate.")
 	fs.StringVar(&c.WebhookCertName, "webhook-cert-name", "tls.crt",
@@ -129,6 +132,7 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "template-path", "MERIDIO_TEMPLATE_PATH", &c.TemplatePath)
 	bindString(fs, "lb-service-account", "MERIDIO_LB_SERVICE_ACCOUNT", &c.LBServiceAccount)
 	bindInt(fs, "webhook-port", "MERIDIO_WEBHOOK_PORT", &c.WebhookPort)
+	bindDuration(fs, "cert-wait-timeout", "MERIDIO_CERT_WAIT_TIMEOUT", &c.CertWaitTimeout)
 	bindString(fs, "webhook-cert-path", "MERIDIO_WEBHOOK_CERT_PATH", &c.WebhookCertPath)
 	bindString(fs, "webhook-cert-name", "MERIDIO_WEBHOOK_CERT_NAME", &c.WebhookCertName)
 	bindString(fs, "webhook-cert-key", "MERIDIO_WEBHOOK_CERT_KEY", &c.WebhookCertKey)
