@@ -176,37 +176,37 @@ func TestSortPodsByCreationTime(t *testing.T) {
 	earlier := metav1.NewTime(now.Add(-60000000000))
 	later := metav1.NewTime(now.Add(60000000000))
 
-	pods := []podWithNetworkIP{
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-c", Namespace: "ns", CreationTimestamp: now}}, ip: "10.0.0.3"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns", CreationTimestamp: earlier}}, ip: "10.0.0.1"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns", CreationTimestamp: later}}, ip: "10.0.0.2"},
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pod-c", Namespace: "ns", CreationTimestamp: now}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns", CreationTimestamp: earlier}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns", CreationTimestamp: later}},
 	}
 
 	sortPodsByCreationTime(pods)
 
-	if pods[0].pod.Name != "pod-a" || pods[1].pod.Name != "pod-c" || pods[2].pod.Name != "pod-b" {
-		t.Errorf("Sort order incorrect: got %v, %v, %v", pods[0].pod.Name, pods[1].pod.Name, pods[2].pod.Name)
+	if pods[0].Name != "pod-a" || pods[1].Name != "pod-c" || pods[2].Name != "pod-b" {
+		t.Errorf("Sort order incorrect: got %v, %v, %v", pods[0].Name, pods[1].Name, pods[2].Name)
 	}
 }
 
 func TestSortPodsByCreationTime_Tiebreak(t *testing.T) {
 	now := metav1.Now()
 
-	pods := []podWithNetworkIP{
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-z", Namespace: "ns-b", CreationTimestamp: now}}, ip: "10.0.0.3"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns-a", CreationTimestamp: now}}, ip: "10.0.0.1"},
-		{pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns-a", CreationTimestamp: now}}, ip: "10.0.0.2"},
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{Name: "pod-z", Namespace: "ns-b", CreationTimestamp: now}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns-a", CreationTimestamp: now}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns-a", CreationTimestamp: now}},
 	}
 
 	sortPodsByCreationTime(pods)
 
-	if pods[0].pod.Namespace+"/"+pods[0].pod.Name != "ns-a/pod-a" {
-		t.Errorf("First pod should be ns-a/pod-a, got %s/%s", pods[0].pod.Namespace, pods[0].pod.Name)
+	if pods[0].Namespace+"/"+pods[0].Name != "ns-a/pod-a" {
+		t.Errorf("First pod should be ns-a/pod-a, got %s/%s", pods[0].Namespace, pods[0].Name)
 	}
-	if pods[1].pod.Namespace+"/"+pods[1].pod.Name != "ns-a/pod-b" {
-		t.Errorf("Second pod should be ns-a/pod-b, got %s/%s", pods[1].pod.Namespace, pods[1].pod.Name)
+	if pods[1].Namespace+"/"+pods[1].Name != "ns-a/pod-b" {
+		t.Errorf("Second pod should be ns-a/pod-b, got %s/%s", pods[1].Namespace, pods[1].Name)
 	}
-	if pods[2].pod.Namespace+"/"+pods[2].pod.Name != "ns-b/pod-z" {
-		t.Errorf("Third pod should be ns-b/pod-z, got %s/%s", pods[2].pod.Namespace, pods[2].pod.Name)
+	if pods[2].Namespace+"/"+pods[2].Name != "ns-b/pod-z" {
+		t.Errorf("Third pod should be ns-b/pod-z, got %s/%s", pods[2].Namespace, pods[2].Name)
 	}
 }

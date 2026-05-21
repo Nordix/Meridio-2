@@ -14,7 +14,9 @@ The DistributionGroup controller manages EndpointSlices for secondary network en
 - Subnet CIDR (e.g., `192.168.100.0/24`)
 - Attachment type (`NAD` for Multus, `DRA` for Dynamic Resource Allocation)
 
-**Maglev ID**: A stable integer (0-31 by default) assigned to each Pod for consistent hashing. Stored in EndpointSlice's `zone` field as `maglev:<id>`. Scoped per DistributionGroup and per network context (a Pod may have different IDs in different DGs or networks).
+**Maglev ID**: A stable integer (0-31 by default) assigned to each Pod for consistent hashing. Stored in EndpointSlice's `zone` field as `maglev:<id>`. Scoped per DistributionGroup and per Gateway — the same Pod gets the same ID across all networks (IPv4/IPv6) within a Gateway, but may have different IDs in different DGs.
+
+**Why shared allocation across networks:** The LoadBalancer uses a single NFQLB hash table per DistributionGroup. This hash table maps identifiers to fwmarks, and fwmarks determine routing tables. If different networks assigned different IDs to the same Pod, the single hash table would have conflicting entries — one Pod's route would overwrite another's, causing non-deterministic routing and cross-Pod identifier collisions. Shared allocation ensures each identifier maps to exactly one Pod across all IP families, and the LB creates per-family routes under the same fwmark (IPv4 and IPv6 routing tables are independent in Linux). See [#70](https://github.com/Nordix/Meridio-2/issues/70) for full problem description and [#106](https://github.com/Nordix/Meridio-2/issues/106) for related cross-component contract considerations.
 
 ### Design Principles
 
@@ -42,7 +44,7 @@ Gateway
 └── spec.infrastructure.parametersRef → GatewayConfiguration
 
 GatewayConfiguration
-└── spec.networkSubnets → Network contexts (CIDR + attachment type)
+└── spec.internalSubnets → Network contexts (CIDR + attachment type)
 
 EndpointSlice (owned by DistributionGroup via ownerReference)
 ├── metadata.ownerReferences → DistributionGroup (controller=true)
@@ -93,14 +95,21 @@ Only process Gateways with `Accepted=True` condition set by the Gateway controll
   - Are managed by our controller (not another implementation)
 - Gateways without `Accepted=True` are ignored (no network context extracted, no EndpointSlices created)
 
-### 5. Extract Network Contexts
+### 5. Enforce Single-Gateway Restriction
+If more than one accepted Gateway references the DG (directly or via L34Routes):
+- Set `Ready=False` with reason `MultipleGateways`
+- Skip reconciliation (existing EndpointSlices are preserved/frozen)
+- The operator must resolve the conflict by removing one Gateway's reference
+
+### 6. Extract Network Contexts (per Gateway)
 For each accepted Gateway:
 - Fetch referenced GatewayConfiguration
-- Extract subnet CIDRs and attachment types from `spec.networkSubnets`
+- Extract subnet CIDRs and attachment types from `spec.internalSubnets`
 - Normalize CIDRs to canonical form (e.g., `192.168.1.5/24` → `192.168.1.0/24`)
+- Group results per Gateway (namespaced name) to scope Maglev allocation per Gateway
 
-### 6. Filter Pods by Network
-For each network context:
+### 7. Filter Pods by Network
+For each network context within the Gateway:
 - Scrape secondary IP from Pod based on attachment type:
   - **NAD**: Parse Multus `k8s.v1.cni.cncf.io/network-status` annotation
   - **DRA**: (Future implementation)
@@ -108,20 +117,28 @@ For each network context:
 - Skip Pods without IPs in the target subnet
 - Skip primary interface IPs (only secondary networks)
 
-### 7. Assign Maglev IDs (if Type=Maglev)
-**Per network context (CIDR) within this DistributionGroup:**
-- Extract existing Pod→ID mappings from current EndpointSlices for this network
+### 8. Assign Maglev IDs (if Type=Maglev)
+**Per Gateway, across all network contexts (CIDRs) within this DistributionGroup:**
+- Merge all Pods by UID across the Gateway's networks (a dual-stack Pod is counted once)
+- Extract existing Pod→ID mappings from all current EndpointSlices for this Gateway
 - Preserve existing assignments (stability)
 - Assign new IDs from available pool (0 to `maxEndpoints-1`)
 - Sort new Pods by CreationTimestamp (deterministic assignment)
 - Enforce capacity limit: exclude Pods beyond `maxEndpoints`
+- Distribute the shared IDs to per-network EndpointSlices
+- No gatekeeping: Pods are not required to have IPs in all configured Gateway subnets.
+  A Pod with only an IPv4 address gets an ID and appears in the IPv4 slice but not the IPv6 slice.
 
 **Maglev ID Scoping:**
 
-Maglev IDs are scoped **per DistributionGroup** and **per network context**. A Pod may have different IDs in different scenarios:
+Maglev IDs are scoped **per DistributionGroup** and **per Gateway**. The same Pod gets the same ID across all networks (IPv4/IPv6) within a Gateway:
 
-- **Same Pod, different networks**: Pod-A might be ID `5` in `192.168.1.0/24` (IPv4) and ID `12` in `2001:db8::/64` (IPv6)
-- **Same Pod, different DistributionGroups**: Pod-A might be ID `3` in DG-1 and ID `7` in DG-2 (even for the same network)
+- **Same Pod, same Gateway, different networks**: Pod-A has ID `5` in both `192.168.1.0/24` (IPv4) and `2001:db8::/64` (IPv6) EndpointSlices
+- **Same Pod, different DistributionGroups**: Pod-A might be ID `3` in DG-1 and ID `7` in DG-2
+
+**Immutability enforcement:**
+
+`maxEndpoints` is immutable (enforced via CEL validation). To change capacity, create a new DistributionGroup.
 
 **Why this matters for the LoadBalancer controller:**
 
@@ -135,14 +152,12 @@ The LoadBalancer controller uses **ID offsets per DistributionGroup** to differe
   - Require offset reallocation for all DGs (unless fixed spacing like 1024 is used)
   - Break active connections for this DG and potentially others
 
-**Immutability enforcement:**
-
-`maxEndpoints` is immutable (enforced via CEL validation). To change capacity, create a new DistributionGroup.
-
-### 8. Create EndpointSlices
+### 9. Create EndpointSlices
 **Per network context:**
 - Group endpoints by network (one or more slices per CIDR)
-- Preserve existing slice structure (minimize churn)
+- Preserve existing slice structure (endpoints stay in their original slice when possible)
+- Compact: move endpoints from later slices into earlier slices with free capacity to avoid fragmentation after scale-in
+- Remove empty slices after compaction
 - Split into multiple slices if > 100 endpoints
 - Set labels:
   - `endpointslice.kubernetes.io/managed-by: distributiongroup-controller.meridio-2.nordix.org`
@@ -158,7 +173,7 @@ The LoadBalancer controller uses **ID offsets per DistributionGroup** to differe
 - Matches Kubernetes core EndpointSlice controller behavior
 - Ensures traffic only goes to fully ready Pods
 
-### 9. Reconcile EndpointSlices
+### 10. Reconcile EndpointSlices
 - Create new slices
 - Update existing slices if endpoints/labels changed (semantic equality check)
 - Delete orphaned slices
@@ -183,7 +198,7 @@ The LoadBalancer controller uses **ID offsets per DistributionGroup** to differe
   - Solution: Deploy one controller per namespace (documented constraint)
 - Trade-off: Slightly higher memory usage vs operational simplicity
 
-### 10. Update DistributionGroup Status
+### 11. Update DistributionGroup Status
 **Ready condition:**
 - `True` if EndpointSlices exist
 - `False` if no endpoints available, with specific reason:
@@ -192,6 +207,7 @@ The LoadBalancer controller uses **ID offsets per DistributionGroup** to differe
   - "No accepted Gateways found (Gateways may not exist or lack Accepted=True status condition)"
   - "No network context available..."
   - "No endpoints available" (default - Pods have no secondary IPs)
+  - "DistributionGroup is referenced by multiple Gateways..." (reason: `MultipleGateways`)
 
 **CapacityExceeded condition (Maglev only):**
 - `True` if Pods were excluded due to capacity limits
@@ -226,8 +242,9 @@ The controller reconciles when:
 # User adds IPv6 network to existing config
 GatewayConfiguration:
   spec:
-    networkSubnets:
-    - cidrs: ["192.168.1.0/24", "2001:db8::/64"]  # IPv6 added
+    internalSubnets:
+    - cidr: "192.168.1.0/24"
+    - cidr: "2001:db8::/64"  # IPv6 added
 ```
 
 **Without GatewayConfiguration watch:**
@@ -248,7 +265,7 @@ GatewayConfiguration:
 # User breaks config
 GatewayConfiguration:
   spec:
-    networkSubnets: []  # Empty - invalid!
+    internalSubnets: []  # Empty - invalid!
 ```
 
 **Race condition:**
@@ -271,8 +288,8 @@ GatewayConfiguration:
 # User fixes config
 GatewayConfiguration:
   spec:
-    networkSubnets:
-    - cidrs: ["192.168.1.0/24"]  # Fixed!
+    internalSubnets:
+    - cidr: "192.168.1.0/24"  # Fixed!
 ```
 
 **Race condition:**
@@ -440,11 +457,9 @@ metadata:
   namespace: meridio-2
 spec:
   networkAttachments: []
-  networkSubnets:
-    - attachmentType: NAD
-      cidrs:
-        - "192.168.100.0/24"
-        - "2001:db8:100::/64"
+  internalSubnets:
+    - cidr: "192.168.100.0/24"
+    - cidr: "2001:db8:100::/64"
   horizontalScaling:
     replicas: 1
     enforceReplicas: false
@@ -462,9 +477,9 @@ spec:
       kind: GatewayConfiguration
       name: test-gwconfig
   listeners:
-    - name: default
-      protocol: TCP
-      port: 80
+    - name: all
+      protocol: ALL
+      port: 0
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: DistributionGroup
@@ -506,7 +521,7 @@ spec:
 EOF
 ```
 
-Mark Gateway as accepted (simulates Gateway controller):
+Mark Gateway as accepted (only needed when testing DG controller standalone, without the Gateway controller running):
 
 ```bash
 kubectl patch gateway test-gateway -n meridio-2 --type=merge --subresource=status --patch '

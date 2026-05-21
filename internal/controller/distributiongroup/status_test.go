@@ -69,6 +69,23 @@ func TestBuildReadyCondition_NoEndpointsWithCustomMessage(t *testing.T) {
 	}
 }
 
+func TestBuildReadyCondition_MultipleGateways(t *testing.T) {
+	cond := buildReadyCondition(false, 3, messageMultipleGateways)
+
+	if cond.Type != conditionTypeReady {
+		t.Errorf("Expected type %q, got %q", conditionTypeReady, cond.Type)
+	}
+	if cond.Status != metav1.ConditionFalse {
+		t.Errorf("Expected status False, got %v", cond.Status)
+	}
+	if cond.Reason != reasonMultipleGateways {
+		t.Errorf("Expected reason %q, got %q", reasonMultipleGateways, cond.Reason)
+	}
+	if cond.Message != messageMultipleGateways {
+		t.Errorf("Expected message %q, got %q", messageMultipleGateways, cond.Message)
+	}
+}
+
 func TestBuildCapacityCondition(t *testing.T) {
 	issues := map[string]struct{ excluded, total int32 }{
 		"192.168.1.0/24": {excluded: 5, total: 37},
