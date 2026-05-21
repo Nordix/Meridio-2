@@ -25,6 +25,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -119,7 +120,42 @@ func buildFamilyMap(gatewayRouters []*meridio2v1alpha1.GatewayRouter) map[string
 	return familyMap
 }
 
+// patchGateCondition(ctx, conditionType, status) error — patches Pod status
+func (cgm *ConnectivityGateManager) patchGateCondition(ctx context.Context, conditionType string, status bool) error {
+	pod := &corev1.Pod{}
+	if err := cgm.client.Get(ctx, types.NamespacedName{Name: cgm.podName, Namespace: cgm.podNamespace}, pod); err != nil {
+		return fmt.Errorf("error fetching pod for patching: %w", err)
+	}
+
+	newStatus := corev1.ConditionFalse
+	if status {
+		newStatus = corev1.ConditionTrue
+	}
+
+	// Find or create the condition
+	found := false
+	for i := range pod.Status.Conditions {
+		if string(pod.Status.Conditions[i].Type) == conditionType {
+			if pod.Status.Conditions[i].Status == newStatus {
+				return nil // No change needed
+			}
+			pod.Status.Conditions[i].Status = newStatus
+			pod.Status.Conditions[i].LastTransitionTime = metav1.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+			Type:               corev1.PodConditionType(conditionType),
+			Status:             newStatus,
+			LastTransitionTime: metav1.Now(),
+		})
+	}
+
+	return cgm.client.Status().Update(ctx, pod)
+}
+
 // TODO
 // - OnStatusUpdate(ipv4Connected, ipv6Connected bool) — called on each monitor tick, handles damping and patches
 // - SetAllGatesFalse(ctx) error — called on startup (defense-in-depth)
-// - patchGateCondition(ctx, conditionType, status) error — patches Pod status
