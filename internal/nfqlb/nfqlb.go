@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,6 +39,7 @@ type NFQueueLoadBalancer struct {
 	instances map[string]*Instance // key: name
 	mu        sync.Mutex
 	logger    logr.Logger
+	running   atomic.Bool
 }
 
 // New creates a new NFQueueLoadBalancer.
@@ -74,6 +76,9 @@ func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 	if err := CleanupStaleRules(nfqlb.startingOffset); err != nil {
 		nfqlb.logger.Error(err, "failed to cleanup stale rules at startup")
 	}
+
+	nfqlb.running.Store(true)
+	defer nfqlb.running.Store(false)
 
 	//nolint:gosec
 	cmd := exec.CommandContext(
@@ -234,6 +239,10 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 	name string,
 	options ...InstanceOption,
 ) (*Instance, error) {
+	if !nfqlb.running.Load() {
+		return nil, fmt.Errorf("NFQLB process not running")
+	}
+
 	nfqlb.mu.Lock()
 	defer nfqlb.mu.Unlock()
 
@@ -481,8 +490,14 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 			"instance", s.name, "identifier", identifier, "oldIPs", existingIPs, "newIPs", ips)
 		fwmark := identifier + s.offset
 		for _, ip := range existingIPs {
-			_ = cleanNeighbor(net.ParseIP(ip))
-			_ = s.doDeletePolicyRoute(fwmark, ip)
+			if err := cleanNeighbor(net.ParseIP(ip)); err != nil {
+				ctrl.LoggerFrom(ctx).V(1).Info("failed to clean neighbor (may not exist)",
+					"ip", ip, "error", err)
+			}
+			if err := s.doDeletePolicyRoute(fwmark, ip); err != nil {
+				ctrl.LoggerFrom(ctx).V(1).Info("failed to delete old route (may not exist)",
+					"ip", ip, "error", err)
+			}
 		}
 		s.targets[identifier] = ips
 		var errFinal error
