@@ -19,6 +19,7 @@ package config
 import (
 	"os"
 	"strings"
+	"time"
 
 	"github.com/nordix/meridio-2/internal/bird"
 	"github.com/spf13/pflag"
@@ -26,18 +27,22 @@ import (
 
 // RouterConfig holds configuration for the router
 type RouterConfig struct {
-	GatewayName        string
-	GatewayNamespace   string
-	ProbeAddr          string
-	LogLevel           string
-	MetricsAddr        string
-	SecureMetrics      bool
-	MetricsCertPath    string
-	MetricsCertName    string
-	MetricsCertKey     string
-	EnableHTTP2        bool
-	BirdLogs           bird.BirdLogParams
-	BirdKernelScanTime int
+	GatewayName          string
+	GatewayNamespace     string
+	PodName              string
+	PodNamespace         string
+	PodUID               string
+	ConnectivityHoldTime time.Duration
+	ProbeAddr            string
+	LogLevel             string
+	MetricsAddr          string
+	SecureMetrics        bool
+	MetricsCertPath      string
+	MetricsCertName      string
+	MetricsCertKey       string
+	EnableHTTP2          bool
+	BirdLogs             bird.BirdLogParams
+	BirdKernelScanTime   int
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -46,6 +51,14 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"Name of the Gateway resource to watch (required)")
 	fs.StringVar(&c.GatewayNamespace, "gateway-namespace", "default",
 		"Namespace of the Gateway resource")
+	fs.StringVar(&c.PodName, "pod-name", "",
+		"Pod name (from Downward API)")
+	fs.StringVar(&c.PodNamespace, "pod-namespace", "",
+		"Pod namespace (from Downward API)")
+	fs.StringVar(&c.PodUID, "pod-uid", "",
+		"Pod UID (from Downward API)")
+	fs.DurationVar(&c.ConnectivityHoldTime, "connectivity-hold-time", 10*time.Second,
+		"Hold time before setting connectivity gate to True after BGP session establishes")
 	fs.StringVar(&c.ProbeAddr, "health-probe-bind-address", ":8082",
 		"The address the probe endpoint binds to.")
 	fs.StringVar(&c.LogLevel, "log-level", "info",
@@ -91,6 +104,10 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "gateway-name", "MERIDIO_GATEWAY_NAME", &c.GatewayName)
 	bindString(fs, "gateway-namespace", "MERIDIO_GATEWAY_NAMESPACE", &c.GatewayNamespace)
+	bindString(fs, "pod-name", "POD_NAME", &c.PodName)
+	bindString(fs, "pod-namespace", "POD_NAMESPACE", &c.PodNamespace)
+	bindString(fs, "pod-uid", "POD_UID", &c.PodUID)
+	bindDuration(fs, "connectivity-hold-time", "MERIDIO_CONNECTIVITY_HOLD_TIME", &c.ConnectivityHoldTime)
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)
