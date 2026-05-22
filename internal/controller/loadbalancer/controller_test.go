@@ -32,6 +32,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
@@ -128,6 +129,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			GatewayName:      gatewayName,
 			GatewayNamespace: namespace,
 			NFQLB:            mockNfqlb,
+			Readiness:        readiness.NewManager(""),
 			NftManagerFactory: func(queueNum, queueTotal uint16) (nftablesManager, error) {
 				return newMockNftablesManager(), nil
 			},

@@ -118,6 +118,17 @@ A separate goroutine polls `birdc show protocols all "NBR-*"` at 1-second interv
 - Currently log-only; status changes logged when protocol up-count changes
 - Failed birdc queries are logged at V(1) level for debugging
 
+## LB Readiness Gating
+
+The router controller gates VIP advertisement on LB readiness. The collocated LB controller writes `lb-ready-<distGroupName>` files to a shared directory when a DistributionGroup has ready targets. The router watches this directory and only advertises VIPs when at least one readiness file exists.
+
+| Flag | Env Var | Default | Description |
+|---|---|---|---|
+| `--readiness-dir` | `MERIDIO_READINESS_DIR` | `/var/run/meridio` | Directory where LB writes readiness files. Empty string disables gating (VIPs always advertised). |
+
+- **Enabled** (path non-empty): VIPs are suppressed until `lb-ready-*` files appear. Filesystem events trigger re-reconciliation on state transitions.
+- **Disabled** (path empty): VIPs are always advertised regardless of LB state.
+
 ## Known Limitations and Future Work
 
 ### BIRD Process Lifecycle (MVP gaps)
@@ -154,14 +165,6 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 - **GatewayRouter metrics**: Per-GatewayRouter up/down state exposed via OpenTelemetry. Includes per-IP-family connectivity status. (In Meridio v1 these were called "gateway metrics" — the resource was renamed to GatewayRouter in Meridio-2 to avoid ambiguity with Gateway API's Gateway.)
 - **Memory monitoring**: `birdc show memory` for BIRD memory usage tracking.
 - These should be exposed as Prometheus metrics via the controller-runtime metrics server (already wired but unused).
-
-### LB Readiness Gating (post-MVP)
-
-MVP assumes the collocated LB is always ready. Future work:
-
-- LB container signals distribution readiness (e.g., via a file or readiness gate)
-- Router controller gates VIP exposure on LB readiness
-- Refer to `WatchesRawSource` builder option for integrating non-CR event sources
 
 ### Feature Parity with Meridio v1
 
