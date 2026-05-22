@@ -34,6 +34,8 @@ spec:
         args:
           - run
         env:
+        - name: MERIDIO_READINESS_DIR
+          value: '/var/run/meridio'
         - name: MERIDIO_GATEWAY_NAME
           value:  # to be filled by operator
         - name: MERIDIO_GATEWAY_NAMESPACE
@@ -74,8 +76,8 @@ spec:
               fieldPath: metadata.namespace
         - name: MERIDIO_BIRD_LOG
           value: "file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all"
-        - name: MERIDIO_LB_READINESS_PATH
-          value: /var/run/meridio
+        - name: MERIDIO_READINESS_DIR
+          value: '/var/run/meridio'
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

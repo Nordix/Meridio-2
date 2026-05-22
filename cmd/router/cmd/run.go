@@ -38,6 +38,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/bird"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/router"
 )
 
@@ -134,7 +135,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		GatewayName:      cfg.GatewayName,
 		GatewayNamespace: cfg.GatewayNamespace,
 		Bird:             birdInstance,
-		LBReadinessPath:  cfg.LBReadinessPath,
+		Readiness:        readiness.NewManager(cfg.LBReadinessDir),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to create controller", "controller", "GatewayRouter")
 		return err

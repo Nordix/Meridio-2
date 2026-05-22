@@ -36,6 +36,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
 	"github.com/nordix/meridio-2/internal/nfqlb"
 )
@@ -190,6 +191,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		GatewayName:      cfg.GatewayName,
 		GatewayNamespace: cfg.GatewayNamespace,
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
+		Readiness:        readiness.NewManager(cfg.ReadinessDir),
 		NFTConn:          nftConn,
 		NFTTable:         nftTable,
 		NFTChain:         nftChain,

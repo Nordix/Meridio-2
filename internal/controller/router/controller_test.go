@@ -19,6 +19,8 @@ package router
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -29,11 +31,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/bird"
+	"github.com/nordix/meridio-2/internal/common/readiness"
 )
 
 const testGatewayName = "test-gateway"
@@ -118,6 +122,7 @@ func setupReconciler(objects ...client.Object) (*RouterReconciler, client.Client
 		GatewayName:      testGatewayName,
 		GatewayNamespace: testNamespace,
 		Bird:             &mockingBird{},
+		Readiness:        readiness.NewManager(""),
 	}, fakeClient
 }
 
@@ -368,4 +373,108 @@ func TestGatewayRouterEnqueue(t *testing.T) {
 
 		assert.Nil(t, requests)
 	})
+}
+
+func TestReconciler_ReadinessGating(t *testing.T) {
+	t.Run("Enabled_SuppressesVIPs_WhenDirEmpty", func(t *testing.T) {
+		dir := t.TempDir()
+		gw := newGateway(testGatewayName, testNamespace, "10.0.0.1")
+		reconciler, _ := setupReconciler(gw)
+		reconciler.Readiness = readiness.NewManager(dir)
+		mock := reconciler.Bird.(*mockingBird)
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		_, err := reconciler.Reconcile(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Nil(t, mock.configureVIPs)
+	})
+
+	t.Run("Enabled_PassesVIPs_WhenReadinessFileExists", func(t *testing.T) {
+		dir := t.TempDir()
+		f, _ := os.Create(filepath.Join(dir, "lb-ready-dg1"))
+		_ = f.Close()
+
+		gw := newGateway(testGatewayName, testNamespace, "10.0.0.1")
+		reconciler, _ := setupReconciler(gw)
+		reconciler.Readiness = readiness.NewManager(dir)
+		mock := reconciler.Bird.(*mockingBird)
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		_, err := reconciler.Reconcile(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.1"}, mock.configureVIPs)
+	})
+
+	t.Run("Disabled_AlwaysAdvertisesVIPs", func(t *testing.T) {
+		gw := newGateway(testGatewayName, testNamespace, "10.0.0.1", "10.0.0.2")
+		reconciler, _ := setupReconciler(gw)
+		reconciler.Readiness = readiness.NewManager("") // disabled
+		mock := reconciler.Bird.(*mockingBird)
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		_, err := reconciler.Reconcile(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.1", "10.0.0.2"}, mock.configureVIPs)
+	})
+
+	t.Run("Disabled_AdvertisesEvenWithNoDir", func(t *testing.T) {
+		gw := newGateway(testGatewayName, testNamespace, "10.0.0.1")
+		reconciler, _ := setupReconciler(gw)
+		reconciler.Readiness = readiness.NewManager("")
+		mock := reconciler.Bird.(*mockingBird)
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		_, err := reconciler.Reconcile(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.1"}, mock.configureVIPs)
+	})
+}
+
+func TestWatchLBReadinessDir_ChannelDrop_SelfHeals(t *testing.T) {
+	dir := t.TempDir()
+	// Channel with capacity 1 - fill it to force a drop
+	ch := make(chan event.GenericEvent, 1)
+
+	r := &RouterReconciler{
+		GatewayName:      testGatewayName,
+		GatewayNamespace: testNamespace,
+		Readiness:        readiness.NewManager(dir),
+	}
+
+	ctx := t.Context()
+
+	go func() { _ = r.watchLBReadinessDir(ctx, ch) }()
+	time.Sleep(100 * time.Millisecond)
+
+	// Create file to trigger event
+	f, _ := os.Create(filepath.Join(dir, "lb-ready-dg1"))
+	_ = f.Close()
+
+	// Wait for event to land in channel (fills it)
+	time.Sleep(200 * time.Millisecond)
+
+	// Remove and re-create to trigger another event while channel is full
+	_ = os.Remove(filepath.Join(dir, "lb-ready-dg1"))
+	time.Sleep(100 * time.Millisecond)
+	f2, _ := os.Create(filepath.Join(dir, "lb-ready-dg2"))
+	_ = f2.Close()
+	time.Sleep(200 * time.Millisecond)
+
+	// Drain channel - system should still function
+	drained := 0
+	for {
+		select {
+		case <-ch:
+			drained++
+		default:
+			goto done
+		}
+	}
+done:
+	// At least 1 event was delivered (the first one); dropped events don't crash
+	assert.GreaterOrEqual(t, drained, 1)
 }

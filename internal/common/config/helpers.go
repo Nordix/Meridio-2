@@ -28,7 +28,7 @@ import (
 // Only applies if the corresponding flag was not explicitly set
 func bindString(fs *pflag.FlagSet, flagName, envName string, target *string) {
 	if !fs.Changed(flagName) {
-		if val := os.Getenv(envName); val != "" {
+		if val, ok := os.LookupEnv(envName); ok {
 			*target = val
 		}
 	}

@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,6 +35,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/bird"
+	"github.com/nordix/meridio-2/internal/common/readiness"
 )
 
 // RouterReconciler reconciles a GatewayRouter object
@@ -46,9 +48,9 @@ type RouterReconciler struct {
 	GatewayNamespace string
 	// BIRD instance
 	Bird bird.BirdInterface
-	// LBReadinessPath is the directory where the LB controller writes readiness files.
-	// If empty, readiness gating is disabled (VIPs always advertised).
-	LBReadinessPath string
+	// Readiness manages LB readiness gating.
+	// If nil or Dir is empty, readiness gating is disabled (VIPs always advertised).
+	Readiness *readiness.Manager
 }
 
 // RBAC for the router controller is managed via config/rbac/lb-serviceaccount.yaml
@@ -89,7 +91,7 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	vips := getVIPs(gateway)
 
 	// Gate VIP advertisement on LB readiness
-	if r.LBReadinessPath != "" && !dirHasLBReadinessFiles(r.LBReadinessPath) {
+	if r.Readiness.Enabled() && !r.Readiness.IsReady() {
 		log.Info("LB not ready, suppressing VIP advertisement")
 		vips = nil
 	}
@@ -109,14 +111,14 @@ func (r *RouterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&gatewayapiv1.Gateway{}).
 		Watches(&meridio2v1alpha1.GatewayRouter{}, handler.EnqueueRequestsFromMapFunc(r.gatewayRouterEnqueue))
 
-	if r.LBReadinessPath != "" {
+	if r.Readiness.Enabled() {
 		ch := make(chan event.GenericEvent, 1)
 		_ = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 			return r.watchLBReadinessDir(ctx, ch)
 		}))
 		builder = builder.WatchesRawSource(source.Channel(ch, &handler.EnqueueRequestForObject{}))
 	} else {
-		logf.Log.WithName("setup").Info("WARNING: --lb-readiness-path/MERIDIO_LB_READINESS_PATH not set, VIPs will be advertised without waiting for LB targets")
+		logf.Log.WithName("setup").Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), VIPs will be advertised without waiting for LB targets")
 	}
 
 	return builder.Named("gatewayrouter").Complete(r)
@@ -182,4 +184,34 @@ func (r *RouterReconciler) gatewayRouterEnqueue(_ context.Context, obj client.Ob
 	}
 
 	return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: r.GatewayName, Namespace: r.GatewayNamespace}}}
+}
+
+// watchLBReadinessDir watches the LB readiness directory and sends a GenericEvent
+// when the readiness state transitions.
+func (r *RouterReconciler) watchLBReadinessDir(ctx context.Context, ch chan<- event.GenericEvent) error {
+	log := logf.Log.WithName("lbwatcher")
+	log.Info("watching LB readiness directory", "path", r.Readiness.Path())
+
+	rch, err := r.Readiness.Watch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to watch LB readiness directory: %w", err)
+	}
+
+	// Each receive means a readiness state transition occurred.
+	// Translate it into a GenericEvent to trigger a reconcile.
+	// The loop exits when the channel is closed (context cancelled).
+	for range rch {
+		log.Info("LB readiness state changed", "ready", r.Readiness.IsReady())
+		select {
+		case ch <- event.GenericEvent{Object: &gatewayapiv1.Gateway{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      r.GatewayName,
+				Namespace: r.GatewayNamespace,
+			},
+		}}:
+		default:
+		}
+	}
+
+	return nil
 }
