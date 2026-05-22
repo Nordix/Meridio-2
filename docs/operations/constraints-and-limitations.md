@@ -54,9 +54,9 @@ The LB controller assigns fwmarks and routing table IDs dynamically per Distribu
 
 The router now gates VIP advertisement on LB readiness. The collocated LB controller writes `lb-ready-<distGroupName>` files to a shared directory when a DistributionGroup has ready targets. The router watches this directory via fsnotify and suppresses VIPs until at least one readiness file exists. Configurable via `--readiness-dir` / `MERIDIO_READINESS_DIR` (default: `/var/run/meridio`).
 
-**11. No connectivity-based readiness signaling to the controller-manager**
+**11. No connectivity-based readiness signaling to the controller-manager** *(partially resolved)*
 
-The router only logs BGP state changes — it does not set Pod readiness gates or signal the controller-manager about external connectivity status. As a result, the ENC controller cannot react to a running LB Pod losing external connectivity. The network sidecar's next-hop list will not be updated when an LB Pod's BGP sessions go down, meaning application Pods may continue routing return traffic through an LB that has lost external connectivity.
+The router now sets per-IP-family Pod readiness gates (`meridio-2.nordix.org/ipv4-connectivity`, `meridio-2.nordix.org/ipv6-connectivity`) based on BGP session state (PR #142). However, the ENC controller does not yet consume these gates to filter next-hop lists (gh-123). Until step 3 is implemented, application Pods may still route return traffic through an LB that has lost external connectivity.
 
 **12. BIRD error propagation missing**
 

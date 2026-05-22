@@ -101,7 +101,7 @@ func TestClassifyConnectivityByFamily(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ipv4, ipv6 := classifyConnectivityByFamily(tt.protocols, tt.familyMap)
+			ipv4, ipv6 := ClassifyConnectivityByFamily(tt.protocols, tt.familyMap)
 			assert.Equal(t, tt.wantIPv4, ipv4, "IPv4 connectivity")
 			assert.Equal(t, tt.wantIPv6, ipv6, "IPv6 connectivity")
 		})
@@ -157,7 +157,7 @@ func TestBuildFamilyMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildFamilyMap(tt.routers)
+			result := BuildFamilyMap(tt.routers)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -337,5 +337,309 @@ func TestPatchGateCondition(t *testing.T) {
 				assert.Equal(t, corev1.ConditionTrue, c.Status)
 			}
 		}
+	})
+}
+
+func TestSetAllGatesFalse(t *testing.T) {
+	t.Run("SetsAllDeclaredGatesToFalse", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 10*time.Second)
+		err := mgr.DiscoverGates(context.Background())
+		assert.NoError(t, err)
+
+		err = mgr.SetAllGatesFalse(context.Background())
+		assert.NoError(t, err)
+
+		// Verify both conditions are False
+		updated := &corev1.Pod{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		assert.NoError(t, err)
+
+		for _, condType := range []string{"meridio-2.nordix.org/ipv4-connectivity", "meridio-2.nordix.org/ipv6-connectivity"} {
+			var found bool
+			for _, c := range updated.Status.Conditions {
+				if string(c.Type) == condType {
+					assert.Equal(t, corev1.ConditionFalse, c.Status)
+					found = true
+				}
+			}
+			assert.True(t, found, "condition %s should be set", condType)
+		}
+	})
+
+	t.Run("IPv4Only_SetsOnlyIPv4Gate", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 10*time.Second)
+		err := mgr.DiscoverGates(context.Background())
+		assert.NoError(t, err)
+
+		err = mgr.SetAllGatesFalse(context.Background())
+		assert.NoError(t, err)
+
+		updated := &corev1.Pod{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		assert.NoError(t, err)
+		assert.Len(t, updated.Status.Conditions, 1)
+		assert.Equal(t, corev1.PodConditionType("meridio-2.nordix.org/ipv4-connectivity"), updated.Status.Conditions[0].Type)
+		assert.Equal(t, corev1.ConditionFalse, updated.Status.Conditions[0].Status)
+	})
+
+	t.Run("IPv6Only_SetsOnlyIPv6Gate", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 10*time.Second)
+		err := mgr.DiscoverGates(context.Background())
+		assert.NoError(t, err)
+
+		err = mgr.SetAllGatesFalse(context.Background())
+		assert.NoError(t, err)
+
+		updated := &corev1.Pod{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		assert.NoError(t, err)
+		assert.Len(t, updated.Status.Conditions, 1)
+		assert.Equal(t, corev1.PodConditionType("meridio-2.nordix.org/ipv6-connectivity"), updated.Status.Conditions[0].Type)
+		assert.Equal(t, corev1.ConditionFalse, updated.Status.Conditions[0].Status)
+	})
+
+	t.Run("NoGatesDeclared_NoOp", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec:       corev1.PodSpec{},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 10*time.Second)
+		err := mgr.DiscoverGates(context.Background())
+		assert.NoError(t, err)
+
+		err = mgr.SetAllGatesFalse(context.Background())
+		assert.NoError(t, err)
+
+		// No conditions should be set
+		updated := &corev1.Pod{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		assert.NoError(t, err)
+		assert.Empty(t, updated.Status.Conditions)
+	})
+}
+
+func TestDamping(t *testing.T) {
+	t.Run("DownTransition_Immediate", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 100*time.Millisecond)
+		_ = mgr.DiscoverGates(context.Background())
+		_ = mgr.SetAllGatesFalse(context.Background())
+
+		// Bring connectivity up: first tick starts timer, wait holdTime, second tick sets True
+		_ = mgr.OnStatusUpdate(context.Background(), true, false)
+		time.Sleep(150 * time.Millisecond)
+		_ = mgr.OnStatusUpdate(context.Background(), true, false)
+
+		// Verify gate is True
+		updated := &corev1.Pod{}
+		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		for _, c := range updated.Status.Conditions {
+			if string(c.Type) == ReadinessGateIPv4 {
+				assert.Equal(t, corev1.ConditionTrue, c.Status, "gate should be True before drop")
+			}
+		}
+
+		// Connectivity drops — gate should be False immediately (no 100ms damping applied)
+		err := mgr.OnStatusUpdate(context.Background(), false, false)
+		assert.NoError(t, err)
+
+		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		for _, c := range updated.Status.Conditions {
+			if string(c.Type) == ReadinessGateIPv4 {
+				assert.Equal(t, corev1.ConditionFalse, c.Status, "gate should be False immediately on down (no damping)")
+			}
+		}
+	})
+
+	t.Run("UpTransition_Damped", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 100*time.Millisecond)
+		_ = mgr.DiscoverGates(context.Background())
+		_ = mgr.SetAllGatesFalse(context.Background())
+
+		// Connectivity comes up — gate should NOT be True yet (hold time not elapsed)
+		err := mgr.OnStatusUpdate(context.Background(), true, false)
+		assert.NoError(t, err)
+
+		updated := &corev1.Pod{}
+		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		for _, c := range updated.Status.Conditions {
+			if string(c.Type) == ReadinessGateIPv4 {
+				assert.Equal(t, corev1.ConditionFalse, c.Status, "gate should still be False during hold time")
+			}
+		}
+
+		// Wait for hold time to elapse
+		time.Sleep(150 * time.Millisecond)
+
+		// Call again — now it should be True
+		err = mgr.OnStatusUpdate(context.Background(), true, false)
+		assert.NoError(t, err)
+
+		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		for _, c := range updated.Status.Conditions {
+			if string(c.Type) == ReadinessGateIPv4 {
+				assert.Equal(t, corev1.ConditionTrue, c.Status, "gate should be True after hold time")
+			}
+		}
+	})
+
+	t.Run("UpTransition_FlapDuringHold_ResetsTimer", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 100*time.Millisecond)
+		_ = mgr.DiscoverGates(context.Background())
+		_ = mgr.SetAllGatesFalse(context.Background())
+
+		// Connectivity up
+		_ = mgr.OnStatusUpdate(context.Background(), true, false)
+
+		// Flap down during hold — should reset timer and set False
+		time.Sleep(50 * time.Millisecond)
+		_ = mgr.OnStatusUpdate(context.Background(), false, false)
+
+		// Wait past original hold time
+		time.Sleep(80 * time.Millisecond)
+
+		// Gate should still be False (timer was reset by the flap)
+		updated := &corev1.Pod{}
+		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		for _, c := range updated.Status.Conditions {
+			if string(c.Type) == ReadinessGateIPv4 {
+				assert.Equal(t, corev1.ConditionFalse, c.Status, "gate should remain False after flap")
+			}
+		}
+	})
+
+	t.Run("NoChange_NoPatch", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 100*time.Millisecond)
+		_ = mgr.DiscoverGates(context.Background())
+		_ = mgr.SetAllGatesFalse(context.Background())
+
+		// Connectivity still down — no change, should be no-op
+		err := mgr.OnStatusUpdate(context.Background(), false, false)
+		assert.NoError(t, err)
+	})
+
+	t.Run("GateNotDeclared_Ignored", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Spec: corev1.PodSpec{
+				ReadinessGates: []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(pod).
+			WithStatusSubresource(pod).
+			Build()
+
+		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 100*time.Millisecond)
+		_ = mgr.DiscoverGates(context.Background())
+		_ = mgr.SetAllGatesFalse(context.Background())
+
+		// IPv6 connectivity changes but IPv6 gate not declared — should be ignored
+		err := mgr.OnStatusUpdate(context.Background(), false, true)
+		assert.NoError(t, err)
+
+		// Only IPv4 condition should exist (set to False by SetAllGatesFalse)
+		updated := &corev1.Pod{}
+		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
+		assert.Len(t, updated.Status.Conditions, 1)
+		assert.Equal(t, corev1.PodConditionType(ReadinessGateIPv4), updated.Status.Conditions[0].Type)
 	})
 }
