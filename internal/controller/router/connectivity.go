@@ -42,6 +42,9 @@ type ConnectivityGateManager struct {
 	// Current gate states (last written to API)
 	ipv4Gate *bool // nil = not declared, true/false = current value
 	ipv6Gate *bool
+	// Damping: timestamp when connectivity first came up (zero = not up)
+	ipv4UpSince time.Time
+	ipv6UpSince time.Time
 }
 
 // NewConnectivityGateManager creates a new instance of ConnectivityGateManager
@@ -69,9 +72,19 @@ func (cgm *ConnectivityGateManager) DiscoverGates(ctx context.Context) error {
 	for _, gate := range pod.Spec.ReadinessGates {
 		switch gate.ConditionType {
 		case ReadinessGateIPv4:
-			cgm.ipv4Gate = new(bool) // declared but initial value unknown
+			cgm.ipv4Gate = new(bool)
+			for _, c := range pod.Status.Conditions {
+				if string(c.Type) == ReadinessGateIPv4 {
+					*cgm.ipv4Gate = c.Status == corev1.ConditionTrue
+				}
+			}
 		case ReadinessGateIPv6:
 			cgm.ipv6Gate = new(bool)
+			for _, c := range pod.Status.Conditions {
+				if string(c.Type) == ReadinessGateIPv6 {
+					*cgm.ipv6Gate = c.Status == corev1.ConditionTrue
+				}
+			}
 		}
 	}
 	return nil
@@ -90,7 +103,7 @@ func (cgm *ConnectivityGateManager) HasIPv6Gate() bool {
 // classifyConnectivityByFamily determines per-IP-family connectivity from protocol statuses.
 // Returns true for each family if at least one protocol of that family is established.
 // Protocols not in familyMap are ignored.
-func classifyConnectivityByFamily(protocols []bird.ProtocolStatus, familyMap map[string]string) (ipv4Connected, ipv6Connected bool) {
+func ClassifyConnectivityByFamily(protocols []bird.ProtocolStatus, familyMap map[string]string) (ipv4Connected, ipv6Connected bool) {
 	for _, p := range protocols {
 		if !p.IsEstablished() {
 			continue
@@ -106,7 +119,7 @@ func classifyConnectivityByFamily(protocols []bird.ProtocolStatus, familyMap map
 }
 
 // buildFamilyMap creates a mapping from protocol names to IP families based on the provided GatewayRouters.
-func buildFamilyMap(gatewayRouters []*meridio2v1alpha1.GatewayRouter) map[string]string {
+func BuildFamilyMap(gatewayRouters []*meridio2v1alpha1.GatewayRouter) map[string]string {
 	familyMap := make(map[string]string)
 	for _, gr := range gatewayRouters {
 		address := gr.Spec.Address
@@ -156,6 +169,67 @@ func (cgm *ConnectivityGateManager) patchGateCondition(ctx context.Context, cond
 	return cgm.client.Status().Update(ctx, pod)
 }
 
-// TODO
-// - OnStatusUpdate(ipv4Connected, ipv6Connected bool) — called on each monitor tick, handles damping and patches
-// - SetAllGatesFalse(ctx) error — called on startup (defense-in-depth)
+// SetAllGatesFalse(ctx) error — called on startup (defense-in-depth)
+func (cgm *ConnectivityGateManager) SetAllGatesFalse(ctx context.Context) error {
+	if cgm.ipv4Gate != nil {
+		if err := cgm.patchGateCondition(ctx, ReadinessGateIPv4, false); err != nil {
+			return fmt.Errorf("error patching IPv4 gate: %w", err)
+		}
+	}
+	if cgm.ipv6Gate != nil {
+		if err := cgm.patchGateCondition(ctx, ReadinessGateIPv6, false); err != nil {
+			return fmt.Errorf("error patching IPv6 gate: %w", err)
+		}
+	}
+	return nil
+}
+
+// OnStatusUpdate handles per-IP-family connectivity changes with damping.
+// Down transitions are immediate. Up transitions require holdTime to elapse
+// with continuous connectivity before the gate is set to True.
+func (cgm *ConnectivityGateManager) OnStatusUpdate(ctx context.Context, ipv4Connected, ipv6Connected bool) error {
+	if err := cgm.handleGate(ctx, cgm.ipv4Gate, ipv4Connected, &cgm.ipv4UpSince, ReadinessGateIPv4); err != nil {
+		return err
+	}
+	return cgm.handleGate(ctx, cgm.ipv6Gate, ipv6Connected, &cgm.ipv6UpSince, ReadinessGateIPv6)
+}
+
+func (cgm *ConnectivityGateManager) handleGate(ctx context.Context, gate *bool, connected bool, upSince *time.Time, conditionType string) error {
+	if gate == nil {
+		return nil // Gate not declared
+	}
+
+	if !connected {
+		// Down: immediate
+		*upSince = time.Time{} // Reset hold timer
+		if *gate {
+			if err := cgm.patchGateCondition(ctx, conditionType, false); err != nil {
+				return err
+			}
+			*gate = false
+		}
+		return nil
+	}
+
+	// Connected
+	if *gate {
+		return nil // Already True, no-op
+	}
+
+	// Start hold timer if not already started
+	now := time.Now()
+	if upSince.IsZero() {
+		*upSince = now
+		return nil // Wait for hold time
+	}
+
+	// Check if hold time has elapsed
+	if now.Sub(*upSince) >= cgm.holdTime {
+		if err := cgm.patchGateCondition(ctx, conditionType, true); err != nil {
+			return err
+		}
+		*gate = true
+	}
+
+	return nil
+}

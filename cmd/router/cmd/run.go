@@ -25,10 +25,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -165,7 +167,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	})
 
 	g.Go(func() error {
-		return monitorConnectivity(ctx, mgr, birdInstance)
+		return monitorConnectivity(ctx, mgr, birdInstance, cfg)
 	})
 
 	g.Go(func() error {
@@ -180,13 +182,35 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	return nil
 }
 
-// monitorConnectivity monitors BGP connectivity and logs status changes
-func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird) error {
+// monitorConnectivity monitors BGP connectivity and manages readiness gates
+func monitorConnectivity(
+	ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird, cfg *config.RouterConfig,
+) error {
 	log := ctrl.Log.WithName("monitor")
 
 	// Wait for manager cache to sync
 	if !mgr.GetCache().WaitForCacheSync(ctx) {
 		return fmt.Errorf("failed to wait for cache sync")
+	}
+
+	// Initialize connectivity gate manager (if Pod identity is configured)
+	var gateMgr *router.ConnectivityGateManager
+	if cfg.PodName != "" && cfg.PodNamespace != "" {
+		gateMgr = router.NewConnectivityGateManager(
+			mgr.GetClient(), cfg.PodName, cfg.PodNamespace,
+			types.UID(cfg.PodUID), cfg.ConnectivityHoldTime,
+		)
+		if err := gateMgr.DiscoverGates(ctx); err != nil {
+			log.Error(err, "failed to discover readiness gates, continuing without gate management")
+			gateMgr = nil
+		} else if gateMgr.HasIPv4Gate() || gateMgr.HasIPv6Gate() {
+			log.Info("readiness gates discovered", "ipv4", gateMgr.HasIPv4Gate(), "ipv6", gateMgr.HasIPv6Gate())
+			if err := gateMgr.SetAllGatesFalse(ctx); err != nil {
+				log.Error(err, "failed to set gates to False on startup")
+			}
+		} else {
+			gateMgr = nil // No gates declared, skip gate management
+		}
 	}
 
 	// Start monitoring with 1 second interval
@@ -195,6 +219,8 @@ func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bi
 		return fmt.Errorf("failed to start monitoring: %w", err)
 	}
 
+	// Build family map from GatewayRouters (refreshed on each status update)
+	var familyMap map[string]string
 	var lastCount int
 	firstUpdate := true
 
@@ -219,12 +245,50 @@ func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bi
 				} else {
 					log.Info("Gateway connectivity lost", "status", status.StatusString())
 				}
-
 				lastCount = count
 				firstUpdate = false
 			}
+
+			// Update readiness gates
+			if gateMgr != nil {
+				// Rebuild family map if nil or if protocols exist but map yields no matches
+				// (handles late GatewayRouter creation)
+				if familyMap == nil || (len(status.Protocols) > 0 && len(familyMap) == 0) {
+					routers, err := getGatewayRoutersFromCache(ctx, mgr.GetClient(), cfg.GatewayName, cfg.GatewayNamespace)
+					if err == nil && len(routers) > 0 {
+						familyMap = router.BuildFamilyMap(routers)
+					}
+				}
+				if familyMap != nil {
+					ipv4, ipv6 := router.ClassifyConnectivityByFamily(status.Protocols, familyMap)
+					if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
+						log.Error(err, "failed to update readiness gates")
+					}
+				}
+			}
 		}
 	}
+}
+
+func getGatewayRoutersFromCache(
+	ctx context.Context, c client.Client, gatewayName, gatewayNamespace string,
+) ([]*meridio2v1alpha1.GatewayRouter, error) {
+	list := &meridio2v1alpha1.GatewayRouterList{}
+	if err := c.List(ctx, list, client.InNamespace(gatewayNamespace)); err != nil {
+		return nil, err
+	}
+	var result []*meridio2v1alpha1.GatewayRouter
+	for i := range list.Items {
+		ref := list.Items[i].Spec.GatewayRef
+		ns := list.Items[i].Namespace
+		if ref.Namespace != nil {
+			ns = string(*ref.Namespace)
+		}
+		if string(ref.Name) == gatewayName && ns == gatewayNamespace {
+			result = append(result, &list.Items[i])
+		}
+	}
+	return result, nil
 }
 
 func protocolsUp(protocols []bird.ProtocolStatus) int {
