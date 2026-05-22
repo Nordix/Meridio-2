@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"syscall"
 
 	"github.com/vishvananda/netlink"
 )
@@ -95,17 +96,19 @@ func deletePolicyRoute(fwMark int, ip string) error {
 		return errInvalidIP
 	}
 
-	err := netlink.RuleDel(getRule(fwMark, ipAddr))
-	if err != nil {
-		return fmt.Errorf("failed to RuleDel: %w", err)
+	// Attempt both deletions regardless of individual failures.
+	// Ignore "not found" errors (desired state already achieved).
+	var errFinal error
+
+	if err := netlink.RuleDel(getRule(fwMark, ipAddr)); err != nil && !errors.Is(err, syscall.ENOENT) {
+		errFinal = errors.Join(errFinal, fmt.Errorf("failed to RuleDel: %w", err))
 	}
 
-	err = netlink.RouteDel(getRoute(fwMark, ipAddr))
-	if err != nil {
-		return fmt.Errorf("failed to RouteDel: %w", err)
+	if err := netlink.RouteDel(getRoute(fwMark, ipAddr)); err != nil && !errors.Is(err, syscall.ESRCH) {
+		errFinal = errors.Join(errFinal, fmt.Errorf("failed to RouteDel: %w", err))
 	}
 
-	return nil
+	return errFinal
 }
 
 func getRoute(tableID int, ip net.IP) *netlink.Route {
