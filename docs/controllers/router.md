@@ -137,13 +137,22 @@ The router controller gates VIP advertisement on LB readiness. The collocated LB
 
 - **Startup readiness window**: `running` is set to `true` after `cmd.Start()` (fork), not after BIRD's control socket is ready. A reconcile during this window will attempt `birdc configure` and fail. Self-heals via controller-runtime requeue, but produces noisy error logs at startup.
 
-### Connectivity Signaling (post-MVP)
+### Connectivity Signaling via Readiness Gates
 
-The monitoring goroutine will evolve from log-only to a data source for the controller manager:
+The monitoring goroutine sets per-IP-family Pod readiness gate conditions based on BGP session state:
 
-- **Pod readiness gates**: Router sets per-IP-family readiness conditions (e.g., `ipv4-ready`, `ipv6-ready`) based on BGP session state
-- **Controller manager consumes**: Watches LB Pods, reads readiness gates, builds next-hop lists for `EndpointNetworkConfiguration` from only Pods with relevant gates set to `True`
-- **Why readiness gates, not CR status**: GatewayRouter is a shared cluster resource — N LB Pods reconcile the same CRs. Per-Pod connectivity state belongs on the Pod, not the CR.
+- **Gate condition types**:
+  - `meridio-2.nordix.org/ipv4-connectivity` — set if IPv4 subnets are configured
+  - `meridio-2.nordix.org/ipv6-connectivity` — set if IPv6 subnets are configured
+- **Gate lifecycle**:
+  1. Router starts → sets all declared gates to `False` (defense-in-depth)
+  2. BGP session established → after hold time (default 10s), sets gate to `True`
+  3. BGP session drops → sets gate to `False` immediately (no damping)
+- **Damping**: Up transitions are damped (configurable via `--connectivity-hold-time`) to avoid flapping. Down transitions are immediate for fast failure detection.
+- **Gate discovery**: Router reads its own Pod's `spec.readinessGates` to determine which gates to manage. Only manages declared gates.
+- **Per-IP-family independence**: IPv4 and IPv6 gates are managed independently with separate hold timers.
+- **Configuration**: Requires `POD_NAME`, `POD_NAMESPACE`, `POD_UID` environment variables (Downward API, injected by Gateway controller in LB Deployment template).
+- **RBAC**: Requires `pods/get` + `pods/status/update` (configured in `config/rbac/lb-serviceaccount.yaml`).
 
 ### Configuration Externalization (post-MVP)
 
