@@ -20,8 +20,6 @@ import (
 	"context"
 	"testing"
 
-	nspAPI "github.com/nordix/meridio/api/nsp/v1"
-	"github.com/nordix/meridio/pkg/loadbalancer/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -34,6 +32,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
 const (
@@ -47,68 +46,61 @@ func TestLoadBalancerController(t *testing.T) {
 	RunSpecs(t, "LoadBalancer Controller Suite")
 }
 
-// Mock NFQLB instance
+// mockNFQLB mocks the NFQueueLoadBalancer for testing.
+type mockNFQLB struct {
+	instances map[string]*mockNFQLBInstance
+}
+
+func newMockNFQLB() *mockNFQLB {
+	return &mockNFQLB{instances: make(map[string]*mockNFQLBInstance)}
+}
+
+func (m *mockNFQLB) AddInstance(_ context.Context, name string, _ ...nfqlb.InstanceOption) (nfqlbInstance, error) {
+	inst := &mockNFQLBInstance{
+		name:    name,
+		flows:   make(map[string]nfqlb.Flow),
+		targets: make(map[int][]string),
+	}
+	m.instances[name] = inst
+	return inst, nil
+}
+
+func (m *mockNFQLB) DeleteInstance(_ context.Context, name string) error {
+	delete(m.instances, name)
+	return nil
+}
+
+// mockNFQLBInstance mocks a single NFQLB instance (per DistributionGroup).
 type mockNFQLBInstance struct {
-	name               string
-	activatedTargets   map[int]int // map[fwmark]index for verification
-	deactivatedIndexes map[int]bool
-	flows              map[string]*nspAPI.Flow // map[flow-name]flow
-	deletedFlows       map[string]bool
+	name    string
+	flows   map[string]nfqlb.Flow
+	targets map[int][]string
 }
 
-func (m *mockNFQLBInstance) Activate(index int, fwmark int) error {
-	if m.activatedTargets == nil {
-		m.activatedTargets = make(map[int]int)
-	}
-	m.activatedTargets[fwmark] = index
-	return nil
-}
-
-func (m *mockNFQLBInstance) Deactivate(index int) error {
-	if m.deactivatedIndexes == nil {
-		m.deactivatedIndexes = make(map[int]bool)
-	}
-	m.deactivatedIndexes[index] = true
-	return nil
-}
-
-func (m *mockNFQLBInstance) Start() error  { return nil }
-func (m *mockNFQLBInstance) Delete() error { return nil }
-
-func (m *mockNFQLBInstance) SetFlow(flow *nspAPI.Flow) error {
+func (m *mockNFQLBInstance) AddFlow(_ context.Context, flow nfqlb.Flow) error {
 	if m.flows == nil {
-		m.flows = make(map[string]*nspAPI.Flow)
+		m.flows = make(map[string]nfqlb.Flow)
 	}
 	m.flows[flow.GetName()] = flow
 	return nil
 }
 
-func (m *mockNFQLBInstance) DeleteFlow(flow *nspAPI.Flow) error {
-	if m.deletedFlows == nil {
-		m.deletedFlows = make(map[string]bool)
-	}
-	m.deletedFlows[flow.GetName()] = true
+func (m *mockNFQLBInstance) DeleteFlow(_ context.Context, flow nfqlb.Flow) error {
+	delete(m.flows, flow.GetName())
 	return nil
 }
 
-func (m *mockNFQLBInstance) GetName() string { return m.name }
-
-// Mock NFQLB factory
-type mockNFQLBFactory struct {
-	instances map[string]*mockNFQLBInstance
-}
-
-func (m *mockNFQLBFactory) Start(ctx context.Context) error {
+func (m *mockNFQLBInstance) AddTarget(_ context.Context, ips []string, identifier int) error {
+	if m.targets == nil {
+		m.targets = make(map[int][]string)
+	}
+	m.targets[identifier] = ips
 	return nil
 }
 
-func (m *mockNFQLBFactory) New(name string, mParam int, nParam int) (types.NFQueueLoadBalancer, error) {
-	if m.instances == nil {
-		m.instances = make(map[string]*mockNFQLBInstance)
-	}
-	instance := &mockNFQLBInstance{name: name}
-	m.instances[name] = instance
-	return instance, nil
+func (m *mockNFQLBInstance) DeleteTarget(_ context.Context, _ []string, identifier int) error {
+	delete(m.targets, identifier)
+	return nil
 }
 
 var _ = Describe("LoadBalancer Controller", func() {
@@ -116,7 +108,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 		scheme      *runtime.Scheme
 		fakeClient  client.Client
 		controller  *Controller
-		mockFactory *mockNFQLBFactory
+		mockNfqlb   *mockNFQLB
 		ctx         context.Context
 		gatewayName = "test-gateway"
 		namespace   = "default"
@@ -129,14 +121,13 @@ var _ = Describe("LoadBalancer Controller", func() {
 		Expect(gatewayv1.Install(scheme)).To(Succeed())
 		Expect(discoveryv1.AddToScheme(scheme)).To(Succeed())
 
-		mockFactory = &mockNFQLBFactory{}
+		mockNfqlb = newMockNFQLB()
 
 		controller = &Controller{
 			Scheme:           scheme,
 			GatewayName:      gatewayName,
 			GatewayNamespace: namespace,
-			LBFactory:        mockFactory,
-			routingManager:   NewMockRoutingManager(),
+			NFQLB:            mockNfqlb,
 			NftManagerFactory: func(queueNum, queueTotal uint16) (nftablesManager, error) {
 				return newMockNftablesManager(), nil
 			},
@@ -353,7 +344,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			// Verify instance was created
 			Expect(controller.instances).To(HaveKey(distGroup.Name))
-			Expect(mockFactory.instances).To(HaveKey(distGroup.Name))
+			Expect(mockNfqlb.instances).To(HaveKey(distGroup.Name))
 		})
 
 		It("should use default N=32 when Maglev config is nil", func() {
@@ -411,11 +402,10 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(controller.reconcileNFQLBInstance(ctx, dg2)).To(Succeed())
 			Expect(controller.reconcileNFQLBInstance(ctx, dg3)).To(Succeed())
 
-			// Verify sequential IDs
-			Expect(controller.dgIDs["dg-1"]).To(Equal(0))
-			Expect(controller.dgIDs["dg-2"]).To(Equal(1))
-			Expect(controller.dgIDs["dg-3"]).To(Equal(2))
-			Expect(controller.nextID).To(Equal(3))
+			// Verify sequential instance creation
+			Expect(controller.instances).To(HaveKey("dg-1"))
+			Expect(controller.instances).To(HaveKey("dg-2"))
+			Expect(controller.instances).To(HaveKey("dg-3"))
 		})
 
 		It("should reuse freed IDs", func() {
@@ -429,24 +419,22 @@ var _ = Describe("LoadBalancer Controller", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "dg-3", Namespace: namespace},
 			}
 
-			// Create three instances (IDs: 0, 1, 2)
+			// Create three instances
 			Expect(controller.reconcileNFQLBInstance(ctx, dg1)).To(Succeed())
 			Expect(controller.reconcileNFQLBInstance(ctx, dg2)).To(Succeed())
 			Expect(controller.reconcileNFQLBInstance(ctx, dg3)).To(Succeed())
 
-			// Delete dg-2 (frees ID 1)
+			// Delete dg-2
 			_, err := controller.cleanupDistributionGroup(ctx, "dg-2")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(controller.freedIDs).To(ContainElement(1))
+			Expect(controller.instances).ToNot(HaveKey("dg-2"))
 
-			// Create new DG - should reuse ID 1
+			// Create new DG - should succeed (offset reuse is internal to nfqlb)
 			dg4 := &meridio2v1alpha1.DistributionGroup{
 				ObjectMeta: metav1.ObjectMeta{Name: "dg-4", Namespace: namespace},
 			}
 			Expect(controller.reconcileNFQLBInstance(ctx, dg4)).To(Succeed())
-			Expect(controller.dgIDs["dg-4"]).To(Equal(1))
-			Expect(controller.freedIDs).To(BeEmpty())
-			Expect(controller.nextID).To(Equal(3)) // Should not increment
+			Expect(controller.instances).To(HaveKey("dg-4"))
 		})
 	})
 
@@ -514,16 +502,16 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Calculate expected fwmark offset for this DistributionGroup
-			expectedOffset := controller.getFwmarkOffset(distGroup.Name)
+			// Targets are now tracked by identifier (offset is internal to nfqlb)
 
 			// Verify targets were activated with correct fwmark
 			// identifier=0 -> index=1, fwmark=offset+0
 			// identifier=1 -> index=2, fwmark=offset+1
-			mockInstance := mockFactory.instances[distGroup.Name]
-			Expect(mockInstance.activatedTargets).To(HaveKey(expectedOffset))     // fwmark = 0 + offset
-			Expect(mockInstance.activatedTargets[expectedOffset]).To(Equal(1))    // index = 0 + 1
-			Expect(mockInstance.activatedTargets).To(HaveKey(expectedOffset + 1)) // fwmark = 1 + offset
-			Expect(mockInstance.activatedTargets[expectedOffset+1]).To(Equal(2))  // index = 1 + 1
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(HaveKey(0))    // fwmark = 0 + offset
+			Expect(mockInstance.targets[0]).To(HaveLen(1)) // index = 0 + 1
+			Expect(mockInstance.targets).To(HaveKey(1))    // fwmark = 1 + offset
+			Expect(mockInstance.targets[1]).To(HaveLen(1)) // index = 1 + 1
 		})
 
 		It("should skip endpoints without Zone field", func() {
@@ -565,8 +553,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// No targets should be activated
-			mockInstance := mockFactory.instances[distGroup.Name]
-			Expect(mockInstance.activatedTargets).To(BeEmpty())
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(BeEmpty())
 		})
 
 		It("should skip non-ready endpoints", func() {
@@ -609,8 +597,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// No targets should be activated
-			mockInstance := mockFactory.instances[distGroup.Name]
-			Expect(mockInstance.activatedTargets).To(BeEmpty())
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(BeEmpty())
 		})
 
 		It("should deactivate removed targets with correct index", func() {
@@ -631,8 +619,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify target was deactivated with index=1 (identifier 0 + 1)
-			mockInstance := mockFactory.instances[distGroup.Name]
-			Expect(mockInstance.deactivatedIndexes).To(HaveKey(1))
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).ToNot(HaveKey(0))
 		})
 
 		It("should parse Zone field in maglev:N format", func() {
@@ -683,14 +671,14 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Calculate expected fwmark offset for this DistributionGroup
-			expectedOffset := controller.getFwmarkOffset(distGroup.Name)
+			// Targets are now tracked by identifier (offset is internal to nfqlb)
 
 			// Verify targets were activated with correct identifiers
-			mockInstance := mockFactory.instances[distGroup.Name]
-			Expect(mockInstance.activatedTargets).To(HaveKey(expectedOffset))     // fwmark = 0 + offset
-			Expect(mockInstance.activatedTargets[expectedOffset]).To(Equal(1))    // index = 0 + 1
-			Expect(mockInstance.activatedTargets).To(HaveKey(expectedOffset + 1)) // fwmark = 1 + offset
-			Expect(mockInstance.activatedTargets[expectedOffset+1]).To(Equal(2))  // index = 1 + 1
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(HaveKey(0))    // fwmark = 0 + offset
+			Expect(mockInstance.targets[0]).To(HaveLen(1)) // index = 0 + 1
+			Expect(mockInstance.targets).To(HaveKey(1))    // fwmark = 1 + offset
+			Expect(mockInstance.targets[1]).To(HaveLen(1)) // index = 1 + 1
 		})
 
 		It("should skip endpoints with invalid Zone format", func() {
@@ -741,12 +729,12 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Calculate expected fwmark offset for this DistributionGroup
-			expectedOffset := controller.getFwmarkOffset(distGroup.Name)
+			// Targets are now tracked by identifier (offset is internal to nfqlb)
 
 			// Only valid endpoint should be activated
-			mockInstance := mockFactory.instances[distGroup.Name]
-			Expect(mockInstance.activatedTargets).To(HaveLen(1))
-			Expect(mockInstance.activatedTargets).To(HaveKey(expectedOffset)) // Only maglev:0
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(HaveLen(1))
+			Expect(mockInstance.targets).To(HaveKey(0)) // Only maglev:0
 		})
 	})
 
@@ -851,11 +839,11 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify flow was configured
-			mockInstance := mockFactory.instances[distGroup.Name]
+			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.flows).To(HaveLen(1))
 
 			// Check flow details
-			var flow *nspAPI.Flow
+			var flow nfqlb.Flow
 			for _, f := range mockInstance.flows {
 				flow = f
 				break
@@ -864,8 +852,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(flow.GetName()).To(Equal("test-route"))
 			Expect(flow.GetPriority()).To(Equal(int32(100)))
 			Expect(flow.GetProtocols()).To(ConsistOf("TCP"))
-			Expect(flow.GetVips()).To(HaveLen(1))
-			Expect(flow.GetVips()[0].GetAddress()).To(Equal("20.0.0.1/32"))
+			Expect(flow.GetDestinationCIDRs()).To(ConsistOf("20.0.0.1/32"))
 			Expect(flow.GetDestinationPortRanges()).To(ConsistOf("80"))
 		})
 
@@ -978,7 +965,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify both flows configured
-			mockInstance := mockFactory.instances[distGroup.Name]
+			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.flows).To(HaveLen(2))
 			Expect(mockInstance.flows).To(HaveKey("route-1"))
 			Expect(mockInstance.flows).To(HaveKey("route-2"))
@@ -1022,7 +1009,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// No flows should be configured
-			mockInstance := mockFactory.instances[distGroup.Name]
+			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.flows).To(BeEmpty())
 		})
 
@@ -1064,7 +1051,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// No flows should be configured
-			mockInstance := mockFactory.instances[distGroup.Name]
+			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.flows).To(BeEmpty())
 		})
 
@@ -1116,9 +1103,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Flows should be deleted
-			mockInstance := mockFactory.instances[distGroup.Name]
+			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.flows).To(BeEmpty())
-			Expect(mockInstance.deletedFlows).To(HaveKey("test-route"))
+			Expect(mockInstance.flows).ToNot(HaveKey("test-route"))
 		})
 
 		It("should delete flows when L34Route is removed", func() {
@@ -1141,8 +1128,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify flow was deleted
-			mockInstance := mockFactory.instances[distGroup.Name]
-			Expect(mockInstance.deletedFlows).To(HaveKey("old-route"))
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.flows).ToNot(HaveKey("old-route"))
 		})
 	})
 
@@ -1349,21 +1336,21 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// Create a mock instance
 			mockInstance := &mockNFQLBInstance{
 				name:  distGroup.Name,
-				flows: make(map[string]*nspAPI.Flow),
+				flows: make(map[string]nfqlb.Flow),
 			}
 
 			// Initialize mockFactory instances map
-			if mockFactory.instances == nil {
-				mockFactory.instances = make(map[string]*mockNFQLBInstance)
+			if mockNfqlb.instances == nil {
+				mockNfqlb.instances = make(map[string]*mockNFQLBInstance)
 			}
-			mockFactory.instances[distGroup.Name] = mockInstance
+			mockNfqlb.instances[distGroup.Name] = mockInstance
 
 			// Create mock nftables manager
 			mockNftMgr := newMockNftablesManager()
 
 			// Initialize controller maps
 			if controller.instances == nil {
-				controller.instances = make(map[string]types.NFQueueLoadBalancer)
+				controller.instances = make(map[string]nfqlbInstance)
 			}
 			if controller.flows == nil {
 				controller.flows = make(map[string]map[string]*meridio2v1alpha1.L34Route)

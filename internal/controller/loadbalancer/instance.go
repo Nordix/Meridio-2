@@ -20,71 +20,49 @@ import (
 	"context"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
-	"github.com/nordix/meridio/pkg/loadbalancer/types"
+	"github.com/nordix/meridio-2/internal/nfqlb"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const defaultMaxEndpoints = 32
 
-// reconcileNFQLBInstance creates or retrieves the NFQLB instance for a DistributionGroup.
+// reconcileNFQLBInstance creates or retrieves the NFQLB service for a DistributionGroup.
 func (c *Controller) reconcileNFQLBInstance(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
 	logr := log.FromContext(ctx)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Initialize maps if needed
 	if c.instances == nil {
-		c.instances = make(map[string]types.NFQueueLoadBalancer)
+		c.instances = make(map[string]nfqlbInstance)
 	}
 	if c.targets == nil {
 		c.targets = make(map[string]map[int][]string)
 	}
-	if c.dgIDs == nil {
-		c.dgIDs = make(map[string]int)
-	}
 
-	// Check if instance already exists
+	// Check if service already exists
 	if _, exists := c.instances[distGroup.Name]; exists {
 		return nil
 	}
 
-	// Assign ID if not already assigned
-	if _, exists := c.dgIDs[distGroup.Name]; !exists {
-		// Reuse freed ID if available, otherwise use nextID
-		if len(c.freedIDs) > 0 {
-			c.dgIDs[distGroup.Name] = c.freedIDs[0]
-			c.freedIDs = c.freedIDs[1:]
-		} else {
-			c.dgIDs[distGroup.Name] = c.nextID
-			c.nextID++
-		}
-	}
-
-	// Calculate M and N parameters for Maglev
-	// M = N × 100 (as per design)
-	// N = maxEndpoints from spec, default 32
+	// Get maxEndpoints from spec
 	n := int32(defaultMaxEndpoints)
 	if distGroup.Spec.Maglev != nil && distGroup.Spec.Maglev.MaxEndpoints > 0 {
 		n = distGroup.Spec.Maglev.MaxEndpoints
 	}
-	m := n * 100
 
-	// Create NFQLB instance
-	instance, err := c.LBFactory.New(distGroup.Name, int(m), int(n))
+	// Create NFQLB service (offset is managed internally by NFQueueLoadBalancer)
+	service, err := c.NFQLB.AddInstance(ctx, distGroup.Name,
+		nfqlb.WithMaxTargets(int(n)),
+	)
 	if err != nil {
 		return err
 	}
 
-	// Start the instance
-	if err := instance.Start(); err != nil {
-		return err
-	}
-
-	c.instances[distGroup.Name] = instance
+	c.instances[distGroup.Name] = service
 	c.targets[distGroup.Name] = make(map[int][]string)
 
-	logr.Info("Created NFQLB instance", "distGroup", distGroup.Name, "M", m, "N", n)
+	logr.Info("Created NFQLB service", "distGroup", distGroup.Name, "maxTargets", n)
 
 	return nil
 }
