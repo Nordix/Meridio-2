@@ -85,6 +85,44 @@ func interfaceMatchesSubnet(nl netlinkOps, link netlink.Link, subnet *net.IPNet)
 	return false
 }
 
+// scanManagedVIPs scans all secondary interfaces for /32 and /128 addresses.
+// Returns map[interfaceName]map[vipString]true for seeding managedVIPs on startup.
+// Excludes primary interface (lo, eth0) to avoid touching cluster networking.
+func scanManagedVIPs(nl netlinkOps) (map[string]map[string]bool, error) {
+	result := make(map[string]map[string]bool)
+
+	links, err := nl.LinkList()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list interfaces: %w", err)
+	}
+
+	for _, link := range links {
+		ifName := link.Attrs().Name
+		// Skip primary interfaces
+		if ifName == "lo" || ifName == "eth0" {
+			continue
+		}
+
+		addrs, err := nl.AddrList(link, netlink.FAMILY_ALL)
+		if err != nil {
+			continue // Skip interfaces we can't read
+		}
+
+		for _, addr := range addrs {
+			// Only consider /32 (IPv4) and /128 (IPv6) as VIPs
+			ones, bits := addr.Mask.Size()
+			if ones == bits { // /32 or /128
+				if result[ifName] == nil {
+					result[ifName] = make(map[string]bool)
+				}
+				result[ifName][addr.IP.String()] = true
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // syncVIPs ensures exactly the desired VIPs are present on the interface.
 // Adds missing VIPs, removes stale ones (only within the managed set).
 // Always returns the current managed set reflecting actual kernel state,

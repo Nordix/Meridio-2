@@ -99,3 +99,96 @@ func TestTableIDAllocator_ActiveGateways(t *testing.T) {
 	assert.Len(t, active, 1)
 	assert.Contains(t, active, "gw-b")
 }
+
+func TestTableIDAllocator_Snapshot(t *testing.T) {
+	t.Run("EmptyAllocator", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+		snapshot := a.snapshot()
+		assert.Empty(t, snapshot)
+	})
+
+	t.Run("WithAllocations", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+		_, _ = a.allocate("gw-a")
+		_, _ = a.allocate("gw-b")
+
+		snapshot := a.snapshot()
+		assert.Len(t, snapshot, 2)
+		assert.Equal(t, 100, snapshot["gw-a"])
+		assert.Equal(t, 101, snapshot["gw-b"])
+	})
+
+	t.Run("SnapshotIsCopy", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+		_, _ = a.allocate("gw-a")
+
+		snapshot := a.snapshot()
+		snapshot["gw-b"] = 999 // Mutate snapshot
+
+		// Original should be unchanged
+		_, exists := a.lookup("gw-b")
+		assert.False(t, exists)
+	})
+}
+
+func TestTableIDAllocator_Restore(t *testing.T) {
+	t.Run("ValidRestore", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+
+		err := a.restore("gw-a", 150)
+		assert.NoError(t, err)
+
+		id, exists := a.lookup("gw-a")
+		assert.True(t, exists)
+		assert.Equal(t, 150, id)
+	})
+
+	t.Run("OutOfRangeLow", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+
+		err := a.restore("gw-a", 99)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "out of range")
+	})
+
+	t.Run("OutOfRangeHigh", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+
+		err := a.restore("gw-a", 201)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "out of range")
+	})
+
+	t.Run("DuplicateTableID", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+
+		_ = a.restore("gw-a", 150)
+		err := a.restore("gw-b", 150)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "already assigned")
+	})
+
+	t.Run("UpdatesNextID", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+
+		_ = a.restore("gw-a", 150)
+
+		// Next allocation should be 151, not 100
+		id, _ := a.allocate("gw-b")
+		assert.Equal(t, 151, id)
+	})
+
+	t.Run("RestoreMultiple", func(t *testing.T) {
+		a := newTableIDAllocator(100, 200)
+
+		_ = a.restore("gw-a", 105)
+		_ = a.restore("gw-b", 110)
+		_ = a.restore("gw-c", 102)
+
+		assert.Equal(t, 3, len(a.activeGateways()))
+
+		// Next allocation should be 111 (max restored + 1)
+		id, _ := a.allocate("gw-d")
+		assert.Equal(t, 111, id)
+	})
+}

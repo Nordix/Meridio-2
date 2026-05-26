@@ -71,13 +71,15 @@ func setupController(nl *mockNetlink, objects ...client.Object) (*Controller, cl
 		Build()
 
 	return &Controller{
-		Client:     fakeClient,
-		Scheme:     newScheme(),
-		PodName:    testPodName,
-		PodUID:     testPodUID,
-		MinTableID: 50000,
-		MaxTableID: 55000,
-		nl:         nl,
+		Client:      fakeClient,
+		Scheme:      newScheme(),
+		PodName:     testPodName,
+		PodUID:      testPodUID,
+		MinTableID:  50000,
+		MaxTableID:  55000,
+		nl:          nl,
+		tableIDs:    newTableIDAllocator(50000, 55000),
+		managedVIPs: make(map[string]map[string]bool),
 	}, fakeClient
 }
 
@@ -801,4 +803,87 @@ func TestFlushTable_OutOfRange_NoOp(t *testing.T) {
 func TestVipToIPNet(t *testing.T) {
 	assert.Equal(t, "20.0.0.1/32", vipToIPNet(net.ParseIP("20.0.0.1")).String())
 	assert.Equal(t, "2001:db8::1/128", vipToIPNet(net.ParseIP("2001:db8::1")).String())
+}
+
+func TestScanManagedVIPs_EmptyInterfaces(t *testing.T) {
+	nl := newMockNetlink()
+
+	result, err := scanManagedVIPs(nl)
+
+	assert.NoError(t, err)
+	assert.Empty(t, result)
+}
+
+func TestScanManagedVIPs_SkipsPrimaryInterfaces(t *testing.T) {
+	nl := newMockNetlink()
+	nl.addLink("lo", 1, "127.0.0.1/8")
+	nl.addLink("eth0", 2, "10.244.1.5/24")
+
+	result, err := scanManagedVIPs(nl)
+
+	assert.NoError(t, err)
+	assert.Empty(t, result, "should skip lo and eth0")
+}
+
+func TestScanManagedVIPs_FindsVIPsOnSecondaryInterfaces(t *testing.T) {
+	nl := newMockNetlink()
+	nl.addLink("net1", 3, "192.168.100.10/24")
+	nl.addLink("net2", 4, "192.168.200.10/24")
+
+	// Add VIPs (/32 and /128)
+	link1, _ := nl.LinkByName("net1")
+	_ = nl.AddrAdd(link1, &netlink.Addr{IPNet: mustParseCIDR("20.0.0.1/32")})
+	_ = nl.AddrAdd(link1, &netlink.Addr{IPNet: mustParseCIDR("20.0.0.2/32")})
+
+	link2, _ := nl.LinkByName("net2")
+	_ = nl.AddrAdd(link2, &netlink.Addr{IPNet: mustParseCIDR("2001:db8::1/128")})
+
+	result, err := scanManagedVIPs(nl)
+
+	assert.NoError(t, err)
+	assert.Len(t, result, 2)
+	assert.Len(t, result["net1"], 2)
+	assert.True(t, result["net1"]["20.0.0.1"])
+	assert.True(t, result["net1"]["20.0.0.2"])
+	assert.Len(t, result["net2"], 1)
+	assert.True(t, result["net2"]["2001:db8::1"])
+}
+
+func TestScanManagedVIPs_IgnoresNonHostAddresses(t *testing.T) {
+	nl := newMockNetlink()
+	nl.addLink("net1", 3, "192.168.100.10/24") // /24 should be ignored
+
+	link, _ := nl.LinkByName("net1")
+	_ = nl.AddrAdd(link, &netlink.Addr{IPNet: mustParseCIDR("20.0.0.1/32")}) // /32 should be found
+
+	result, err := scanManagedVIPs(nl)
+
+	assert.NoError(t, err)
+	assert.Len(t, result["net1"], 1)
+	assert.True(t, result["net1"]["20.0.0.1"])
+	assert.False(t, result["net1"]["192.168.100.10"], "should not include /24 address")
+}
+
+func TestScanManagedVIPs_DualStack(t *testing.T) {
+	nl := newMockNetlink()
+	nl.addLink("net1", 3, "192.168.100.10/24")
+
+	link, _ := nl.LinkByName("net1")
+	_ = nl.AddrAdd(link, &netlink.Addr{IPNet: mustParseCIDR("20.0.0.1/32")})
+	_ = nl.AddrAdd(link, &netlink.Addr{IPNet: mustParseCIDR("2001:db8::1/128")})
+
+	result, err := scanManagedVIPs(nl)
+
+	assert.NoError(t, err)
+	assert.Len(t, result["net1"], 2)
+	assert.True(t, result["net1"]["20.0.0.1"])
+	assert.True(t, result["net1"]["2001:db8::1"])
+}
+
+func mustParseCIDR(s string) *net.IPNet {
+	_, ipnet, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(err)
+	}
+	return ipnet
 }
