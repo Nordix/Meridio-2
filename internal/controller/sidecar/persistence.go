@@ -14,6 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package sidecar implements the network sidecar controller.
+//
+// Restart Recovery:
+// The controller persists table ID mappings to /var/run/meridio/table-id-mapping.json
+// (emptyDir volume) to prevent table ID shifts across container restarts. On startup,
+// it also scans the kernel for existing VIPs (/32 and /128 addresses on secondary
+// interfaces) to enable cleanup of stale VIPs even if the mapping file is lost.
 package sidecar
 
 import (
