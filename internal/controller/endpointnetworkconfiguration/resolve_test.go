@@ -720,3 +720,158 @@ func TestSidecarContract_DualStack(t *testing.T) {
 	assert.Equal(t, testSubnetV6, ipv6Domain.Network.Subnet)
 	assert.Equal(t, "net1", ipv6Domain.Network.InterfaceHint)
 }
+
+func TestIsLBPodReady(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name: "all containers ready",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: true},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "one container not ready",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: false},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "pod being deleted",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "sllb-1",
+					DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: true},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "no container statuses yet (startup)",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status:     corev1.PodStatus{},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isLBPodReady(tt.pod)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestHasConnectivityGate(t *testing.T) {
+	tests := []struct {
+		name          string
+		pod           *corev1.Pod
+		conditionType string
+		expected      bool
+	}{
+		{
+			name: "condition True",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+		{
+			name: "condition False",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: corev1.ConditionFalse},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      false,
+		},
+		{
+			name: "gate not declared — not applicable, include Pod",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+		{
+			name: "gate declared but condition not yet set (readinessGate present, condition missing)",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      false,
+		},
+		{
+			name: "IPv6-only gateway — IPv4 gate not declared, include Pod",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv6-connectivity", Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasConnectivityGate(tt.pod, tt.conditionType)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

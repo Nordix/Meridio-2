@@ -488,3 +488,43 @@ func scrapeInterfaceForSubnet(pod *corev1.Pod, cidr string) string {
 	}
 	return ""
 }
+
+// isLBPodReady(pod) bool - checks all non-init container statuses are Ready. Returns false if any container is not ready or if Pod is being deleted.
+func isLBPodReady(pod *corev1.Pod) bool {
+	if pod.DeletionTimestamp != nil {
+		return false
+	}
+	oneReady := false
+	for _, cs := range pod.Status.ContainerStatuses {
+		if !cs.Ready {
+			return false
+		} else { // At least one container is ready
+			oneReady = true
+		}
+	}
+	return oneReady
+}
+
+// hasConnectivityGate - Checks if a specific readiness gate condition is True on the Pod.
+func hasConnectivityGate(pod *corev1.Pod, conditionType string) bool {
+	// Check if the gate is declared in the Pod spec
+	gateDeclared := false
+	for _, gate := range pod.Spec.ReadinessGates {
+		if string(gate.ConditionType) == conditionType {
+			gateDeclared = true
+			break
+		}
+	}
+	// gate not applicable for this IP family: if gate not declared, include the Pod (skip filtering)
+	if !gateDeclared {
+		return true
+	}
+	// Check if the condition is True in the Pod status
+	for _, condition := range pod.Status.Conditions {
+		if string(condition.Type) == conditionType {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	// Gate declared but condition not found - treat as not ready
+	return false
+}
