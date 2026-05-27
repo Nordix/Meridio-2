@@ -438,7 +438,14 @@ var _ = Describe("E2E Test Suites", func() {
 							g.Expect(out).To(Equal("true"))
 						}).Should(Succeed())
 
-						time.Sleep(5 * time.Second) // Let it reconcile
+						By("waiting for ENC to be Ready after restart")
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "enc", targetPod, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"))
+						}).Should(Succeed())
 
 						By(fmt.Sprintf("verifying %s table ID unchanged and no orphaned rules/tables", gw1.name))
 						cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
