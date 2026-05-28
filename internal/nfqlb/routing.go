@@ -73,7 +73,9 @@ func createPolicyRoute(fwMark int, ip string) error {
 
 // ensureRule adds the desired rule only if it doesn't already exist.
 // Linux allows duplicate ip rules, so we check first to avoid accumulating duplicates
-// across reconciles.
+// across reconciles. Priority of -1 means "unset" in vishvananda/netlink (library skips
+// FRA_PRIORITY in the netlink message, causing the kernel to auto-assign a priority).
+// We cannot match on auto-assigned priorities, so skip the comparison when unset.
 func ensureRule(desired *netlink.Rule) error {
 	rules, err := netlink.RuleList(desired.Family)
 	if err != nil {
@@ -82,7 +84,8 @@ func ensureRule(desired *netlink.Rule) error {
 	}
 
 	for _, existing := range rules {
-		if existing.Mark == desired.Mark && existing.Table == desired.Table && existing.Priority == desired.Priority {
+		if existing.Mark == desired.Mark && existing.Table == desired.Table &&
+			(desired.Priority < 0 || existing.Priority == desired.Priority) {
 			return nil // Already exists
 		}
 	}
