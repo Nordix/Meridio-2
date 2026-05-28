@@ -129,6 +129,28 @@ The router controller gates VIP advertisement on LB readiness. The collocated LB
 - **Enabled** (path non-empty): VIPs are suppressed until `lb-ready-*` files appear. Filesystem events trigger re-reconciliation on state transitions.
 - **Disabled** (path empty): VIPs are always advertised regardless of LB state.
 
+## Configuration
+
+All flags support environment variable overrides following the precedence: flags > env vars > defaults.
+
+| Flag | Env Var | Default | Description |
+|---|---|---|---|
+| `--gateway-name` | `MERIDIO_GATEWAY_NAME` | _(required)_ | Name of the Gateway resource to watch |
+| `--gateway-namespace` | `MERIDIO_GATEWAY_NAMESPACE` | `default` | Namespace of the Gateway resource |
+| `--table-id` | `MERIDIO_TABLE_ID` | `4096` | Kernel routing table ID for BIRD-managed routes. Blackhole table is `table-id + 1`. |
+| `--rule-priority` | `MERIDIO_RULE_PRIORITY` | `100` | Policy routing rule priority. Blackhole priority is `rule-priority + 1`. |
+| `--bird-socket` | `MERIDIO_BIRD_SOCKET` | `/var/run/bird/bird.ctl` | Path to the BIRD control socket |
+| `--bird-config` | `MERIDIO_BIRD_CONFIG` | `/etc/bird/bird.conf` | Path to the BIRD configuration file |
+| `--bird-kernel-scan-time` | `MERIDIO_BIRD_KERNEL_SCAN_TIME` | `10` | Interval in seconds for BIRD kernel protocol route table scanning |
+| `--monitor-interval` | `MERIDIO_MONITOR_INTERVAL` | `1s` | Interval for BGP connectivity monitoring |
+| `--readiness-dir` | `MERIDIO_READINESS_DIR` | `/var/run/meridio` | LB readiness directory. Empty disables gating. |
+| `--bird-log` | `MERIDIO_BIRD_LOG` | _(none)_ | BIRD log destination (repeatable; env var semicolon-separated) |
+| `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (debug, info, error) |
+| `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8082` | Health/readiness probe bind address |
+| `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` | Metrics endpoint bind address (0 = disabled) |
+| `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | Serve metrics over HTTPS |
+| `--enable-http2` | `MERIDIO_ENABLE_HTTP2` | `false` | Enable HTTP/2 for metrics server |
+
 ## Known Limitations and Future Work
 
 ### BIRD Process Lifecycle (MVP gaps)
@@ -149,13 +171,7 @@ The monitoring goroutine will evolve from log-only to a data source for the cont
 
 Several values are currently hardcoded and should be exposed via CLI flags / environment variables:
 
-- **Monitoring interval**: Currently `1 * time.Second` in `monitorConnectivity()`
-- **Kernel table IDs**: `defaultKernelTableID` (4096), `blackholeKernelTableID` (4097)
-- **Rule priorities**: `rulePriority` (100), `blackholeRulePriority` (101)
-- **BIRD paths**: Socket path (`/var/run/bird/bird.ctl`), config file (`/etc/bird/bird.conf`)
 - **BGP defaults**: Default ports (`defaultLocalPort`, `defaultRemotePort` = 179), default hold time (90s) — currently constants in `config.go`
-- **Kernel scan time**: The `kernel` protocol blocks have no `scan time` set. Meridio v1 hit a bug (PR #607) where BGP-learned routes were delayed 30-50s before being pushed to the kernel table after upgrading to BIRD 3. The cause was BIRD 3's new multi-threaded architecture not reliably syncing its internal routing tables to the kernel without periodic forced scans. Fixed by adding `scan time 10`. The same issue likely affects this controller — BGP routes learned from external peers may not appear in kernel table 4096 promptly, causing VIP traffic to hit the blackhole fallback. Should be added to the generated config with a configurable default (10s).
-- **BIRD log level**: Currently `log stderr all;` + optional file logging. Should support selectable log classes and size rotation (as Meridio v1 does via `LogFilePath`, `BackupLogFilePath`, `BirdLogFileSize`).
 
 ### Metrics and Route Monitoring (post-MVP)
 
