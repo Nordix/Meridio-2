@@ -141,6 +141,33 @@ var _ = Describe("Instance.AddTarget", func() {
 		Expect(instance.targets[1]).To(Equal([]string{"10.0.0.1", "10.0.0.3"}))
 	})
 
+	It("should create routes for both IPv4 and IPv6 addresses", func() {
+		err := instance.AddTarget(ctx, []string{"192.168.100.10", "2001:db8:100::10"}, 0)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(executor.calls).To(HaveLen(1))
+		Expect(executor.calls[0]).To(ContainElements("activate", "--index=0", "--shm=test-instance", "5000"))
+		Expect(routing.created).To(ConsistOf(
+			routeCall{5000, "192.168.100.10"},
+			routeCall{5000, "2001:db8:100::10"},
+		))
+		Expect(instance.targets[0]).To(Equal([]string{"192.168.100.10", "2001:db8:100::10"}))
+	})
+
+	It("should re-apply dual-stack routes when identifier exists with same IPs", func() {
+		instance.targets[0] = []string{"192.168.100.10", "2001:db8:100::10"}
+
+		err := instance.AddTarget(ctx, []string{"192.168.100.10", "2001:db8:100::10"}, 0)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(executor.calls).To(BeEmpty())
+		Expect(routing.created).To(ConsistOf(
+			routeCall{5000, "192.168.100.10"},
+			routeCall{5000, "2001:db8:100::10"},
+		))
+		Expect(routing.deleted).To(BeEmpty())
+	})
+
 	It("should return error on route creation failure during IP change", func() {
 		routing.createErr = fmt.Errorf("netlink error")
 		instance.targets[0] = []string{"10.0.0.1"}

@@ -19,6 +19,7 @@ package loadbalancer
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -49,6 +50,20 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}); err != nil {
 		return err
 	}
+
+	// Sort EndpointSlices by name for deterministic processing order (cache List
+	// does not guarantee order). Produces stable accumulated IP lists across reconciles,
+	// preventing flapping during transients when the same identifier appears in multiple
+	// slices of the same IP family (e.g., Pod replacement with >100 endpoints).
+	slices.SortFunc(endpointSliceList.Items, func(a, b discoveryv1.EndpointSlice) int {
+		if a.Name < b.Name {
+			return -1
+		}
+		if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
 
 	// Get current targets
 	currentTargets := c.targets[distGroup.Name]
@@ -81,7 +96,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 				logr.Error(err, "Invalid identifier in Zone field", "zone", *endpoint.Zone)
 				continue
 			}
-			newTargets[identifier] = endpoint.Addresses
+			newTargets[identifier] = append(newTargets[identifier], endpoint.Addresses...)
 		}
 	}
 
@@ -100,6 +115,9 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 
 	// Activate new/updated targets (nfqlb handles policy route creation internally)
 	for identifier, ips := range newTargets {
+		// Sort IPs for deterministic comparison in AddTarget (avoids false
+		// "IPs changed" triggers when IPv4/IPv6 slices are processed in different order)
+		slices.Sort(ips)
 		if err := service.AddTarget(ctx, ips, identifier); err != nil {
 			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
 			errFinal = errors.Join(errFinal, err)
