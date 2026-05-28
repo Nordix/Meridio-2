@@ -447,6 +447,15 @@ var _ = Describe("E2E Test Suites", func() {
 							g.Expect(out).To(Equal("True"))
 						}).Should(Succeed())
 
+						By(fmt.Sprintf("waiting for %s VIP to be removed", gw2.name))
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+								"-c", "network-sidecar", "--", "ip", "addr", "show")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).NotTo(ContainSubstring(gw2.vip))
+						}, 30*time.Second, 1*time.Second).Should(Succeed())
+
 						By(fmt.Sprintf("verifying %s table ID unchanged and no orphaned rules/tables", gw1.name))
 						cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
 							"-c", "network-sidecar", "--", "ip", "rule", "show")
