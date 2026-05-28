@@ -738,6 +738,60 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(mockInstance.targets).To(HaveLen(1))
 			Expect(mockInstance.targets).To(HaveKey(0)) // Only maglev:0
 		})
+
+		It("should accumulate IPs from IPv4 and IPv6 EndpointSlices for the same identifier", func() {
+			ready := true
+			zone0 := testZoneMaglev0
+
+			epsV4 := &discoveryv1.EndpointSlice{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-eps-v4",
+					Namespace: namespace,
+					Labels: map[string]string{
+						"meridio-2.nordix.org/distribution-group": "test-distgroup",
+					},
+				},
+				AddressType: discoveryv1.AddressTypeIPv4,
+				Endpoints: []discoveryv1.Endpoint{
+					{
+						Addresses:  []string{"192.168.100.10"},
+						Conditions: discoveryv1.EndpointConditions{Ready: &ready},
+						Zone:       &zone0,
+					},
+				},
+			}
+
+			epsV6 := &discoveryv1.EndpointSlice{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-eps-v6",
+					Namespace: namespace,
+					Labels: map[string]string{
+						"meridio-2.nordix.org/distribution-group": "test-distgroup",
+					},
+				},
+				AddressType: discoveryv1.AddressTypeIPv6,
+				Endpoints: []discoveryv1.Endpoint{
+					{
+						Addresses:  []string{"2001:db8:100::10"},
+						Conditions: discoveryv1.EndpointConditions{Ready: &ready},
+						Zone:       &zone0,
+					},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(epsV4, epsV6).
+				Build()
+			controller.Client = fakeClient
+
+			err := controller.reconcileTargets(ctx, distGroup)
+			Expect(err).ToNot(HaveOccurred())
+
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(HaveKey(0))
+			Expect(mockInstance.targets[0]).To(Equal([]string{"192.168.100.10", "2001:db8:100::10"}))
+		})
 	})
 
 	Describe("reconcileFlows", func() {

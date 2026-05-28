@@ -78,7 +78,7 @@ spec:
                       MaxEndpoints is the table capacity. This field is immutable after creation.
 
                       Immutability rationale:
-                      - Maglev IDs are assigned per DistributionGroup and per IP family (IPv4/IPv6)
+                      - Maglev IDs are assigned per DistributionGroup and per Gateway
                       - The same Pod IP may have different Maglev IDs in different DistributionGroups
                       - Changing MaxEndpoints causes Maglev hash table reshuffle, potentially reassigning
                         IDs for many endpoints and disrupting active connections for this DistributionGroup

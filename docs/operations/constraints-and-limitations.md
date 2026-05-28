@@ -6,9 +6,9 @@ Items marked *(architectural constraint)* reflect deliberate design decisions th
 
 ## Architecture / Cross-Controller
 
-**1. Dual-stack internal networking partially supported (IPv4 + IPv6 simultaneously)**
+**1. ~~Dual-stack internal networking partially supported (IPv4 + IPv6 simultaneously)~~ (Resolved)**
 
-The DistributionGroup controller assigns Maglev IDs per DG per Gateway, shared across all networks (IPv4/IPv6) — the allocation side is complete. However, the LB controller's dual-stack route handling is pending refactor and not yet production-ready. See [#70](https://github.com/Nordix/Meridio-2/issues/70).
+The DistributionGroup controller assigns Maglev IDs per DG per Gateway, shared across all networks (IPv4/IPv6). The LB controller accumulates IPs from both IPv4 and IPv6 EndpointSlices per identifier and creates policy routes for both families. See [#70](https://github.com/Nordix/Meridio-2/issues/70), [#144](https://github.com/Nordix/Meridio-2/issues/144).
 
 **2. ~~RBAC uses ClusterRole instead of namespace-scoped Roles (controller-manager)~~ (Resolved)**
 
