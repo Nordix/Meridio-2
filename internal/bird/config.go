@@ -27,9 +27,8 @@ import (
 )
 
 const (
-	defaultKernelTableID = 4096
-	defaultLocalPort     = 179
-	defaultRemotePort    = 179
+	defaultLocalPort  = 179
+	defaultRemotePort = 179
 )
 
 type birdConfigData struct {

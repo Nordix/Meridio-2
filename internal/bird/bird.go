@@ -40,9 +40,21 @@ type BirdInterface interface {
 	Monitor(ctx context.Context, interval time.Duration) (<-chan MonitorStatus, error)
 }
 
+// Default values for configurable parameters.
+const (
+	DefaultTableID         = 4096
+	DefaultRulePriority    = 100
+	DefaultSocketPath      = "/var/run/bird/bird.ctl"
+	DefaultConfigFile      = "/etc/bird/bird.conf"
+	DefaultKernelScanTime  = 10
+	DefaultMonitorInterval = 1 * time.Second
+)
+
 type Bird struct {
 	SocketPath     string
 	ConfigFile     string
+	TableID        int
+	RulePriority   int
 	LogParams      BirdLogParams
 	KernelScanTime int
 	nl             abstractNetlink
@@ -60,11 +72,30 @@ func WithKernelScanTime(seconds int) Option {
 	return func(b *Bird) { b.KernelScanTime = seconds }
 }
 
+func WithSocketPath(path string) Option {
+	return func(b *Bird) { b.SocketPath = path }
+}
+
+func WithConfigFile(path string) Option {
+	return func(b *Bird) { b.ConfigFile = path }
+}
+
+func WithTableID(id int) Option {
+	return func(b *Bird) { b.TableID = id }
+}
+
+func WithRulePriority(priority int) Option {
+	return func(b *Bird) { b.RulePriority = priority }
+}
+
 func New(opts ...Option) *Bird {
 	b := &Bird{
-		SocketPath: "/var/run/bird/bird.ctl",
-		ConfigFile: "/etc/bird/bird.conf",
-		nl:         &netlink.Handle{},
+		SocketPath:     DefaultSocketPath,
+		ConfigFile:     DefaultConfigFile,
+		TableID:        DefaultTableID,
+		RulePriority:   DefaultRulePriority,
+		KernelScanTime: DefaultKernelScanTime,
+		nl:             &netlink.Handle{},
 	}
 	for _, o := range opts {
 		o(b)
@@ -128,7 +159,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	// Install policy routes first to minimize misrouting window.
 	// Blackhole fallback ensures VIP traffic is dropped rather than
 	// leaked before BGP routes are available.
-	if err := setPolicyRoutes(b.nl, vips); err != nil {
+	if err := setPolicyRoutes(b.nl, vips, b.TableID, b.RulePriority); err != nil {
 		return err
 	}
 
@@ -148,7 +179,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 }
 
 func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) (string, error) {
-	data := birdConfigData{KernelTableID: defaultKernelTableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
+	data := birdConfigData{KernelTableID: b.TableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
 
 	for _, vip := range vips {
 		if isIPv6(vip) {
