@@ -79,9 +79,6 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	if cfg.GatewayName == "" || cfg.GatewayNamespace == "" {
 		return fmt.Errorf("gateway-name and gateway-namespace are required")
 	}
-	if cfg.BirdKernelScanTime < 1 {
-		return fmt.Errorf("bird-kernel-scan-time must be at least 1 second (got %d)", cfg.BirdKernelScanTime)
-	}
 
 	setupLog.Info("Starting Router controller", "config", cfg)
 
@@ -127,7 +124,18 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		return err
 	}
 
-	birdInstance := bird.New(bird.WithLogParams(cfg.BirdLogs), bird.WithKernelScanTime(cfg.BirdKernelScanTime))
+	birdInstance, err := bird.New(bird.Config{
+		LogParams:      cfg.BirdLogs,
+		KernelScanTime: cfg.BirdKernelScanTime,
+		SocketPath:     cfg.BirdSocket,
+		ConfigFile:     cfg.BirdConfig,
+		TableID:        cfg.TableID,
+		RulePriority:   cfg.RulePriority,
+	})
+	if err != nil {
+		setupLog.Error(err, "failed to create BIRD instance")
+		return err
+	}
 
 	if err = (&router.RouterReconciler{
 		Client:           mgr.GetClient(),
@@ -167,7 +175,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	})
 
 	g.Go(func() error {
-		return monitorConnectivity(ctx, mgr, birdInstance)
+		return monitorConnectivity(ctx, mgr, birdInstance, cfg.MonitorInterval)
 	})
 
 	g.Go(func() error {
@@ -183,7 +191,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 }
 
 // monitorConnectivity monitors BGP connectivity and logs status changes
-func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird) error {
+func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird, interval time.Duration) error {
 	log := ctrl.Log.WithName("monitor")
 
 	// Wait for manager cache to sync
@@ -191,8 +199,8 @@ func monitorConnectivity(ctx context.Context, mgr ctrl.Manager, birdInstance *bi
 		return fmt.Errorf("failed to wait for cache sync")
 	}
 
-	// Start monitoring with 1 second interval
-	statusCh, err := birdInstance.Monitor(ctx, 1*time.Second)
+	// Start monitoring with configured interval
+	statusCh, err := birdInstance.Monitor(ctx, interval)
 	if err != nil {
 		return fmt.Errorf("failed to start monitoring: %w", err)
 	}

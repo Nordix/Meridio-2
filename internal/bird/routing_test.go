@@ -25,6 +25,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	testTableID      = 4096
+	testRulePriority = 100
+)
+
 // netlinkMock implements abstractNetlink for testing.
 type netlinkMock struct {
 	rules           []netlink.Rule
@@ -110,20 +115,21 @@ func (m *netlinkMock) blackholeRoutes() []netlink.Route {
 
 func TestSetupBlackholeRoutes(t *testing.T) {
 	m := &netlinkMock{}
+	blackholeTableID := testTableID + 1
 
-	err := setupBlackholeRoutes(m)
+	err := setupBlackholeRoutes(m, blackholeTableID)
 	assert.NoError(t, err)
 
 	routes := m.blackholeRoutes()
 	assert.Len(t, routes, 2)
-	assert.Equal(t, blackholeKernelTableID, routes[0].Table)
-	assert.Equal(t, blackholeKernelTableID, routes[1].Table)
+	assert.Equal(t, blackholeTableID, routes[0].Table)
+	assert.Equal(t, blackholeTableID, routes[1].Table)
 }
 
 func TestSetupBlackholeRoutes_RouteReplaceFails(t *testing.T) {
 	m := &netlinkMock{routeReplaceErr: fmt.Errorf("EPERM")}
 
-	err := setupBlackholeRoutes(m)
+	err := setupBlackholeRoutes(m, testTableID+1)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "EPERM")
 }
@@ -133,11 +139,11 @@ func TestSetupBlackholeRoutes_RouteReplaceFails(t *testing.T) {
 func TestSetPolicyRoutes_EmptyVIPs(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{})
+	err := setPolicyRoutes(m, []string{}, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
-	assert.Empty(t, m.rulesForTable(kernelTableID))
-	assert.Empty(t, m.rulesForTable(blackholeKernelTableID))
+	assert.Empty(t, m.rulesForTable(testTableID))
+	assert.Empty(t, m.rulesForTable(testTableID+1))
 	// Blackhole routes should still be created
 	assert.Len(t, m.blackholeRoutes(), 2)
 }
@@ -145,50 +151,50 @@ func TestSetPolicyRoutes_EmptyVIPs(t *testing.T) {
 func TestSetPolicyRoutes_AddNewVIPs(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
-	bgpRules := m.rulesForTable(kernelTableID)
-	bhRules := m.rulesForTable(blackholeKernelTableID)
+	bgpRules := m.rulesForTable(testTableID)
+	bhRules := m.rulesForTable(testTableID + 1)
 	assert.Len(t, bgpRules, 2)
 	assert.Len(t, bhRules, 2)
 
 	// Verify priorities
-	assert.Equal(t, rulePriority, bgpRules[0].Priority)
-	assert.Equal(t, blackholeRulePriority, bhRules[0].Priority)
+	assert.Equal(t, testRulePriority, bgpRules[0].Priority)
+	assert.Equal(t, testRulePriority+1, bhRules[0].Priority)
 }
 
 func TestSetPolicyRoutes_Idempotent(t *testing.T) {
 	m := &netlinkMock{}
 	vips := []string{"20.0.0.1/32"}
 
-	err := setPolicyRoutes(m, vips)
+	err := setPolicyRoutes(m, vips, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
-	err = setPolicyRoutes(m, vips)
+	err = setPolicyRoutes(m, vips, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
 	// Should still have exactly 1 rule per table, not duplicated
-	assert.Len(t, m.rulesForTable(kernelTableID), 1)
-	assert.Len(t, m.rulesForTable(blackholeKernelTableID), 1)
+	assert.Len(t, m.rulesForTable(testTableID), 1)
+	assert.Len(t, m.rulesForTable(testTableID+1), 1)
 }
 
 func TestSetPolicyRoutes_RemoveStaleVIPs(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
 	assert.NoError(t, err)
-	assert.Len(t, m.rulesForTable(kernelTableID), 2)
+	assert.Len(t, m.rulesForTable(testTableID), 2)
 
 	// Remove one VIP
-	err = setPolicyRoutes(m, []string{"20.0.0.1/32"})
+	err = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
-	bgpRules := m.rulesForTable(kernelTableID)
+	bgpRules := m.rulesForTable(testTableID)
 	assert.Len(t, bgpRules, 1)
 	assert.Equal(t, "20.0.0.1/32", bgpRules[0].Src.String())
 
-	bhRules := m.rulesForTable(blackholeKernelTableID)
+	bhRules := m.rulesForTable(testTableID + 1)
 	assert.Len(t, bhRules, 1)
 	assert.Equal(t, "20.0.0.1/32", bhRules[0].Src.String())
 }
@@ -196,14 +202,14 @@ func TestSetPolicyRoutes_RemoveStaleVIPs(t *testing.T) {
 func TestSetPolicyRoutes_MixedAddRemove(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
 	// Remove .2, keep .1, add .3
-	err = setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.3/32"})
+	err = setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.3/32"}, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
-	bgpRules := m.rulesForTable(kernelTableID)
+	bgpRules := m.rulesForTable(testTableID)
 	assert.Len(t, bgpRules, 2)
 
 	srcs := make(map[string]bool)
@@ -218,10 +224,10 @@ func TestSetPolicyRoutes_MixedAddRemove(t *testing.T) {
 func TestSetPolicyRoutes_DualStack(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "2001:db8::1/128"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "2001:db8::1/128"}, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
-	bgpRules := m.rulesForTable(kernelTableID)
+	bgpRules := m.rulesForTable(testTableID)
 	assert.Len(t, bgpRules, 2)
 
 	srcs := make(map[string]bool)
@@ -235,7 +241,7 @@ func TestSetPolicyRoutes_DualStack(t *testing.T) {
 func TestSetPolicyRoutes_InvalidCIDR(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"not-a-cidr"})
+	err := setPolicyRoutes(m, []string{"not-a-cidr"}, testTableID, testRulePriority)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse VIP CIDR")
 }
@@ -243,7 +249,7 @@ func TestSetPolicyRoutes_InvalidCIDR(t *testing.T) {
 func TestSetPolicyRoutes_RuleListFails(t *testing.T) {
 	m := &netlinkMock{ruleListErr: fmt.Errorf("ENOMEM")}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list")
 }
@@ -251,7 +257,7 @@ func TestSetPolicyRoutes_RuleListFails(t *testing.T) {
 func TestSetPolicyRoutes_RuleAddFails_BestEffort(t *testing.T) {
 	m := &netlinkMock{ruleAddErr: fmt.Errorf("EPERM")}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
 	assert.Error(t, err)
 	// Both BGP and blackhole adds fail, but all are attempted (best-effort)
 	assert.Contains(t, err.Error(), "EPERM")
@@ -261,12 +267,12 @@ func TestSetPolicyRoutes_RuleDelFails_BestEffort(t *testing.T) {
 	m := &netlinkMock{}
 
 	// Add two VIPs
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
 	assert.NoError(t, err)
 
 	// Inject delete error, then remove one VIP
 	m.ruleDelErr = fmt.Errorf("EBUSY")
-	err = setPolicyRoutes(m, []string{"20.0.0.1/32"})
+	err = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "EBUSY")
 }
@@ -274,8 +280,8 @@ func TestSetPolicyRoutes_RuleDelFails_BestEffort(t *testing.T) {
 func TestSetPolicyRoutes_RouteReplaceFails(t *testing.T) {
 	m := &netlinkMock{routeReplaceErr: fmt.Errorf("EPERM")}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32"})
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
 	assert.Error(t, err)
 	// Fails at blackhole setup, before rule processing
-	assert.Empty(t, m.rulesForTable(kernelTableID))
+	assert.Empty(t, m.rulesForTable(testTableID))
 }

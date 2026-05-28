@@ -28,21 +28,17 @@ import (
 
 var log = logf.Log.WithName("routing")
 
-const (
-	kernelTableID          = 4096 // BIRD-managed routing table
-	blackholeKernelTableID = 4097 // Blackhole fallback routes
-	rulePriority           = 100  // Priority for kernel table lookup
-	blackholeRulePriority  = 101  // Priority for blackhole fallback
-)
-
 // setPolicyRoutes creates source-based routing rules for VIPs.
-// Traffic from VIP addresses will use the BIRD routing table (4096),
-// with a fallback to blackhole table (4097) if no BGP routes exist.
+// Traffic from VIP addresses will use the BIRD routing table (tableID),
+// with a fallback to blackhole table (tableID+1) if no BGP routes exist.
 // Errors are accumulated best-effort (partial progress over rollback);
 // the next reconcile retries any failed operations.
-func setPolicyRoutes(nl abstractNetlink, vips []string) error {
+func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) error {
+	blackholeTableID := tableID + 1
+	blackholePriority := priority + 1
+
 	// Setup blackhole routes as fallback
-	if err := setupBlackholeRoutes(nl); err != nil {
+	if err := setupBlackholeRoutes(nl, blackholeTableID); err != nil {
 		return err
 	}
 
@@ -50,7 +46,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string) error {
 
 	// Get existing BGP table rules
 	bgpRules, err := nl.RuleListFiltered(netlink.FAMILY_ALL, &netlink.Rule{
-		Table: kernelTableID,
+		Table: tableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
 		return fmt.Errorf("failed to list BGP rules: %w", err)
@@ -58,7 +54,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string) error {
 
 	// Get existing blackhole table rules
 	blackholeRules, err := nl.RuleListFiltered(netlink.FAMILY_ALL, &netlink.Rule{
-		Table: blackholeKernelTableID,
+		Table: blackholeTableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
 		return fmt.Errorf("failed to list blackhole rules: %w", err)
@@ -111,8 +107,8 @@ func setPolicyRoutes(nl abstractNetlink, vips []string) error {
 	// Add new BGP rules
 	for _, ipNet := range needBgpRule {
 		bgpRule := netlink.NewRule()
-		bgpRule.Priority = rulePriority
-		bgpRule.Table = kernelTableID
+		bgpRule.Priority = priority
+		bgpRule.Table = tableID
 		bgpRule.Src = ipNet
 		log.V(1).Info("adding BGP rule", "src", ipNet.String())
 		if err := nl.RuleAdd(bgpRule); err != nil {
@@ -123,8 +119,8 @@ func setPolicyRoutes(nl abstractNetlink, vips []string) error {
 	// Add new blackhole rules
 	for _, ipNet := range needBlackholeRule {
 		blackholeRule := netlink.NewRule()
-		blackholeRule.Priority = blackholeRulePriority
-		blackholeRule.Table = blackholeKernelTableID
+		blackholeRule.Priority = blackholePriority
+		blackholeRule.Table = blackholeTableID
 		blackholeRule.Src = ipNet
 		log.V(1).Info("adding blackhole rule", "src", ipNet.String())
 		if err := nl.RuleAdd(blackholeRule); err != nil {
@@ -135,16 +131,16 @@ func setPolicyRoutes(nl abstractNetlink, vips []string) error {
 	return errFinal
 }
 
-// setupBlackholeRoutes adds blackhole default routes to table 4097.
-// These act as a fallback when no BGP routes are available in table 4096.
-func setupBlackholeRoutes(nl abstractNetlink) error {
+// setupBlackholeRoutes adds blackhole default routes to the blackhole table.
+// These act as a fallback when no BGP routes are available in the main table.
+func setupBlackholeRoutes(nl abstractNetlink, blackholeTableID int) error {
 	var errFinal error
 
 	// IPv4 blackhole
 	_, dst4, _ := net.ParseCIDR("0.0.0.0/0")
 	route4 := &netlink.Route{
 		Dst:   dst4,
-		Table: blackholeKernelTableID,
+		Table: blackholeTableID,
 		Type:  unix.RTN_BLACKHOLE,
 	}
 	if err := nl.RouteReplace(route4); err != nil {
@@ -155,7 +151,7 @@ func setupBlackholeRoutes(nl abstractNetlink) error {
 	_, dst6, _ := net.ParseCIDR("::/0")
 	route6 := &netlink.Route{
 		Dst:   dst6,
-		Table: blackholeKernelTableID,
+		Table: blackholeTableID,
 		Type:  unix.RTN_BLACKHOLE,
 	}
 	if err := nl.RouteReplace(route6); err != nil {

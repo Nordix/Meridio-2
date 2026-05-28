@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"os"
 	"os/exec"
 	"slices"
@@ -40,36 +41,48 @@ type BirdInterface interface {
 	Monitor(ctx context.Context, interval time.Duration) (<-chan MonitorStatus, error)
 }
 
-type Bird struct {
+// Config holds all configurable parameters for a Bird instance.
+type Config struct {
 	SocketPath     string
 	ConfigFile     string
+	TableID        int
+	RulePriority   int
 	LogParams      BirdLogParams
 	KernelScanTime int
-	nl             abstractNetlink
-	running        bool
-	mu             sync.Mutex
 }
 
-type Option func(*Bird)
-
-func WithLogParams(params BirdLogParams) Option {
-	return func(b *Bird) { b.LogParams = params }
+type Bird struct {
+	Config
+	nl      abstractNetlink
+	running bool
+	mu      sync.Mutex
 }
 
-func WithKernelScanTime(seconds int) Option {
-	return func(b *Bird) { b.KernelScanTime = seconds }
-}
-
-func New(opts ...Option) *Bird {
-	b := &Bird{
-		SocketPath: "/var/run/bird/bird.ctl",
-		ConfigFile: "/etc/bird/bird.conf",
-		nl:         &netlink.Handle{},
+func New(cfg Config) (*Bird, error) {
+	if cfg.SocketPath == "" || cfg.ConfigFile == "" {
+		return nil, fmt.Errorf("bird config: SocketPath and ConfigFile are required")
 	}
-	for _, o := range opts {
-		o(b)
+	if cfg.TableID < 1 || cfg.TableID > math.MaxUint32-1 {
+		return nil, fmt.Errorf("bird config: TableID must be between 1 and %d, got %d", math.MaxUint32-1, cfg.TableID)
 	}
-	return b
+	if isReservedTable(cfg.TableID) || isReservedTable(cfg.TableID+1) {
+		return nil, fmt.Errorf("bird config: TableID %d conflicts with reserved kernel tables (0, 253, 254, 255)", cfg.TableID)
+	}
+	if cfg.RulePriority < 0 || cfg.RulePriority > math.MaxInt16-1 {
+		return nil, fmt.Errorf("bird config: RulePriority must be between 0 and %d, got %d", math.MaxInt16-1, cfg.RulePriority)
+	}
+	if cfg.KernelScanTime < 1 || cfg.KernelScanTime > 3600 {
+		return nil, fmt.Errorf("bird config: KernelScanTime must be between 1 and 3600 seconds, got %d", cfg.KernelScanTime)
+	}
+	cfg.LogParams = slices.Clone(cfg.LogParams)
+	return &Bird{
+		Config: cfg,
+		nl:     &netlink.Handle{},
+	}, nil
+}
+
+func isReservedTable(id int) bool {
+	return id == 0 || id == 253 || id == 254 || id == 255
 }
 
 func (b *Bird) Run(ctx context.Context) error {
@@ -128,7 +141,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	// Install policy routes first to minimize misrouting window.
 	// Blackhole fallback ensures VIP traffic is dropped rather than
 	// leaked before BGP routes are available.
-	if err := setPolicyRoutes(b.nl, vips); err != nil {
+	if err := setPolicyRoutes(b.nl, vips, b.TableID, b.RulePriority); err != nil {
 		return err
 	}
 
@@ -148,7 +161,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 }
 
 func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) (string, error) {
-	data := birdConfigData{KernelTableID: defaultKernelTableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
+	data := birdConfigData{KernelTableID: b.TableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
 
 	for _, vip := range vips {
 		if isIPv6(vip) {
