@@ -56,6 +56,7 @@ type BgpSpec struct {
 	// The value must be a valid duration format. For example, 90s, 1m, 1h.
 	// The duration will be rounded by second
 	// Minimum duration is 3s.
+	// +kubebuilder:default="240s"
 	// +optional
 	HoldTime string `json:"holdTime,omitempty"`
 

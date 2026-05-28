@@ -26,12 +26,6 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 )
 
-const (
-	defaultKernelTableID = 4096
-	defaultLocalPort     = 179
-	defaultRemotePort    = 179
-)
-
 type birdConfigData struct {
 	KernelTableID  int
 	KernelScanTime int
@@ -79,7 +73,6 @@ filter announced_routes {
 template bgp BGP_TEMPLATE {
 	debug {events, states};
 	direct;
-	hold time 90;
 	bfd off;
 	graceful restart off;
 	setkey off;
@@ -160,23 +153,20 @@ protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 `))
 
 func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
-	localPort := defaultLocalPort
-	if router.Spec.BGP.LocalPort != nil {
-		localPort = int(*router.Spec.BGP.LocalPort)
+	if router.Spec.BGP.LocalPort == nil {
+		return routerData{}, fmt.Errorf("router %q: LocalPort is required", router.Name)
 	}
-	remotePort := defaultRemotePort
-	if router.Spec.BGP.RemotePort != nil {
-		remotePort = int(*router.Spec.BGP.RemotePort)
+	if router.Spec.BGP.RemotePort == nil {
+		return routerData{}, fmt.Errorf("router %q: RemotePort is required", router.Name)
 	}
+	localPort := int(*router.Spec.BGP.LocalPort)
+	remotePort := int(*router.Spec.BGP.RemotePort)
 
-	holdTime := "90"
-	if router.Spec.BGP.HoldTime != "" {
-		t, err := time.ParseDuration(router.Spec.BGP.HoldTime)
-		if err != nil {
-			return routerData{}, fmt.Errorf("couldn't parse holdTime: %w", err)
-		}
-		holdTime = strconv.Itoa(int(t.Seconds()))
+	t, err := time.ParseDuration(router.Spec.BGP.HoldTime)
+	if err != nil {
+		return routerData{}, fmt.Errorf("couldn't parse holdTime: %w", err)
 	}
+	holdTime := strconv.Itoa(int(t.Seconds()))
 
 	bfd := "bfd off;"
 	if router.Spec.BGP.BFD != nil && router.Spec.BGP.BFD.Switch != nil && *router.Spec.BGP.BFD.Switch {

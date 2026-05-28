@@ -81,6 +81,7 @@ spec:
                         type: boolean
                     type: object
                   holdTime:
+                    default: 240s
                     description: |-
                       Hold timer of the BGP session. Please refere to BGP material to understand what this implies.
                       The value must be a valid duration format. For example, 90s, 1m, 1h.

@@ -25,8 +25,27 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 )
 
+var testConfig = Config{
+	SocketPath:     "/var/run/bird/bird.ctl",
+	ConfigFile:     "/etc/bird/bird.conf",
+	TableID:        4096,
+	RulePriority:   100,
+	KernelScanTime: 10,
+}
+
+var testBGPSpec = meridio2v1alpha1.BgpSpec{
+	RemoteASN:  65000,
+	LocalASN:   65001,
+	HoldTime:   "240s",
+	LocalPort:  uint16Ptr(179),
+	RemotePort: uint16Ptr(179),
+}
+
 func TestGenerateConfig(t *testing.T) {
-	b := New(WithKernelScanTime(10))
+	b, err := New(testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("empty config", func(t *testing.T) {
 		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{})
@@ -63,10 +82,7 @@ func TestGenerateConfig(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "test-router"},
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Address: "192.168.1.1",
-				BGP: meridio2v1alpha1.BgpSpec{
-					RemoteASN: 65000,
-					LocalASN:  65001,
-				},
+				BGP:     testBGPSpec,
 			},
 		}
 		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
@@ -82,10 +98,15 @@ func TestGenerateConfig(t *testing.T) {
 	})
 
 	t.Run("matches reference config", func(t *testing.T) {
-		bWithLogs := New(WithLogParams(BirdLogParams{
+		logConfig := testConfig
+		logConfig.LogParams = BirdLogParams{
 			{Type: "stderr", Classes: []string{"info", "warning", "error", "fatal"}},
 			{Type: "file", Path: "/var/log/bird.log", Size: 1048576, BackupPath: "/var/log/bird.log.1", Classes: []string{"all"}},
-		}), WithKernelScanTime(10))
+		}
+		bWithLogs, err := New(logConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
 		router := &meridio2v1alpha1.GatewayRouter{
 			ObjectMeta: metav1.ObjectMeta{Name: "gatewayrouter-sample"},
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
@@ -136,7 +157,6 @@ filter announced_routes {
 template bgp BGP_TEMPLATE {
 	debug {events, states};
 	direct;
-	hold time 90;
 	bfd off;
 	graceful restart off;
 	setkey off;
@@ -209,14 +229,14 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 				ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "192.168.1.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					BGP: testBGPSpec,
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "fd00::1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					BGP: testBGPSpec,
 				},
 			},
 		}
@@ -238,28 +258,28 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 				ObjectMeta: metav1.ObjectMeta{Name: "D"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_D", Address: "192.168.4.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					BGP: testBGPSpec,
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "B"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_B", Address: "192.168.2.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					BGP: testBGPSpec,
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "C"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_C", Address: "192.168.3.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					BGP: testBGPSpec,
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "A"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_A", Address: "192.168.1.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					BGP: testBGPSpec,
 				},
 			},
 		}
