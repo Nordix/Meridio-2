@@ -22,6 +22,8 @@ import (
 )
 
 // GatewayRouterSpec defines the desired state of GatewayRouter
+// +kubebuilder:validation:XValidation:rule="self.protocol != 'Static' || has(self.static)",message="static is required when protocol is Static"
+// +kubebuilder:validation:XValidation:rule="self.protocol != 'BGP' || (has(self.bgp) && self.bgp.remoteASN > 0 && self.bgp.localASN > 0)",message="bgp.remoteASN and bgp.localASN are required when protocol is BGP"
 type GatewayRouterSpec struct {
 	GatewayRef gatewayapiv1.ParentReference `json:"gatewayRef"`
 
@@ -33,10 +35,20 @@ type GatewayRouterSpec struct {
 	// Address of the Gateway Router
 	Address string `json:"address"`
 
+	// protocol selects the routing protocol for this peering.
+	// +kubebuilder:validation:Enum=BGP;Static
+	Protocol RoutingProtocol `json:"protocol"`
+
 	// Parameters to set up the BGP session to specified Address.
 	// If the Protocol is bgp, the minimal parameters to be defined in bgp properties
 	// are RemoteASN and LocalASN
+	// +optional
 	BGP BgpSpec `json:"bgp"`
+
+	// static defines static routing with BFD supervision. Required when protocol is
+	// Static.
+	// +optional
+	Static *StaticSpec `json:"static,omitempty"`
 }
 
 type BgpSpec struct {
@@ -75,6 +87,20 @@ type BgpSpec struct {
 	// BGP listening port of the Attractor FrontEnds.
 	// +optional
 	LocalPort *uint16 `json:"localPort,omitempty"`
+}
+
+// +enum
+type RoutingProtocol string
+
+const (
+	RoutingProtocolBGP    RoutingProtocol = "BGP"
+	RoutingProtocolStatic RoutingProtocol = "Static"
+)
+
+type StaticSpec struct {
+	// BFD monitoring of the static next-hop.
+	// +optional
+	BFD *BfdSpec `json:"bfd,omitempty"`
 }
 
 type BfdSpec struct {
