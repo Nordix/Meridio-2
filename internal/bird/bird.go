@@ -179,6 +179,19 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 	}
 	data.BGPInterfaces = slices.Sorted(maps.Keys(ifset))
 
+	// Collect BFD interface configs with timers (from static routers).
+	// If any static router has BFD timers, use BFDInterfaces instead
+	// of plain BGPInterfaces.
+	var bfdIfaces []string
+	for _, r := range routers {
+		if conf := bfdInterfaceConfig(r); conf != "" {
+			bfdIfaces = append(bfdIfaces, conf)
+		}
+	}
+	if len(bfdIfaces) > 0 {
+		data.BFDInterfaces = bfdIfaces
+	}
+
 	var buf strings.Builder
 	if err := birdConfigTmpl.Execute(&buf, data); err != nil {
 		return "", err

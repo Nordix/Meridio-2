@@ -62,7 +62,8 @@ func TestGenerateConfig(t *testing.T) {
 		router := &meridio2v1alpha1.GatewayRouter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-router"},
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
-				Address: "192.168.1.1",
+				Address:  "192.168.1.1",
+				Protocol: meridio2v1alpha1.RoutingProtocolBGP,
 				BGP: meridio2v1alpha1.BgpSpec{
 					RemoteASN: 65000,
 					LocalASN:  65001,
@@ -91,6 +92,7 @@ func TestGenerateConfig(t *testing.T) {
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "vlan-100",
 				Address:   "169.254.100.150",
+				Protocol:  meridio2v1alpha1.RoutingProtocolBGP,
 				BGP: meridio2v1alpha1.BgpSpec{
 					RemoteASN:  4200000000,
 					LocalASN:   64512,
@@ -118,6 +120,12 @@ log stderr { info, warning, error, fatal };
 log "/var/log/bird.log" 1048576 "/var/log/bird.log.1" all;
 
 protocol device {}
+
+filter default_rt {
+	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
+	if ( net ~ [ 0::/0 ] ) then accept;
+	else reject;
+}
 
 filter gateway_routes {
 	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
@@ -209,14 +217,16 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 				ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "192.168.1.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "fd00::1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
 				},
 			},
 		}
@@ -238,28 +248,32 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 				ObjectMeta: metav1.ObjectMeta{Name: "D"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_D", Address: "192.168.4.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "B"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_B", Address: "192.168.2.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "C"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_C", Address: "192.168.3.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
 				},
 			},
 			{
 				ObjectMeta: metav1.ObjectMeta{Name: "A"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_A", Address: "192.168.1.1",
-					BGP: meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001},
 				},
 			},
 		}
@@ -289,6 +303,85 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 				t.Fatalf("BGP protocol %q not found after position %d", s, prev)
 			}
 			prev += idx + len(s)
+		}
+	})
+
+	t.Run("static with bfd", func(t *testing.T) {
+		routers := []*meridio2v1alpha1.GatewayRouter{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "gateway-a1"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "eth0.100",
+					Address:   "169.254.100.150",
+					Protocol:  meridio2v1alpha1.RoutingProtocolStatic,
+					Static: &meridio2v1alpha1.StaticSpec{
+						BFD: &meridio2v1alpha1.BfdSpec{
+							Switch:     boolPtr(true),
+							MinRx:      "300ms",
+							MinTx:      "300ms",
+							Multiplier: uint16Ptr(3),
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "gateway-a2"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "eth0.100",
+					Address:   "100:100::150",
+					Protocol:  meridio2v1alpha1.RoutingProtocolStatic,
+					Static: &meridio2v1alpha1.StaticSpec{
+						BFD: &meridio2v1alpha1.BfdSpec{
+							Switch:     boolPtr(true),
+							MinRx:      "300ms",
+							MinTx:      "300ms",
+							Multiplier: uint16Ptr(3),
+						},
+					},
+				},
+			},
+		}
+		vips := []string{"20.0.0.1/32", "10.0.0.1/32", "2000::1/128"}
+
+		conf, err := b.generateConfig(vips, routers)
+		if err != nil {
+			t.Fatalf("generateConfig() error = %v", err)
+		}
+
+		// Verify static protocol blocks
+		if !strings.Contains(conf, "protocol static 'NBR-gateway-a1'") {
+			t.Error("missing static protocol for gateway-a1")
+		}
+		if !strings.Contains(conf, "protocol static 'NBR-gateway-a2'") {
+			t.Error("missing static protocol for gateway-a2")
+		}
+		// Verify default routes with bfd
+		if !strings.Contains(conf, "route 0.0.0.0/0 via 169.254.100.150%'eth0.100' bfd;") {
+			t.Error("missing IPv4 static route with bfd")
+		}
+		if !strings.Contains(conf, "route 0::/0 via 100:100::150%'eth0.100' bfd;") {
+			t.Error("missing IPv6 static route with bfd")
+		}
+		// Verify BFD interface block has timers
+		if !strings.Contains(conf, `interface "eth0.100" {`) {
+			t.Error("missing BFD interface block with timers")
+		}
+		if !strings.Contains(conf, "min rx interval 300ms;") {
+			t.Error("missing BFD min rx interval")
+		}
+		if !strings.Contains(conf, "min tx interval 300ms;") {
+			t.Error("missing BFD min tx interval")
+		}
+		if !strings.Contains(conf, "multiplier 3;") {
+			t.Error("missing BFD multiplier")
+		}
+		// Verify no BGP protocol blocks
+		if strings.Contains(conf, "protocol bgp") {
+			t.Error("unexpected BGP protocol block for static routers")
+		}
+		// Verify import filter is default_rt
+		if !strings.Contains(conf, "import filter default_rt;") {
+			t.Error("missing default_rt filter in static protocol")
 		}
 	})
 }

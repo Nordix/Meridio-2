@@ -265,12 +265,60 @@ spec:
               interface:
                 description: Name of the interface to reach external gateway
                 type: string
+              protocol:
+                description: protocol selects the routing protocol for this peering.
+                enum:
+                - BGP
+                - Static
+                type: string
+              static:
+                description: |-
+                  static defines static routing with BFD supervision. Required when protocol is
+                  Static.
+                properties:
+                  bfd:
+                    description: BFD monitoring of the static next-hop.
+                    properties:
+                      minRx:
+                        description: |-
+                          Min-rx timer of bfd session. Please refere to BFD material to understand what this implies.
+                          The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+                          The duration will be rounded by millisecond.
+                        type: string
+                      minTx:
+                        description: |-
+                          Min-tx timer of bfd session. Please refere to BFD material to understand what this implies.
+                          The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+                          The duration will be rounded by millisecond.
+                        type: string
+                      multiplier:
+                        description: |-
+                          Multiplier of bfd session.
+                          When this number of bfd packets failed to receive, bfd session will go down.
+                        type: integer
+                      switch:
+                        description: |-
+                          BFD monitoring.
+                          Valid values are:
+                          - false: no BFD monitoring;
+                          - true: turns on the BFD monitoring.
+                          When left empty, there is no BFD monitoring.
+                        type: boolean
+                    type: object
+                type: object
             required:
             - address
-            - bgp
             - gatewayRef
             - interface
+            - protocol
             type: object
+            x-kubernetes-validations:
+            - message: static is required when protocol is Static
+              rule: self.protocol != 'Static' || has(self.static)
+            - message: bgp.remoteASN and bgp.localASN are required when protocol is
+                BGP
+              rule: self.protocol != 'BGP' || (has(self.bgp) && self.bgp.remoteASN
+                > 0 && self.bgp.localASN > 0)
           status:
             description: status defines the observed state of GatewayRouter
             properties:
