@@ -114,7 +114,7 @@ jobs:
         if: failure()
         run: |
           NS="e2e-${{ matrix.suite }}"
-          kubectl get pods -n $NS -o wide
+          kubectl get pods -A -o wide
           kubectl describe pods -n $NS
           kubectl get events -n $NS --sort-by='.lastTimestamp'
           kubectl logs -n $NS --all-containers --prefix --tail=200 -l app || true

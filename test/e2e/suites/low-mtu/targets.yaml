@@ -18,6 +18,9 @@ spec:
         k8s.v1.cni.cncf.io/networks: app-net-mtu1200
     spec:
       serviceAccountName: meridio-2-network-sidecar
+      volumes:
+      - name: sidecar-state
+        emptyDir: {}
       containers:
       - name: example-target
         image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
@@ -41,6 +44,9 @@ spec:
         - --pod-namespace=$(POD_NAMESPACE)
         - --pod-uid=$(POD_UID)
         - --log-level=debug
+        volumeMounts:
+        - name: sidecar-state
+          mountPath: /var/run/meridio
         env:
         - name: POD_NAME
           valueFrom:

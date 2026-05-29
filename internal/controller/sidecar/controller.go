@@ -71,10 +71,7 @@ type domainState struct {
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	if c.tableIDs == nil {
-		c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
-		c.managedVIPs = make(map[string]map[string]bool)
-	}
+	// Initialize netlink handle if not already set (test hook)
 	if c.nl == nil {
 		c.nl = &netlink.Handle{}
 	}
@@ -138,6 +135,12 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			c.tableIDs.release(gwName)
 			log.Info("cleaned up stale gateway", "gateway", gwName, "tableID", tableID)
 		}
+	}
+
+	// Persist table ID mapping after successful configuration
+	if err := saveMapping(c.tableIDs); err != nil {
+		log.Error(err, "failed to save table ID mapping")
+		// Non-fatal: continue with status update
 	}
 
 	// Success
@@ -316,6 +319,40 @@ func (c *Controller) isOwnedByPod(enc *meridio2v1alpha1.EndpointNetworkConfigura
 
 // SetupWithManager sets up the controller with the Manager.
 func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
+	// Initialize allocator and load persisted mapping before reconciliation starts
+	c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
+	c.managedVIPs = make(map[string]map[string]bool)
+
+	setupLog := mgr.GetLogger().WithName("sidecar-setup")
+
+	// Load persisted table ID mapping
+	if err := loadMapping(c.tableIDs); err != nil {
+		// Log warning but continue - reconcile will rebuild state from ENC
+		setupLog.Error(err, "failed to load table ID mapping, starting fresh")
+	} else {
+		mapping := c.tableIDs.snapshot()
+		if len(mapping) > 0 {
+			setupLog.Info("loaded table ID mapping from file", "gateways", len(mapping))
+		} else {
+			setupLog.Info("no persisted table ID mapping found (first run or clean state)")
+		}
+	}
+
+	// Scan kernel for existing VIPs to seed managedVIPs (prevents VIP leak on restart)
+	nl := &netlink.Handle{}
+	if scannedVIPs, err := scanManagedVIPs(nl); err != nil {
+		setupLog.Error(err, "failed to scan existing VIPs, starting fresh")
+	} else {
+		c.managedVIPs = scannedVIPs
+		totalVIPs := 0
+		for _, vips := range scannedVIPs {
+			totalVIPs += len(vips)
+		}
+		if totalVIPs > 0 {
+			setupLog.Info("scanned existing VIPs from kernel", "interfaces", len(scannedVIPs), "vips", totalVIPs)
+		}
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.EndpointNetworkConfiguration{}).
 		Named("sidecar").
