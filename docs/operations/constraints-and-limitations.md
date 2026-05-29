@@ -50,9 +50,9 @@ The LB controller assigns fwmarks and routing table IDs dynamically per Distribu
 
 ## Router Controller
 
-**10. VIPs advertised regardless of LB distribution readiness**
+**10. ~~VIPs advertised regardless of LB distribution readiness~~ (Resolved)**
 
-VIPs are announced via BGP as soon as the router's BGP sessions are established, without waiting for the collocated LB to have active endpoints. This can cause traffic loss during LB Pod startup or scale-out: external traffic is attracted before the LB is capable of distributing it to application endpoints.
+The router now gates VIP advertisement on LB readiness. The collocated LB controller writes `lb-ready-<distGroupName>` files to a shared directory when a DistributionGroup has ready targets. The router watches this directory via fsnotify and suppresses VIPs until at least one readiness file exists. Configurable via `--readiness-dir` / `MERIDIO_READINESS_DIR` (default: `/var/run/meridio`).
 
 **11. No connectivity-based readiness signaling to the controller-manager**
 

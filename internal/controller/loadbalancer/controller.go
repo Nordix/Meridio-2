@@ -32,6 +32,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/readiness"
 	nftablesmanager "github.com/nordix/meridio-2/internal/nftables"
 )
 
@@ -61,6 +62,7 @@ type Controller struct {
 	GatewayName       string
 	GatewayNamespace  string
 	NFQLB             nfqlbManager
+	Readiness         *readiness.Manager
 	NFTConn           *nftables.Conn
 	NFTTable          *nftables.Table
 	NFTChain          *nftables.Chain
@@ -171,7 +173,7 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	// Note: nftables manager is shared, not cleaned up per-DG
 
 	// Remove readiness file
-	if err := c.removeReadinessFile(distGroupName); err != nil {
+	if err := c.Readiness.Remove(distGroupName); err != nil {
 		logr.Error(err, "Failed to remove readiness file", "distGroup", distGroupName)
 	}
 
@@ -305,7 +307,10 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	// Clean up readiness directory on startup
-	if err := c.cleanupReadinessDir(); err != nil {
+	if !c.Readiness.Enabled() {
+		log.Log.Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), no readiness files will be written")
+	}
+	if err := c.Readiness.Cleanup(); err != nil {
 		return fmt.Errorf("failed to cleanup readiness directory: %w", err)
 	}
 

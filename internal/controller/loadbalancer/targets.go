@@ -113,11 +113,11 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 
 	// Manage readiness file based on endpoint count
 	if len(newTargets) > 0 {
-		if err := c.createReadinessFile(distGroup.Name); err != nil {
+		if err := c.Readiness.Set(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to create readiness file", "distGroup", distGroup.Name)
 		}
 	} else {
-		if err := c.removeReadinessFile(distGroup.Name); err != nil {
+		if err := c.Readiness.Remove(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to remove readiness file", "distGroup", distGroup.Name)
 		}
 	}

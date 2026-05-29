@@ -11,8 +11,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/nordix/meridio-2/test/utils"
 	e2eutils "github.com/nordix/meridio-2/test/e2e/utils"
+	"github.com/nordix/meridio-2/test/utils"
 )
 
 const maglevIDFormat = `^maglev:\d+$`
