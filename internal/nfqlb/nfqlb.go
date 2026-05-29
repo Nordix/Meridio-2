@@ -591,8 +591,6 @@ func (s *Instance) deleteTargetNoLock(ctx context.Context, ips []string, identif
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: delete target", "instance", s.name, "ips", ips, "identifier", identifier)
 
-	delete(s.targets, identifier)
-
 	output, err := s.doExec(ctx, "deactivate",
 		fmt.Sprintf("--index=%d", identifier),
 		fmt.Sprintf("--shm=%s", s.name),
@@ -600,6 +598,11 @@ func (s *Instance) deleteTargetNoLock(ctx context.Context, ips []string, identif
 	if err != nil {
 		return fmt.Errorf("failed deactivating nfqlb target ; %w; %s", err, output)
 	}
+
+	// Remove from map only after successful deactivation.
+	// If deactivation fails, the identifier stays in s.targets so the next
+	// reconcile will retry DeleteTarget.
+	delete(s.targets, identifier)
 
 	for _, ip := range ips {
 		_ = s.doDeletePolicyRoute(identifier+s.offset, ip)

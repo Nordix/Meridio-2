@@ -108,10 +108,9 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}
 	}
 
-	// Update tracked targets
-	c.targets[distGroup.Name] = newTargets
-
-	// Manage readiness file based on endpoint count
+	// Manage readiness file based on desired endpoint count (before error check,
+	// so VIP advertisement reflects actual target availability regardless of
+	// partial deletion failures)
 	if len(newTargets) > 0 {
 		if err := c.Readiness.Set(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to create readiness file", "distGroup", distGroup.Name)
@@ -122,6 +121,15 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}
 	}
 
+	if errFinal != nil {
+		// Don't commit c.targets — on requeue the diff against stale currentTargets
+		// will retry failed deletions. Successful adds are idempotent on retry.
+		return errFinal
+	}
+
+	// Update tracked targets only on full success
+	c.targets[distGroup.Name] = newTargets
+
 	logr.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
-	return errFinal
+	return nil
 }
