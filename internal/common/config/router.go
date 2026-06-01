@@ -19,6 +19,7 @@ package config
 import (
 	"os"
 	"strings"
+	"time"
 
 	"github.com/nordix/meridio-2/internal/bird"
 	"github.com/nordix/meridio-2/internal/common/readiness"
@@ -40,6 +41,11 @@ type RouterConfig struct {
 	BirdLogs           bird.BirdLogParams
 	BirdKernelScanTime int
 	LBReadinessDir     string
+	TableID            int
+	RulePriority       int
+	BirdSocket         string
+	BirdConfig         string
+	MonitorInterval    time.Duration
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -65,11 +71,21 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"The name of the metrics server key file.")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	fs.IntVar(&c.BirdKernelScanTime, "bird-kernel-scan-time", 10,
+	fs.IntVar(&c.BirdKernelScanTime, "bird-kernel-scan-time", bird.DefaultKernelScanTime,
 		"Interval in seconds for BIRD kernel protocol route table scanning")
 	fs.StringVar(&c.LBReadinessDir, "readiness-dir", readiness.DefaultReadinessDir,
 		"Path to LB readiness directory. VIPs are only advertised when lb-ready-* files exist. "+
 			"Empty string disables the check (always advertise).")
+	fs.IntVar(&c.TableID, "table-id", bird.DefaultTableID,
+		"Kernel routing table ID for BIRD-managed routes. Blackhole table is implicitly table-id + 1.")
+	fs.IntVar(&c.RulePriority, "rule-priority", bird.DefaultRulePriority,
+		"Policy routing rule priority for VIP source routes. Blackhole priority is implicitly rule-priority + 1.")
+	fs.StringVar(&c.BirdSocket, "bird-socket", bird.DefaultSocketPath,
+		"Path to the BIRD control socket")
+	fs.StringVar(&c.BirdConfig, "bird-config", bird.DefaultConfigFile,
+		"Path to the BIRD configuration file")
+	fs.DurationVar(&c.MonitorInterval, "monitor-interval", bird.DefaultMonitorInterval,
+		"Interval for BGP connectivity monitoring")
 	fs.Var(&c.BirdLogs, "bird-log",
 		"BIRD log destination (repeatable).\n"+
 			"Format: type:params:classes\n"+
@@ -106,6 +122,11 @@ func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
 	bindInt(fs, "bird-kernel-scan-time", "MERIDIO_BIRD_KERNEL_SCAN_TIME", &c.BirdKernelScanTime)
 	bindString(fs, "readiness-dir", "MERIDIO_READINESS_DIR", &c.LBReadinessDir)
+	bindInt(fs, "table-id", "MERIDIO_TABLE_ID", &c.TableID)
+	bindInt(fs, "rule-priority", "MERIDIO_RULE_PRIORITY", &c.RulePriority)
+	bindString(fs, "bird-socket", "MERIDIO_BIRD_SOCKET", &c.BirdSocket)
+	bindString(fs, "bird-config", "MERIDIO_BIRD_CONFIG", &c.BirdConfig)
+	bindDuration(fs, "monitor-interval", "MERIDIO_MONITOR_INTERVAL", &c.MonitorInterval)
 	bindBirdLogs(fs, "bird-log", "MERIDIO_BIRD_LOG", &c.BirdLogs)
 }
 
