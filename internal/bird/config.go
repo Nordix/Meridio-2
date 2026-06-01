@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"text/template"
 	"time"
 
@@ -53,6 +54,7 @@ type routerData struct {
 	BFD        string
 	HoldTime   string
 	IPFamily   string
+	TcpAo      string
 }
 
 //nolint:lll
@@ -82,7 +84,7 @@ template bgp BGP_TEMPLATE {
 	hold time 90;
 	bfd off;
 	graceful restart off;
-	setkey off;
+	setkey on;
 	ipv4 {
 		import none;
 		export none;
@@ -155,11 +157,12 @@ protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 		import filter gateway_routes;
 		export filter announced_routes;
 	};
+	{{.TcpAo}}
 }
 {{- end}}
 `))
 
-func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
+func toRouterData(router *meridio2v1alpha1.GatewayRouter, passwords map[uint8]string) (routerData, error) {
 	localPort := defaultLocalPort
 	if router.Spec.BGP.LocalPort != nil {
 		localPort = int(*router.Spec.BGP.LocalPort)
@@ -201,6 +204,7 @@ func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
 	if isIPv6(router.Spec.Address) {
 		ipFamily = "ipv6"
 	}
+	tcpAo := tcpAoConfig(router.Spec.BGP.Authentication, passwords)
 
 	return routerData{
 		Name:       router.Name,
@@ -213,7 +217,51 @@ func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
 		BFD:        bfd,
 		HoldTime:   holdTime,
 		IPFamily:   ipFamily,
+		TcpAo:      tcpAo,
 	}, nil
+}
+
+func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]string) string {
+	if tcpAo == nil || len(tcpAo.Keychain) == 0 {
+		return ""
+	}
+	keyConfigs := make([]string, 0, len(tcpAo.Keychain))
+	for _, key := range tcpAo.Keychain {
+		password := passwords[key.KeyId]
+		if password == "" {
+			continue
+		}
+
+		algorithm := convertAlgorithm(key.Algorithm)
+		keyConfig := fmt.Sprintf(`		key {
+			id %d;
+			secret "%s";
+			algorithm %s;
+			preferred;
+		};`, key.KeyId, password, algorithm)
+		keyConfigs = append(keyConfigs, keyConfig)
+	}
+
+	if len(keyConfigs) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("authentication ao;\n\tkeys {\n%s\n\t};",
+		strings.Join(keyConfigs, "\n"))
+}
+
+func convertAlgorithm(algo string) string {
+	// Convert from CRD format to BIRD format
+	switch algo {
+	case "hmac-sha-1":
+		return "hmac sha1"
+	case "hmac-sha-256":
+		return "hmac sha256"
+	case "cmac-aes-128":
+		return "cmac aes128"
+	default:
+		return algo
+	}
 }
 
 func isIPv6(ipOrCIDR string) bool {

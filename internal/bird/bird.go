@@ -36,7 +36,7 @@ import (
 // BirdInterface defines the interface for BIRD operations
 type BirdInterface interface {
 	Run(ctx context.Context) error
-	Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter) error
+	Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error
 	Monitor(ctx context.Context, interval time.Duration) (<-chan MonitorStatus, error)
 }
 
@@ -80,7 +80,7 @@ func (b *Bird) Run(ctx context.Context) error {
 	}
 
 	if _, err := os.Stat(b.ConfigFile); errors.Is(err, os.ErrNotExist) {
-		if err := b.writeConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}); err != nil {
+		if err := b.writeConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}, nil); err != nil {
 			b.mu.Unlock()
 			return err
 		}
@@ -120,7 +120,7 @@ func vipsToCidr(vips []string) []string {
 	return cidrs
 }
 
-func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter) error {
+func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	vips = vipsToCidr(vips)
@@ -132,7 +132,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 		return err
 	}
 
-	if err := b.writeConfig(vips, routers); err != nil {
+	if err := b.writeConfig(vips, routers, passwords); err != nil {
 		return err
 	}
 
@@ -147,7 +147,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	return nil
 }
 
-func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) (string, error) {
+func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) (string, error) {
 	data := birdConfigData{KernelTableID: defaultKernelTableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
 
 	for _, vip := range vips {
@@ -170,7 +170,7 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 
 	ifset := make(map[string]bool)
 	for _, r := range routers {
-		rd, err := toRouterData(r)
+		rd, err := toRouterData(r, passwords[r.Name])
 		if err != nil {
 			return "", err
 		}
@@ -186,8 +186,8 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 	return buf.String(), nil
 }
 
-func (b *Bird) writeConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) error {
-	conf, err := b.generateConfig(vips, routers)
+func (b *Bird) writeConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
+	conf, err := b.generateConfig(vips, routers, passwords)
 	if err != nil {
 		return err
 	}

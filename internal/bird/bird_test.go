@@ -29,7 +29,7 @@ func TestGenerateConfig(t *testing.T) {
 	b := New(WithKernelScanTime(10))
 
 	t.Run("empty config", func(t *testing.T) {
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -40,7 +40,7 @@ func TestGenerateConfig(t *testing.T) {
 
 	t.Run("with vips", func(t *testing.T) {
 		vips := []string{"20.0.0.1/32", "2001:db8::1/128"}
-		conf, err := b.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{})
+		conf, err := b.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -69,7 +69,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 			},
 		}
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -108,7 +108,7 @@ func TestGenerateConfig(t *testing.T) {
 		}
 		vips := []string{"20.0.0.1/32"}
 
-		got, err := bWithLogs.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router})
+		got, err := bWithLogs.generateConfig(vips, []*meridio2v1alpha1.GatewayRouter{router}, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -139,7 +139,7 @@ template bgp BGP_TEMPLATE {
 	hold time 90;
 	bfd off;
 	graceful restart off;
-	setkey off;
+	setkey on;
 	ipv4 {
 		import none;
 		export none;
@@ -221,7 +221,7 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 			},
 		}
 
-		conf, err := b.generateConfig([]string{}, routers)
+		conf, err := b.generateConfig([]string{}, routers, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -264,7 +264,7 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 			},
 		}
 
-		conf, err := b.generateConfig([]string{}, routers)
+		conf, err := b.generateConfig([]string{}, routers, nil)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
@@ -303,4 +303,132 @@ func uint16Ptr(i uint16) *uint16 {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+func TestConvertAlgorithm(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"hmac-sha-1", "hmac sha1"},
+		{"hmac-sha-256", "hmac sha256"},
+		{"cmac-aes-128", "cmac aes128"},
+		{"unknown-algo", "unknown-algo"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := convertAlgorithm(tt.input); got != tt.want {
+				t.Errorf("convertAlgorithm(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTcpAoConfig(t *testing.T) {
+	t.Run("nil spec returns empty", func(t *testing.T) {
+		if got := tcpAoConfig(nil, nil); got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("empty keychain returns empty", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{Keychain: []meridio2v1alpha1.TcpAoKeyChain{}}
+		if got := tcpAoConfig(spec, nil); got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("missing password skips key", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{KeyId: 1, Algorithm: "hmac-sha-256", SecretName: "s", SecretKey: "k"},
+			},
+		}
+		if got := tcpAoConfig(spec, map[uint8]string{}); got != "" {
+			t.Errorf("expected empty when password missing, got %q", got)
+		}
+	})
+
+	t.Run("single key", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{KeyId: 1, Algorithm: "hmac-sha-256", SecretName: "s", SecretKey: "k"},
+			},
+		}
+		passwords := map[uint8]string{1: "secret123"}
+		got := tcpAoConfig(spec, passwords)
+
+		if !strings.Contains(got, "authentication ao;") {
+			t.Error("missing 'authentication ao;'")
+		}
+		if !strings.Contains(got, "id 1;") {
+			t.Error("missing key id")
+		}
+		if !strings.Contains(got, `secret "secret123";`) {
+			t.Error("missing secret")
+		}
+		if !strings.Contains(got, "algorithm hmac sha256;") {
+			t.Error("missing converted algorithm")
+		}
+	})
+
+	t.Run("multiple keys", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{KeyId: 1, Algorithm: "hmac-sha-1", SecretName: "s1", SecretKey: "k1"},
+				{KeyId: 2, Algorithm: "cmac-aes-128", SecretName: "s2", SecretKey: "k2"},
+			},
+		}
+		passwords := map[uint8]string{1: "pass1", 2: "pass2"}
+		got := tcpAoConfig(spec, passwords)
+
+		if !strings.Contains(got, "id 1;") || !strings.Contains(got, "id 2;") {
+			t.Error("missing one of the key ids")
+		}
+		if !strings.Contains(got, "algorithm hmac sha1;") {
+			t.Error("missing hmac sha1 algorithm")
+		}
+		if !strings.Contains(got, "algorithm cmac aes128;") {
+			t.Error("missing cmac aes128 algorithm")
+		}
+	})
+}
+
+func TestGenerateConfigWithTcpAo(t *testing.T) {
+	b := New(WithKernelScanTime(10))
+	router := &meridio2v1alpha1.GatewayRouter{
+		ObjectMeta: metav1.ObjectMeta{Name: "gw-ao"},
+		Spec: meridio2v1alpha1.GatewayRouterSpec{
+			Interface: "eth0",
+			Address:   "10.0.0.1",
+			BGP: meridio2v1alpha1.BgpSpec{
+				RemoteASN: 65000,
+				LocalASN:  65001,
+				Authentication: &meridio2v1alpha1.BgpTcpAoSpec{
+					Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+						{KeyId: 5, Algorithm: "hmac-sha-256", SecretName: "bgp-secret", SecretKey: "key"},
+					},
+				},
+			},
+		},
+	}
+	passwords := map[string]map[uint8]string{"gw-ao": {5: "mypassword"}}
+
+	conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, passwords)
+	if err != nil {
+		t.Fatalf("generateConfig() error = %v", err)
+	}
+
+	if !strings.Contains(conf, "authentication ao;") {
+		t.Error("missing 'authentication ao;' in generated config")
+	}
+	if !strings.Contains(conf, `secret "mypassword";`) {
+		t.Error("missing secret in generated config")
+	}
+	if !strings.Contains(conf, "id 5;") {
+		t.Error("missing key id in generated config")
+	}
+	if !strings.Contains(conf, "algorithm hmac sha256;") {
+		t.Error("missing algorithm in generated config")
+	}
 }

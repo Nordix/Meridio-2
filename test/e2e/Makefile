@@ -269,6 +269,27 @@ undeploy-low-mtu: ## Undeploy low-mtu topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
+##@ Suite: TCP-AO
+################################################################################
+
+.PHONY: tcp-ao
+tcp-ao: deploy-tcp-ao test-tcp-ao ## Deploy and test TCP-AO suite.
+
+.PHONY: deploy-tcp-ao
+deploy-tcp-ao: cluster ## Deploy tcp-ao topology.
+	$(call deploy-suite,e2e-tcp-ao,$(shell pwd)/suites/tcp-ao,tcp-ao,sllb-gw-b1 sllb-gw-b2)
+
+.PHONY: test-tcp-ao
+test-tcp-ao: ## Run e2e tests for tcp-ao suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="TCP AO" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-tcp-ao
+undeploy-tcp-ao: ## Undeploy tcp-ao topology.
+	@NS=e2e-tcp-ao; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-tcp-ao --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
 ##@ All suites
 ################################################################################
 

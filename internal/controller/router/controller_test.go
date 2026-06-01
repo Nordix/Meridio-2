@@ -54,7 +54,7 @@ func (m *mockingBird) Run(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockingBird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter) error {
+func (m *mockingBird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
 	m.configureVIPs = vips
 	m.configureRouters = routers
 	return m.configureErr
