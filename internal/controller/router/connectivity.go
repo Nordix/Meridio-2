@@ -20,7 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"net"
 	"time"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -43,6 +43,9 @@ type ConnectivityGateManager struct {
 	// Current gate states (last written to API)
 	ipv4Gate *bool // nil = not declared, true/false = current value
 	ipv6Gate *bool
+	// Dirty flags: force unconditional write on next tick after any failure
+	ipv4Dirty bool
+	ipv6Dirty bool
 	// Damping: timestamp when connectivity first came up (zero = not up)
 	ipv4UpSince time.Time
 	ipv6UpSince time.Time
@@ -119,55 +122,40 @@ func ClassifyConnectivityByFamily(protocols []bird.ProtocolStatus, familyMap map
 	return
 }
 
-// buildFamilyMap creates a mapping from protocol names to IP families based on the provided GatewayRouters.
+// BuildFamilyMap creates a mapping from protocol names to IP families based on the provided GatewayRouters.
 func BuildFamilyMap(gatewayRouters []*meridio2v1alpha1.GatewayRouter) map[string]string {
 	familyMap := make(map[string]string)
 	for _, gr := range gatewayRouters {
-		address := gr.Spec.Address
-		protocol := "IPv4"
-		if strings.Contains(address, ":") {
-			protocol = "IPv6"
+		family := "IPv4"
+		if ip := net.ParseIP(gr.Spec.Address); ip != nil && ip.To4() == nil {
+			family = "IPv6"
 		}
-		protoName := fmt.Sprintf("NBR-%s", gr.Name)
-		familyMap[protoName] = protocol
+		familyMap[fmt.Sprintf("NBR-%s", gr.Name)] = family
 	}
 	return familyMap
 }
 
-// patchGateCondition(ctx, conditionType, status) error — patches Pod status
+// patchGateCondition patches a single Pod status condition using a strategic merge patch.
+// No Get required — always writes unconditionally. The caller decides whether to call it.
 func (cgm *ConnectivityGateManager) patchGateCondition(ctx context.Context, conditionType string, status bool) error {
-	pod := &corev1.Pod{}
-	if err := cgm.client.Get(ctx, types.NamespacedName{Name: cgm.podName, Namespace: cgm.podNamespace}, pod); err != nil {
-		return fmt.Errorf("error fetching pod for patching: %w", err)
-	}
-
-	newStatus := corev1.ConditionFalse
+	condStatus := corev1.ConditionFalse
 	if status {
-		newStatus = corev1.ConditionTrue
+		condStatus = corev1.ConditionTrue
 	}
 
-	// Find or create the condition
-	found := false
-	for i := range pod.Status.Conditions {
-		if string(pod.Status.Conditions[i].Type) == conditionType {
-			if pod.Status.Conditions[i].Status == newStatus {
-				return nil // No change needed
-			}
-			pod.Status.Conditions[i].Status = newStatus
-			pod.Status.Conditions[i].LastTransitionTime = metav1.Now()
-			found = true
-			break
-		}
-	}
-	if !found {
-		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
-			Type:               corev1.PodConditionType(conditionType),
-			Status:             newStatus,
-			LastTransitionTime: metav1.Now(),
-		})
-	}
+	now := metav1.Now().Format(time.RFC3339)
+	patchJSON := fmt.Sprintf(
+		`{"status":{"conditions":[{"type":%q,"status":%q,"lastTransitionTime":%q}]}}`,
+		conditionType, string(condStatus), now,
+	)
 
-	return cgm.client.Status().Update(ctx, pod)
+	pod := &corev1.Pod{}
+	pod.Name = cgm.podName
+	pod.Namespace = cgm.podNamespace
+
+	return cgm.client.Status().Patch(ctx, pod, client.RawPatch(
+		types.StrategicMergePatchType, []byte(patchJSON),
+	))
 }
 
 // SetAllGatesFalse(ctx) error — called on startup (defense-in-depth)
@@ -205,21 +193,25 @@ func (cgm *ConnectivityGateManager) handleGate(ctx context.Context, gate *bool, 
 		return nil // Gate not declared
 	}
 
+	dirty := cgm.getDirty(conditionType)
+
 	if !connected {
 		// Down: immediate
 		*upSince = time.Time{} // Reset hold timer
-		if *gate {
+		if *gate || *dirty {
 			if err := cgm.patchGateCondition(ctx, conditionType, false); err != nil {
+				*dirty = true
 				return err
 			}
 			*gate = false
+			*dirty = false
 		}
 		return nil
 	}
 
 	// Connected
-	if *gate {
-		return nil // Already True, no-op
+	if *gate && !*dirty {
+		return nil // Already True, no pending write
 	}
 
 	// Start hold timer if not already started
@@ -232,10 +224,19 @@ func (cgm *ConnectivityGateManager) handleGate(ctx context.Context, gate *bool, 
 	// Check if hold time has elapsed
 	if now.Sub(*upSince) >= cgm.holdTime {
 		if err := cgm.patchGateCondition(ctx, conditionType, true); err != nil {
+			*dirty = true
 			return err
 		}
 		*gate = true
+		*dirty = false
 	}
 
 	return nil
+}
+
+func (cgm *ConnectivityGateManager) getDirty(conditionType string) *bool {
+	if conditionType == ReadinessGateIPv4 {
+		return &cgm.ipv4Dirty
+	}
+	return &cgm.ipv6Dirty
 }
