@@ -18,6 +18,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -171,27 +172,32 @@ func (cgm *ConnectivityGateManager) patchGateCondition(ctx context.Context, cond
 
 // SetAllGatesFalse(ctx) error — called on startup (defense-in-depth)
 func (cgm *ConnectivityGateManager) SetAllGatesFalse(ctx context.Context) error {
+	var errFinal error
 	if cgm.ipv4Gate != nil {
 		if err := cgm.patchGateCondition(ctx, ReadinessGateIPv4, false); err != nil {
-			return fmt.Errorf("error patching IPv4 gate: %w", err)
+			errFinal = errors.Join(errFinal, err)
 		}
 	}
 	if cgm.ipv6Gate != nil {
 		if err := cgm.patchGateCondition(ctx, ReadinessGateIPv6, false); err != nil {
-			return fmt.Errorf("error patching IPv6 gate: %w", err)
+			errFinal = errors.Join(errFinal, err)
 		}
 	}
-	return nil
+	return errFinal
 }
 
 // OnStatusUpdate handles per-IP-family connectivity changes with damping.
 // Down transitions are immediate. Up transitions require holdTime to elapse
 // with continuous connectivity before the gate is set to True.
 func (cgm *ConnectivityGateManager) OnStatusUpdate(ctx context.Context, ipv4Connected, ipv6Connected bool) error {
+	var errFinal error
 	if err := cgm.handleGate(ctx, cgm.ipv4Gate, ipv4Connected, &cgm.ipv4UpSince, ReadinessGateIPv4); err != nil {
-		return err
+		errFinal = errors.Join(errFinal, err)
 	}
-	return cgm.handleGate(ctx, cgm.ipv6Gate, ipv6Connected, &cgm.ipv6UpSince, ReadinessGateIPv6)
+	if err := cgm.handleGate(ctx, cgm.ipv6Gate, ipv6Connected, &cgm.ipv6UpSince, ReadinessGateIPv6); err != nil {
+		errFinal = errors.Join(errFinal, err)
+	}
+	return errFinal
 }
 
 func (cgm *ConnectivityGateManager) handleGate(ctx context.Context, gate *bool, connected bool, upSince *time.Time, conditionType string) error {
