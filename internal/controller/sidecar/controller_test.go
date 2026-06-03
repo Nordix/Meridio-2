@@ -79,7 +79,7 @@ func setupController(nl *mockNetlink, objects ...client.Object) (*Controller, cl
 		MaxTableID:  55000,
 		nl:          nl,
 		tableIDs:    newTableIDAllocator(50000, 55000),
-		managedVIPs: make(map[string]map[string]bool),
+		managedVIPs: make(map[string]map[string]struct{}),
 	}, fakeClient
 }
 
@@ -153,8 +153,8 @@ func TestReconcile_ENCNotFound_CleansUpState(t *testing.T) {
 	// Pre-populate state
 	c.tableIDs = newTableIDAllocator(50000, 55000)
 	_, _ = c.tableIDs.allocate("gw-a")
-	c.managedVIPs = map[string]map[string]bool{
-		"net1": {"20.0.0.1": true},
+	c.managedVIPs = map[string]map[string]struct{}{
+		"net1": {"20.0.0.1": struct{}{}},
 	}
 
 	_, err := c.Reconcile(context.Background(), reconcileRequest())
@@ -843,10 +843,13 @@ func TestScanManagedVIPs_FindsVIPsOnSecondaryInterfaces(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, result, 2)
 	assert.Len(t, result["net1"], 2)
-	assert.True(t, result["net1"]["20.0.0.1"])
-	assert.True(t, result["net1"]["20.0.0.2"])
+	_, exists := result["net1"]["20.0.0.1"]
+	assert.True(t, exists)
+	_, exists = result["net1"]["20.0.0.2"]
+	assert.True(t, exists)
 	assert.Len(t, result["net2"], 1)
-	assert.True(t, result["net2"]["2001:db8::1"])
+	_, exists = result["net2"]["2001:db8::1"]
+	assert.True(t, exists)
 }
 
 func TestScanManagedVIPs_IgnoresNonHostAddresses(t *testing.T) {
@@ -860,8 +863,10 @@ func TestScanManagedVIPs_IgnoresNonHostAddresses(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, result["net1"], 1)
-	assert.True(t, result["net1"]["20.0.0.1"])
-	assert.False(t, result["net1"]["192.168.100.10"], "should not include /24 address")
+	_, exists := result["net1"]["20.0.0.1"]
+	assert.True(t, exists)
+	_, exists = result["net1"]["192.168.100.10"]
+	assert.False(t, exists, "should not include /24 address")
 }
 
 func TestScanManagedVIPs_DualStack(t *testing.T) {
@@ -876,8 +881,10 @@ func TestScanManagedVIPs_DualStack(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, result["net1"], 2)
-	assert.True(t, result["net1"]["20.0.0.1"])
-	assert.True(t, result["net1"]["2001:db8::1"])
+	_, exists := result["net1"]["20.0.0.1"]
+	assert.True(t, exists)
+	_, exists = result["net1"]["2001:db8::1"]
+	assert.True(t, exists)
 }
 
 func mustParseCIDR(s string) *net.IPNet {

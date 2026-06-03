@@ -55,7 +55,7 @@ type Controller struct {
 
 	nl          netlinkOps
 	tableIDs    *tableIDAllocator
-	managedVIPs map[string]map[string]bool // interface name → VIP string → true
+	managedVIPs map[string]map[string]struct{} // interface name → VIP string set
 }
 
 // domainState holds the desired network state for a single domain.
@@ -284,7 +284,7 @@ func (c *Controller) cleanupAll(ctx context.Context) {
 		// requeue on partial cleanup failure instead of silently succeeding.
 		_, _ = syncVIPs(c.nl, link, nil, managed)
 	}
-	c.managedVIPs = make(map[string]map[string]bool)
+	c.managedVIPs = make(map[string]map[string]struct{})
 }
 
 func (c *Controller) updateStatus(ctx context.Context, enc *meridio2v1alpha1.EndpointNetworkConfiguration, reconcileErr error) error {
@@ -321,7 +321,7 @@ func (c *Controller) isOwnedByPod(enc *meridio2v1alpha1.EndpointNetworkConfigura
 func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	// Initialize allocator and load persisted mapping before reconciliation starts
 	c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
-	c.managedVIPs = make(map[string]map[string]bool)
+	c.managedVIPs = make(map[string]map[string]struct{})
 
 	setupLog := mgr.GetLogger().WithName("sidecar-setup")
 
