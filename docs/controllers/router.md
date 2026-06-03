@@ -168,7 +168,7 @@ The monitoring goroutine sets per-IP-family Pod readiness gate conditions based 
   - `meridio-2.nordix.org/ipv6-connectivity` — set if IPv6 subnets are configured
 - **Gate lifecycle**:
   1. Router starts → sets all declared gates to `False` (defense-in-depth)
-  2. BGP session established → after hold time (default 10s), sets gate to `True`
+  2. BGP session established → after hold time (default 3s), sets gate to `True`
   3. BGP session drops → sets gate to `False` immediately (no damping)
 - **Damping**: Up transitions are damped (configurable via `--connectivity-hold-time`) to avoid flapping. Down transitions are immediate for fast failure detection.
 - **Gate discovery**: Router reads its own Pod's `spec.readinessGates` to determine which gates to manage. Only manages declared gates.
