@@ -59,7 +59,7 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"Pod namespace (from Downward API)")
 	fs.StringVar(&c.PodUID, "pod-uid", "",
 		"Pod UID (from Downward API)")
-	fs.DurationVar(&c.ConnectivityHoldTime, "connectivity-hold-time", 10*time.Second,
+	fs.DurationVar(&c.ConnectivityHoldTime, "connectivity-hold-time", 3*time.Second,
 		"Hold time before setting connectivity gate to True after BGP session establishes")
 	fs.StringVar(&c.ProbeAddr, "health-probe-bind-address", ":8082",
 		"The address the probe endpoint binds to.")
