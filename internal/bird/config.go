@@ -40,19 +40,23 @@ type birdConfigData struct {
 	IPv6VIPs       []string
 	Routers        []routerData
 	BGPInterfaces  []string
+	BFDInterfaces  []string
 }
 
 type routerData struct {
-	Name       string
-	Interface  string
-	Address    string
-	LocalPort  int
-	RemotePort int
-	LocalASN   uint32
-	RemoteASN  uint32
-	BFD        string
-	HoldTime   string
-	IPFamily   string
+	Name         string
+	Interface    string
+	Address      string
+	LocalPort    int
+	RemotePort   int
+	LocalASN     uint32
+	RemoteASN    uint32
+	BFD          string
+	HoldTime     string
+	IPFamily     string
+	Protocol     string
+	DefaultRoute string
+	BFDEnabled   bool
 }
 
 //nolint:lll
@@ -61,6 +65,12 @@ var birdConfigTmpl = template.Must(template.New("bird.conf").Parse(`{{- range .L
 {{- end}}
 
 protocol device {}
+
+filter default_rt {
+	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
+	if ( net ~ [ 0::/0 ] ) then accept;
+	else reject;
+}
 
 filter gateway_routes {
 	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
@@ -117,7 +127,11 @@ protocol kernel {
 
 protocol bfd {
 	accept direct;
-{{- if .BGPInterfaces}}
+{{- if .BFDInterfaces}}
+{{- range .BFDInterfaces}}
+{{.}}
+{{- end}}
+{{- else if .BGPInterfaces}}
 {{- range .BGPInterfaces}}
 	interface "{{.}}" {};
 {{- end}}
@@ -144,6 +158,15 @@ protocol static VIP6 {
 }
 {{- end}}
 {{- range .Routers}}
+{{- if eq .Protocol "Static"}}
+
+protocol static 'NBR-{{.Name}}' {
+	{{.IPFamily}} {
+		import filter default_rt;
+	};
+	route {{.DefaultRoute}} via {{.Address}}%'{{.Interface}}'{{if .BFDEnabled}} bfd{{end}};
+}
+{{- else}}
 
 protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 	interface "{{.Interface}}";
@@ -157,63 +180,105 @@ protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 	};
 }
 {{- end}}
+{{- end}}
 `))
 
 func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
-	localPort := defaultLocalPort
-	if router.Spec.BGP.LocalPort != nil {
-		localPort = int(*router.Spec.BGP.LocalPort)
-	}
-	remotePort := defaultRemotePort
-	if router.Spec.BGP.RemotePort != nil {
-		remotePort = int(*router.Spec.BGP.RemotePort)
-	}
-
-	holdTime := "90"
-	if router.Spec.BGP.HoldTime != "" {
-		t, err := time.ParseDuration(router.Spec.BGP.HoldTime)
-		if err != nil {
-			return routerData{}, fmt.Errorf("couldn't parse holdTime: %w", err)
-		}
-		holdTime = strconv.Itoa(int(t.Seconds()))
-	}
-
-	bfd := "bfd off;"
-	if router.Spec.BGP.BFD != nil && router.Spec.BGP.BFD.Switch != nil && *router.Spec.BGP.BFD.Switch {
-		bfdConf := ""
-		if router.Spec.BGP.BFD.MinRx != "" {
-			bfdConf += fmt.Sprintf("\t\tmin rx interval %s;\n", router.Spec.BGP.BFD.MinRx)
-		}
-		if router.Spec.BGP.BFD.MinTx != "" {
-			bfdConf += fmt.Sprintf("\t\tmin tx interval %s;\n", router.Spec.BGP.BFD.MinTx)
-		}
-		if router.Spec.BGP.BFD.Multiplier != nil {
-			bfdConf += fmt.Sprintf("\t\tmultiplier %d;\n", *router.Spec.BGP.BFD.Multiplier)
-		}
-		if bfdConf != "" {
-			bfd = fmt.Sprintf("bfd {\n%s\t};", bfdConf)
-		} else {
-			bfd = "bfd on;"
-		}
-	}
-
 	ipFamily := "ipv4"
 	if isIPv6(router.Spec.Address) {
 		ipFamily = "ipv6"
 	}
 
-	return routerData{
-		Name:       router.Name,
-		Interface:  router.Spec.Interface,
-		Address:    router.Spec.Address,
-		LocalPort:  localPort,
-		RemotePort: remotePort,
-		LocalASN:   router.Spec.BGP.LocalASN,
-		RemoteASN:  router.Spec.BGP.RemoteASN,
-		BFD:        bfd,
-		HoldTime:   holdTime,
-		IPFamily:   ipFamily,
-	}, nil
+	rd := routerData{
+		Name:      router.Name,
+		Interface: router.Spec.Interface,
+		Address:   router.Spec.Address,
+		IPFamily:  ipFamily,
+		Protocol:  string(router.Spec.Protocol),
+	}
+
+	if router.Spec.Protocol == meridio2v1alpha1.RoutingProtocolStatic {
+		// Static
+		rd.DefaultRoute = defaultRoute(ipFamily)
+		rd.BFDEnabled = router.Spec.Static != nil &&
+			router.Spec.Static.BFD != nil &&
+			router.Spec.Static.BFD.Switch != nil &&
+			*router.Spec.Static.BFD.Switch
+	} else {
+		// BGP
+		rd.LocalPort = defaultLocalPort
+		if router.Spec.BGP.LocalPort != nil {
+			rd.LocalPort = int(*router.Spec.BGP.LocalPort)
+		}
+		rd.RemotePort = defaultRemotePort
+		if router.Spec.BGP.RemotePort != nil {
+			rd.RemotePort = int(*router.Spec.BGP.RemotePort)
+		}
+		rd.LocalASN = router.Spec.BGP.LocalASN
+		rd.RemoteASN = router.Spec.BGP.RemoteASN
+
+		rd.HoldTime = "90"
+		if router.Spec.BGP.HoldTime != "" {
+			t, err := time.ParseDuration(router.Spec.BGP.HoldTime)
+			if err != nil {
+				return routerData{}, fmt.Errorf("couldn't parse holdTime: %w", err)
+			}
+			rd.HoldTime = strconv.Itoa(int(t.Seconds()))
+		}
+
+		rd.BFD = "bfd off;"
+		if router.Spec.BGP.BFD != nil && router.Spec.BGP.BFD.Switch != nil && *router.Spec.BGP.BFD.Switch {
+			bfdConf := ""
+			if router.Spec.BGP.BFD.MinRx != "" {
+				bfdConf += fmt.Sprintf("\t\tmin rx interval %s;\n", router.Spec.BGP.BFD.MinRx)
+			}
+			if router.Spec.BGP.BFD.MinTx != "" {
+				bfdConf += fmt.Sprintf("\t\tmin tx interval %s;\n", router.Spec.BGP.BFD.MinTx)
+			}
+			if router.Spec.BGP.BFD.Multiplier != nil {
+				bfdConf += fmt.Sprintf("\t\tmultiplier %d;\n", *router.Spec.BGP.BFD.Multiplier)
+			}
+			if bfdConf != "" {
+				rd.BFD = fmt.Sprintf("bfd {\n%s\t};", bfdConf)
+			} else {
+				rd.BFD = "bfd on;"
+			}
+		}
+	}
+
+	return rd, nil
+}
+
+func defaultRoute(ipFamily string) string {
+	if ipFamily == "ipv6" {
+		return "0::/0"
+	}
+	return "0.0.0.0/0"
+}
+
+// bfdInterfaceConfig returns the BFD interface block content
+// for the protocol bfd section. For static routers with BFD timers,
+// it returns the interface with timer parameters.
+func bfdInterfaceConfig(router *meridio2v1alpha1.GatewayRouter) string {
+	if router.Spec.Protocol == meridio2v1alpha1.RoutingProtocolStatic &&
+		router.Spec.Static != nil && router.Spec.Static.BFD != nil &&
+		router.Spec.Static.BFD.Switch != nil && *router.Spec.Static.BFD.Switch {
+		bfd := router.Spec.Static.BFD
+		conf := ""
+		if bfd.MinRx != "" {
+			conf += fmt.Sprintf("\t\tmin rx interval %s;\n", bfd.MinRx)
+		}
+		if bfd.MinTx != "" {
+			conf += fmt.Sprintf("\t\tmin tx interval %s;\n", bfd.MinTx)
+		}
+		if bfd.Multiplier != nil {
+			conf += fmt.Sprintf("\t\tmultiplier %d;\n", *bfd.Multiplier)
+		}
+		if conf != "" {
+			return fmt.Sprintf("\tinterface \"%s\" {\n%s\t};", router.Spec.Interface, conf)
+		}
+	}
+	return ""
 }
 
 func isIPv6(ipOrCIDR string) bool {

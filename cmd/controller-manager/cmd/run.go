@@ -206,6 +206,10 @@ func runManager(cfg *config.ManagerConfig) error {
 			setupLog.Error(err, "unable to create webhook", "webhook", "L34Route")
 			return err
 		}
+		if err = webhookv1alpha1.SetupGatewayRouterWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "GatewayRouter")
+			return err
+		}
 	}
 
 	if err = (&gateway.GatewayReconciler{

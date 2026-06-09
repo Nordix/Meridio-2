@@ -434,6 +434,101 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 	})
 }
 
+func TestReconciler_StaticBFD(t *testing.T) {
+	t.Run("StaticRouter_PassedToBird", func(t *testing.T) {
+		gw := newGateway(testGatewayName, testNamespace, "10.0.0.1")
+		gwRef := gatewayapiv1.ParentReference{
+			Name:      gatewayapiv1.ObjectName(testGatewayName),
+			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+		}
+		router := newGatewayRouter("static-router", gwRef)
+		router.Spec.Protocol = meridio2v1alpha1.RoutingProtocolStatic
+		router.Spec.Address = "169.254.100.1"
+		router.Spec.Interface = "ext0"
+		router.Spec.Static = &meridio2v1alpha1.StaticSpec{
+			BFD: &meridio2v1alpha1.BfdSpec{
+				Switch: ptr(true),
+				MinTx:  "300ms",
+				MinRx:  "300ms",
+			},
+		}
+
+		reconciler, _ := setupReconciler(gw, router)
+		mock := reconciler.Bird.(*mockingBird)
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		_, err := reconciler.Reconcile(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.1"}, mock.configureVIPs)
+		assert.Len(t, mock.configureRouters, 1)
+		assert.Equal(t, meridio2v1alpha1.RoutingProtocolStatic, mock.configureRouters[0].Spec.Protocol)
+		assert.True(t, *mock.configureRouters[0].Spec.Static.BFD.Switch)
+		assert.Equal(t, "300ms", mock.configureRouters[0].Spec.Static.BFD.MinTx)
+	})
+
+	t.Run("StaticRouter_WithoutBFD_PassedToBird", func(t *testing.T) {
+		gw := newGateway(testGatewayName, testNamespace, "10.0.0.1")
+		gwRef := gatewayapiv1.ParentReference{
+			Name:      gatewayapiv1.ObjectName(testGatewayName),
+			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+		}
+		router := newGatewayRouter("static-no-bfd", gwRef)
+		router.Spec.Protocol = meridio2v1alpha1.RoutingProtocolStatic
+		router.Spec.Address = "169.254.100.1"
+		router.Spec.Interface = "ext0"
+		router.Spec.Static = &meridio2v1alpha1.StaticSpec{}
+
+		reconciler, _ := setupReconciler(gw, router)
+		mock := reconciler.Bird.(*mockingBird)
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		_, err := reconciler.Reconcile(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Len(t, mock.configureRouters, 1)
+		assert.Equal(t, meridio2v1alpha1.RoutingProtocolStatic, mock.configureRouters[0].Spec.Protocol)
+	})
+
+	t.Run("MixedBGPAndStatic_AllPassedToBird", func(t *testing.T) {
+		gw := newGateway(testGatewayName, testNamespace, "10.0.0.1")
+		gwRef := gatewayapiv1.ParentReference{
+			Name:      gatewayapiv1.ObjectName(testGatewayName),
+			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+		}
+		bgpRouter := newGatewayRouter("bgp-router", gwRef)
+		bgpRouter.Spec.Protocol = meridio2v1alpha1.RoutingProtocolBGP
+		bgpRouter.Spec.Address = "169.254.100.1"
+		bgpRouter.Spec.Interface = "ext0"
+		bgpRouter.Spec.BGP = meridio2v1alpha1.BgpSpec{
+			RemoteASN: 64512,
+			LocalASN:  64513,
+		}
+
+		staticRouter := newGatewayRouter("static-router", gwRef)
+		staticRouter.Spec.Protocol = meridio2v1alpha1.RoutingProtocolStatic
+		staticRouter.Spec.Address = "169.254.100.2"
+		staticRouter.Spec.Interface = "ext0"
+		staticRouter.Spec.Static = &meridio2v1alpha1.StaticSpec{
+			BFD: &meridio2v1alpha1.BfdSpec{
+				Switch:     ptr(true),
+				MinTx:      "200ms",
+				MinRx:      "200ms",
+				Multiplier: ptr(uint16(3)),
+			},
+		}
+
+		reconciler, _ := setupReconciler(gw, bgpRouter, staticRouter)
+		mock := reconciler.Bird.(*mockingBird)
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		_, err := reconciler.Reconcile(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Len(t, mock.configureRouters, 2)
+	})
+}
+
 func TestWatchLBReadinessDir_ChannelDrop_SelfHeals(t *testing.T) {
 	dir := t.TempDir()
 	// Channel with capacity 1 - fill it to force a drop
