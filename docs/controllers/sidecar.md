@@ -176,9 +176,13 @@ Write a mapping file to an `emptyDir` mount on each reconcile. `emptyDir` surviv
 **4. nftables maps with gateway name hashing:**
 Store `hash(gatewayName) → tableID` in a `mark : mark` nftables map. Avoids the VIP instability problem, but adds hash collision risk and complexity.
 
-No approach has been selected yet. The kernel scan approach (1) is simplest but causes brief disruption. The `emptyDir` approach (3) preserves traffic but relies on filesystem state. A hybrid (persist mapping + surgical diff) would be ideal but adds complexity.
+**Current implementation:** Hybrid approach combining 1 and 3:
+- **Kernel VIP scan** (`scanManagedVIPs`) runs at startup to seed `managedVIPs` from existing /32 and /128 addresses on secondary interfaces. This prevents VIP leaks (Issue 1) by enabling cleanup of stale VIPs even after restart.
+- **emptyDir persistence** (`loadMapping`/`saveMapping`) preserves the `gatewayName → tableID` mapping via `--table-id-mapping-file` (default: `/var/run/meridio/table-id-mapping.json`). This prevents table ID shifts (Issues 2 & 3) by restoring stable mappings across container restarts.
 
-**Status: Not yet implemented.** Required before production use.
+The mapping file is saved after each successful reconcile and loaded at startup. Persistence can be disabled by setting `--table-id-mapping-file=""` (useful for testing or when table ID stability is not required).
+
+**Why hybrid:** Neither approach alone solves all issues. Kernel scan addresses VIP leaks but cannot recover table IDs (no `gatewayName` in kernel state). emptyDir preserves table IDs but cannot discover stale VIPs (file only contains current gateways). Together they provide complete restart recovery without traffic disruption.
 
 ## Error Handling
 
@@ -215,6 +219,7 @@ This tolerance is essential for idempotent reconciliation and makes the controll
 | `--pod-uid` | `POD_UID` | (required) | Pod UID (Downward API) |
 | `--min-table-id` | `MERIDIO_MIN_TABLE_ID` | `50000` | Minimum routing table ID |
 | `--max-table-id` | `MERIDIO_MAX_TABLE_ID` | `55000` | Maximum routing table ID |
+| `--table-id-mapping-file` | `MERIDIO_TABLE_ID_MAPPING_FILE` | `/var/run/meridio/table-id-mapping.json` | Path to persist table ID allocations (empty to disable) |
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8082` | Health probe address |
 | `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` | Metrics endpoint (0 = disabled) |
@@ -813,7 +818,9 @@ internal/controller/sidecar/
 ├── network.go             # findInterfaceBySubnet, syncVIPs, syncRules, syncRoutes, flushTable
 ├── netlink.go             # netlinkOps interface + defaultNetlinkOps (real netlink delegation)
 ├── tableid.go             # tableIDAllocator (gateway name → table ID mapping)
+├── persistence.go         # loadMapping/saveMapping (emptyDir persistence)
 ├── controller_test.go     # Unit tests (Reconcile, status, network functions)
+├── persistence_test.go    # Persistence tests (load/save, round-trip, empty path)
 ├── mock_netlink_test.go   # mockNetlink implementation for testing
 └── tableid_test.go        # Table ID allocator tests
 
