@@ -36,11 +36,6 @@ spec:
             memory: "128Mi"
             cpu: "500m"
         enforceResources: true
-        resizePolicy:
-          - resourceName: cpu
-            restartPolicy: NotRequired
-          - resourceName: memory
-            restartPolicy: RestartContainer
       - name: router
         resources:
           requests:
@@ -50,8 +45,3 @@ spec:
             memory: "128Mi"
             cpu: "500m"
         enforceResources: true
-        resizePolicy:
-          - resourceName: cpu
-            restartPolicy: NotRequired
-          - resourceName: memory
-            restartPolicy: RestartContainer

@@ -14,7 +14,7 @@ The DistributionGroup controller manages EndpointSlices for secondary network en
 - Subnet CIDR (e.g., `192.168.100.0/24`)
 - Attachment type (`NAD` for Multus, `DRA` for Dynamic Resource Allocation)
 
-**Maglev ID**: A stable integer (0-31 by default) assigned to each Pod for consistent hashing. Stored in EndpointSlice's `zone` field as `maglev:<id>`. Scoped per DistributionGroup and per Gateway — the same Pod gets the same ID across all networks (IPv4/IPv6) within a Gateway, but may have different IDs in different DGs.
+**Maglev ID**: A stable integer (0 to maxEndpoints-1) assigned to each Pod for consistent hashing. Stored in EndpointSlice's `zone` field as `maglev:<id>`. Scoped per DistributionGroup and per Gateway — the same Pod gets the same ID across all networks (IPv4/IPv6) within a Gateway, but may have different IDs in different DGs.
 
 **Why shared allocation across networks:** The LoadBalancer uses a single NFQLB hash table per DistributionGroup. This hash table maps identifiers to fwmarks, and fwmarks determine routing tables. If different networks assigned different IDs to the same Pod, the single hash table would have conflicting entries — one Pod's route would overwrite another's, causing non-deterministic routing and cross-Pod identifier collisions. Shared allocation ensures each identifier maps to exactly one Pod across all IP families, and the LB creates per-family routes under the same fwmark (IPv4 and IPv6 routing tables are independent in Linux). See [#70](https://github.com/Nordix/Meridio-2/issues/70) for full problem description and [#106](https://github.com/Nordix/Meridio-2/issues/106) for related cross-component contract considerations.
 

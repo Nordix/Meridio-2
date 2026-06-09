@@ -98,9 +98,9 @@ The network sidecar allocates kernel routing table IDs from the range 50000–55
 
 ## DistributionGroup Controller
 
-**21. Default `maxEndpoints` per DistributionGroup is 32**
+**21. ~~Default `maxEndpoints` per DistributionGroup is 32~~ (Resolved)**
 
-When `DistributionGroup.spec.maglev.maxEndpoints` is not set, the controller defaults to 32 endpoints. This is the current MVP default and may be revised. The equivalent parameter in Meridio v1 (`MaxTargets`) defaulted to 100.
+The CRD-level default for `maxEndpoints` has been removed. When the `maglev` block is specified, `maxEndpoints` must be set explicitly — the API server rejects `maglev: {}` without it. When the entire `maglev` block is omitted (DG defaults to type Maglev), the controller applies the built-in default of 102 (defined by `DefaultMaglevMaxEndpoints` in the API package).
 
 **22. Node failure detection not implemented**
 

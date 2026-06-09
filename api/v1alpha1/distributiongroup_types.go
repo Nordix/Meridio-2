@@ -25,7 +25,8 @@ type DistributionGroupType string
 const (
 	DistributionGroupTypeMaglev DistributionGroupType = "Maglev"
 	// DefaultMaglevMaxEndpoints is the default capacity for Maglev hash table
-	DefaultMaglevMaxEndpoints int32 = 32
+	// when MaglevConfig is omitted from the DistributionGroup spec.
+	DefaultMaglevMaxEndpoints int32 = 102
 )
 
 // ParentReference mirrors Gateway API's ParentReference
@@ -67,7 +68,6 @@ type MaglevConfig struct {
 	//
 	// To change capacity, create a new DistributionGroup with the desired MaxEndpoints.
 	//
-	// +kubebuilder:default=32
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="MaxEndpoints is immutable"
 	MaxEndpoints int32 `json:"maxEndpoints"`

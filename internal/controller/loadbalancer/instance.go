@@ -24,8 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const defaultMaxEndpoints = 32
-
 // reconcileNFQLBInstance creates or retrieves the NFQLB service for a DistributionGroup.
 func (c *Controller) reconcileNFQLBInstance(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
 	logr := log.FromContext(ctx)
@@ -46,7 +44,7 @@ func (c *Controller) reconcileNFQLBInstance(ctx context.Context, distGroup *meri
 	}
 
 	// Get maxEndpoints from spec
-	n := int32(defaultMaxEndpoints)
+	n := meridio2v1alpha1.DefaultMaglevMaxEndpoints
 	if distGroup.Spec.Maglev != nil && distGroup.Spec.Maglev.MaxEndpoints > 0 {
 		n = distGroup.Spec.Maglev.MaxEndpoints
 	}
