@@ -17,7 +17,6 @@ limitations under the License.
 package sidecar
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,47 +33,12 @@ func createTestMappingFile(t *testing.T, content string) string {
 	return testFile
 }
 
-// Helper to load from a custom path
-func loadMappingFrom(path string, a *tableIDAllocator) error {
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var mapping map[string]int
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return err
-	}
-	for gw, id := range mapping {
-		if err := a.restore(gw, id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Helper to save to a custom path
-func saveMappingTo(path string, a *tableIDAllocator) error {
-	mapping := a.snapshot()
-	data, err := json.Marshal(mapping)
-	if err != nil {
-		return err
-	}
-	tmpFile := path + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmpFile, path)
-}
-
 func TestLoadMapping_FileNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "nonexistent.json")
 
 	a := newTableIDAllocator(100, 200)
-	err := loadMappingFrom(testFile, a)
+	err := loadMapping(a, testFile)
 
 	assert.NoError(t, err, "missing file should not be an error")
 	assert.Empty(t, a.snapshot())
@@ -84,7 +48,7 @@ func TestLoadMapping_ValidFile(t *testing.T) {
 	testFile := createTestMappingFile(t, `{"gw-a":100,"gw-b":101}`)
 
 	a := newTableIDAllocator(100, 200)
-	err := loadMappingFrom(testFile, a)
+	err := loadMapping(a, testFile)
 
 	assert.NoError(t, err)
 	snapshot := a.snapshot()
@@ -97,7 +61,7 @@ func TestLoadMapping_CorruptedJSON(t *testing.T) {
 	testFile := createTestMappingFile(t, `{"gw-a":100,invalid json`)
 
 	a := newTableIDAllocator(100, 200)
-	err := loadMappingFrom(testFile, a)
+	err := loadMapping(a, testFile)
 
 	assert.Error(t, err)
 }
@@ -106,7 +70,7 @@ func TestLoadMapping_InvalidTableID(t *testing.T) {
 	testFile := createTestMappingFile(t, `{"gw-a":999}`)
 
 	a := newTableIDAllocator(100, 200)
-	err := loadMappingFrom(testFile, a)
+	err := loadMapping(a, testFile)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "out of range")
@@ -116,9 +80,20 @@ func TestLoadMapping_DuplicateTableID(t *testing.T) {
 	testFile := createTestMappingFile(t, `{"gw-a":100,"gw-b":100}`)
 
 	a := newTableIDAllocator(100, 200)
-	err := loadMappingFrom(testFile, a)
+	err := loadMapping(a, testFile)
 
 	assert.Error(t, err)
+}
+
+func TestLoadMapping_EmptyPath(t *testing.T) {
+	a := newTableIDAllocator(100, 200)
+	_, _ = a.allocate("gw-a")
+
+	err := loadMapping(a, "")
+
+	assert.NoError(t, err, "empty path should be a no-op")
+	// Allocator should be unchanged
+	assert.Len(t, a.snapshot(), 1)
 }
 
 func TestSaveMapping_CreatesFile(t *testing.T) {
@@ -129,7 +104,7 @@ func TestSaveMapping_CreatesFile(t *testing.T) {
 	_, _ = a.allocate("gw-a")
 	_, _ = a.allocate("gw-b")
 
-	err := saveMappingTo(testFile, a)
+	err := saveMapping(a, testFile)
 	assert.NoError(t, err)
 
 	// Verify file exists and is readable
@@ -146,7 +121,7 @@ func TestSaveMapping_AtomicWrite(t *testing.T) {
 	a := newTableIDAllocator(100, 200)
 	_, _ = a.allocate("gw-a")
 
-	err := saveMappingTo(testFile, a)
+	err := saveMapping(a, testFile)
 	require.NoError(t, err)
 
 	// Verify temp file was cleaned up
@@ -161,13 +136,23 @@ func TestSaveMapping_EmptyAllocator(t *testing.T) {
 
 	a := newTableIDAllocator(100, 200)
 
-	err := saveMappingTo(testFile, a)
+	err := saveMapping(a, testFile)
 	assert.NoError(t, err)
 
 	// Verify file contains empty JSON object
 	data, err := os.ReadFile(testFile)
 	require.NoError(t, err)
 	assert.Equal(t, "{}", string(data))
+}
+
+func TestSaveMapping_EmptyPath(t *testing.T) {
+	a := newTableIDAllocator(100, 200)
+	_, _ = a.allocate("gw-a")
+
+	err := saveMapping(a, "")
+
+	assert.NoError(t, err, "empty path should be a no-op")
+	// Verify no file was created (can't really test this without knowing where it would go)
 }
 
 func TestRoundTrip_SaveAndLoad(t *testing.T) {
@@ -181,12 +166,12 @@ func TestRoundTrip_SaveAndLoad(t *testing.T) {
 	_, _ = a1.allocate("gw-c")
 	a1.release("gw-b") // Release one
 
-	err := saveMappingTo(testFile, a1)
+	err := saveMapping(a1, testFile)
 	require.NoError(t, err)
 
 	// Load
 	a2 := newTableIDAllocator(100, 200)
-	err = loadMappingFrom(testFile, a2)
+	err = loadMapping(a2, testFile)
 	require.NoError(t, err)
 
 	// Verify

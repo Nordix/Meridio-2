@@ -47,11 +47,12 @@ import (
 //   - Container capability: NET_ADMIN
 type Controller struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	PodName    string
-	PodUID     string
-	MinTableID int
-	MaxTableID int
+	Scheme      *runtime.Scheme
+	PodName     string
+	PodUID      string
+	MinTableID  int
+	MaxTableID  int
+	mappingFile string
 
 	nl          netlinkOps
 	tableIDs    *tableIDAllocator
@@ -138,7 +139,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Persist table ID mapping after successful configuration
-	if err := saveMapping(c.tableIDs); err != nil {
+	if err := saveMapping(c.tableIDs, c.mappingFile); err != nil {
 		log.Error(err, "failed to save table ID mapping")
 		// Non-fatal: continue with status update
 	}
@@ -318,7 +319,10 @@ func (c *Controller) isOwnedByPod(enc *meridio2v1alpha1.EndpointNetworkConfigura
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
+func (c *Controller) SetupWithManager(mgr ctrl.Manager, cfg interface{ GetTableIDMappingFile() string }) error {
+	// Store mapping file path from config
+	c.mappingFile = cfg.GetTableIDMappingFile()
+
 	// Initialize allocator and load persisted mapping before reconciliation starts
 	c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
 	c.managedVIPs = make(map[string]map[string]struct{})
@@ -326,10 +330,10 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	setupLog := mgr.GetLogger().WithName("sidecar-setup")
 
 	// Load persisted table ID mapping
-	if err := loadMapping(c.tableIDs); err != nil {
+	if err := loadMapping(c.tableIDs, c.mappingFile); err != nil {
 		// Log warning but continue - reconcile will rebuild state from ENC
 		setupLog.Error(err, "failed to load table ID mapping, starting fresh")
-	} else {
+	} else if c.mappingFile != "" {
 		mapping := c.tableIDs.snapshot()
 		if len(mapping) > 0 {
 			setupLog.Info("loaded table ID mapping from file", "gateways", len(mapping))

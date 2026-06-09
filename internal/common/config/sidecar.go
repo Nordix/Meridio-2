@@ -22,19 +22,20 @@ import (
 
 // SidecarConfig holds configuration for the network sidecar
 type SidecarConfig struct {
-	PodName         string
-	PodNamespace    string
-	PodUID          string
-	ProbeAddr       string
-	LogLevel        string
-	MinTableID      int
-	MaxTableID      int
-	MetricsAddr     string
-	SecureMetrics   bool
-	MetricsCertPath string
-	MetricsCertName string
-	MetricsCertKey  string
-	EnableHTTP2     bool
+	PodName            string
+	PodNamespace       string
+	PodUID             string
+	ProbeAddr          string
+	LogLevel           string
+	MinTableID         int
+	MaxTableID         int
+	TableIDMappingFile string
+	MetricsAddr        string
+	SecureMetrics      bool
+	MetricsCertPath    string
+	MetricsCertName    string
+	MetricsCertKey     string
+	EnableHTTP2        bool
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -53,6 +54,8 @@ func (c *SidecarConfig) AddFlags(fs *pflag.FlagSet) {
 		"Minimum routing table ID for source-based routing")
 	fs.IntVar(&c.MaxTableID, "max-table-id", 55000,
 		"Maximum routing table ID for source-based routing")
+	fs.StringVar(&c.TableIDMappingFile, "table-id-mapping-file", "/var/run/meridio/table-id-mapping.json",
+		"Path to persist table ID allocations (empty to disable)")
 	fs.StringVar(&c.MetricsAddr, "metrics-bind-address", "0",
 		"The address the metrics endpoint binds to. "+
 			"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -78,10 +81,16 @@ func (c *SidecarConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindInt(fs, "min-table-id", "MERIDIO_MIN_TABLE_ID", &c.MinTableID)
 	bindInt(fs, "max-table-id", "MERIDIO_MAX_TABLE_ID", &c.MaxTableID)
+	bindString(fs, "table-id-mapping-file", "MERIDIO_TABLE_ID_MAPPING_FILE", &c.TableIDMappingFile)
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
+}
+
+// GetTableIDMappingFile returns the table ID mapping file path.
+func (c *SidecarConfig) GetTableIDMappingFile() string {
+	return c.TableIDMappingFile
 }

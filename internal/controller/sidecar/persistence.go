@@ -17,10 +17,14 @@ limitations under the License.
 // Package sidecar implements the network sidecar controller.
 //
 // Restart Recovery:
-// The controller persists table ID mappings to /var/run/meridio/table-id-mapping.json
-// (emptyDir volume) to prevent table ID shifts across container restarts. On startup,
-// it also scans the kernel for existing VIPs (/32 and /128 addresses on secondary
-// interfaces) to enable cleanup of stale VIPs even if the mapping file is lost.
+// The controller can persist table ID mappings to an emptyDir volume to prevent
+// table ID shifts across container restarts. The path is configurable via
+// --table-id-mapping-file (default: /var/run/meridio/table-id-mapping.json).
+// Set to empty string to disable persistence.
+//
+// On startup, it also scans the kernel for existing VIPs (/32 and /128 addresses
+// on secondary interfaces) to enable cleanup of stale VIPs even if the mapping
+// file is lost or persistence is disabled.
 package sidecar
 
 import (
@@ -29,13 +33,16 @@ import (
 	"os"
 )
 
-const mappingFile = "/var/run/meridio/table-id-mapping.json"
-
 // loadMapping reads the persisted table ID mapping and seeds the allocator.
+// If path is empty, persistence is disabled and this is a no-op.
 // Returns nil if file doesn't exist (first run).
 // Returns error if file is corrupted or contains invalid data.
-func loadMapping(allocator *tableIDAllocator) error {
-	data, err := os.ReadFile(mappingFile)
+func loadMapping(allocator *tableIDAllocator, path string) error {
+	if path == "" {
+		return nil // Persistence disabled
+	}
+
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil // First run, no file yet
 	}
@@ -59,8 +66,13 @@ func loadMapping(allocator *tableIDAllocator) error {
 }
 
 // saveMapping writes the current allocator state to disk atomically.
+// If path is empty, persistence is disabled and this is a no-op.
 // Non-fatal errors are returned but should not stop reconciliation.
-func saveMapping(allocator *tableIDAllocator) error {
+func saveMapping(allocator *tableIDAllocator, path string) error {
+	if path == "" {
+		return nil // Persistence disabled
+	}
+
 	mapping := allocator.snapshot()
 	data, err := json.Marshal(mapping)
 	if err != nil {
@@ -68,12 +80,12 @@ func saveMapping(allocator *tableIDAllocator) error {
 	}
 
 	// Atomic write: write to temp file, then rename
-	tmpFile := mappingFile + ".tmp"
+	tmpFile := path + ".tmp"
 	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
-	if err := os.Rename(tmpFile, mappingFile); err != nil {
+	if err := os.Rename(tmpFile, path); err != nil {
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
