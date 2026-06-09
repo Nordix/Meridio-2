@@ -73,7 +73,6 @@ spec:
                   conditional defaults.
                 properties:
                   maxEndpoints:
-                    default: 32
                     description: |-
                       MaxEndpoints is the table capacity. This field is immutable after creation.
 
