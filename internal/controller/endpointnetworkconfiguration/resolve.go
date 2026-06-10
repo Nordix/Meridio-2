@@ -41,6 +41,9 @@ const (
 	kindDistributionGroup    = "DistributionGroup"
 	labelGatewayName         = "gateway.networking.k8s.io/gateway-name"
 	attachmentTypeNAD        = "NAD"
+	// Readiness gate condition types (to be consolidated to shared package)
+	readinessGateIPv4 = "meridio-2.nordix.org/ipv4-connectivity"
+	readinessGateIPv6 = "meridio-2.nordix.org/ipv6-connectivity"
 )
 
 // resolveGatewayConnections determines which Gateways a Pod participates in
@@ -248,6 +251,10 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 		if pod.Status.Phase != corev1.PodRunning {
 			continue
 		}
+		// Level 1: container readiness (all non-init containers must be Ready)
+		if !isLBPodReady(&pod) {
+			continue
+		}
 		for cidr, attachmentType := range subnetToType {
 			ip := scraper(&pod, cidr, attachmentType)
 			if ip == "" {
@@ -257,10 +264,15 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 			if parsed == nil {
 				continue
 			}
+			// Level 2: per-IP-family gate check
 			if parsed.To4() != nil {
-				ipv4 = append(ipv4, ip)
+				if hasConnectivityGate(&pod, readinessGateIPv4) {
+					ipv4 = append(ipv4, ip)
+				}
 			} else {
-				ipv6 = append(ipv6, ip)
+				if hasConnectivityGate(&pod, readinessGateIPv6) {
+					ipv6 = append(ipv6, ip)
+				}
 			}
 		}
 	}
