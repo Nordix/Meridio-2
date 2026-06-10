@@ -346,6 +346,95 @@ func TestReconcileLBDeployment(t *testing.T) {
 		var permErr *permanentDeploymentError
 		assert.True(t, errors.As(err, &permErr))
 	})
+
+	t.Run("SetsReadinessGates_DualStack", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		gwConfig.Spec.InternalSubnets = []meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "NAD", CIDR: "192.168.100.0/24"},
+			{AttachmentType: "NAD", CIDR: "2001:db8:100::/64"},
+		}
+		attachGatewayConfiguration(gw, gwConfig)
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
+
+		err := reconciler.reconcileLBDeployment(context.Background(), gw, gwConfig, template)
+		assert.NoError(t, err)
+
+		var deployment appsv1.Deployment
+		err = fakeClient.Get(context.Background(), client.ObjectKey{
+			Namespace: gw.Namespace, Name: "sllb-" + gw.Name,
+		}, &deployment)
+		assert.NoError(t, err)
+		assert.Equal(t, []corev1.PodReadinessGate{
+			{ConditionType: ReadinessGateIPv4},
+			{ConditionType: ReadinessGateIPv6},
+		}, deployment.Spec.Template.Spec.ReadinessGates)
+	})
+
+	t.Run("SetsReadinessGates_IPv4Only", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		gwConfig.Spec.InternalSubnets = []meridio2v1alpha1.InternalSubnet{
+			{AttachmentType: "NAD", CIDR: "192.168.100.0/24"},
+		}
+		attachGatewayConfiguration(gw, gwConfig)
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
+
+		err := reconciler.reconcileLBDeployment(context.Background(), gw, gwConfig, template)
+		assert.NoError(t, err)
+
+		var deployment appsv1.Deployment
+		err = fakeClient.Get(context.Background(), client.ObjectKey{
+			Namespace: gw.Namespace, Name: "sllb-" + gw.Name,
+		}, &deployment)
+		assert.NoError(t, err)
+		assert.Equal(t, []corev1.PodReadinessGate{
+			{ConditionType: ReadinessGateIPv4},
+		}, deployment.Spec.Template.Spec.ReadinessGates)
+	})
+
+	t.Run("InjectsRouterPodIdentityEnvVars", func(t *testing.T) {
+		templateWithRouter := template.DeepCopy()
+		templateWithRouter.Spec.Template.Spec.Containers = append(
+			templateWithRouter.Spec.Template.Spec.Containers,
+			corev1.Container{Name: "router", Image: "registry.nordix.org/cloud-native/meridio-2/router:latest"},
+		)
+
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		attachGatewayConfiguration(gw, gwConfig)
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
+
+		err := reconciler.reconcileLBDeployment(context.Background(), gw, gwConfig, templateWithRouter)
+		assert.NoError(t, err)
+
+		var deployment appsv1.Deployment
+		err = fakeClient.Get(context.Background(), client.ObjectKey{
+			Namespace: gw.Namespace, Name: "sllb-" + gw.Name,
+		}, &deployment)
+		assert.NoError(t, err)
+
+		// Find router container
+		var router *corev1.Container
+		for i := range deployment.Spec.Template.Spec.Containers {
+			if deployment.Spec.Template.Spec.Containers[i].Name == "router" {
+				router = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		assert.NotNil(t, router)
+
+		envMap := make(map[string]corev1.EnvVar)
+		for _, env := range router.Env {
+			envMap[env.Name] = env
+		}
+		assert.Equal(t, "metadata.name", envMap["POD_NAME"].ValueFrom.FieldRef.FieldPath)
+		assert.Equal(t, "metadata.namespace", envMap["POD_NAMESPACE"].ValueFrom.FieldRef.FieldPath)
+		assert.Equal(t, "metadata.uid", envMap["POD_UID"].ValueFrom.FieldRef.FieldPath)
+	})
 }
 
 func TestInjectGatewayEnvVars(t *testing.T) {
@@ -1025,5 +1114,217 @@ func TestNetworkAttachmentsEqual(t *testing.T) {
 		a := []*netdefv1.NetworkSelectionElement{{Name: "nad1", Namespace: "ns1", InterfaceRequest: "net1"}}
 		b := []*netdefv1.NetworkSelectionElement{{Name: "nad2", Namespace: "ns1", InterfaceRequest: "net1"}}
 		assert.False(t, networkAttachmentsEqual(a, b, "default"))
+	})
+}
+func TestIPFamiliesFromInternalSubnets(t *testing.T) {
+	tests := []struct {
+		name     string
+		subnets  []meridio2v1alpha1.InternalSubnet
+		wantIPv4 bool
+		wantIPv6 bool
+	}{
+		{
+			name: "IPv4 only",
+			subnets: []meridio2v1alpha1.InternalSubnet{
+				{CIDR: "192.168.100.0/24"},
+			},
+			wantIPv4: true, wantIPv6: false,
+		},
+		{
+			name: "IPv6 only",
+			subnets: []meridio2v1alpha1.InternalSubnet{
+				{CIDR: "2001:db8:100::/64"},
+			},
+			wantIPv4: false, wantIPv6: true,
+		},
+		{
+			name: "Dual-stack (separate subnets)",
+			subnets: []meridio2v1alpha1.InternalSubnet{
+				{CIDR: "192.168.100.0/24"},
+				{CIDR: "2001:db8:100::/64"},
+			},
+			wantIPv4: true, wantIPv6: true,
+		},
+		{
+			name: "Multiple IPv4 subnets",
+			subnets: []meridio2v1alpha1.InternalSubnet{
+				{CIDR: "192.168.100.0/24"},
+				{CIDR: "10.0.0.0/16"},
+			},
+			wantIPv4: true, wantIPv6: false,
+		},
+		{
+			name:     "Empty subnets",
+			subnets:  []meridio2v1alpha1.InternalSubnet{},
+			wantIPv4: false, wantIPv6: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hasIPv4, hasIPv6 := ipFamiliesFromInternalSubnets(tt.subnets)
+			assert.Equal(t, tt.wantIPv4, hasIPv4)
+			assert.Equal(t, tt.wantIPv6, hasIPv6)
+		})
+	}
+}
+
+func TestApplyReadinessGates(t *testing.T) {
+	tests := []struct {
+		name          string
+		gwConfig      *meridio2v1alpha1.GatewayConfiguration
+		expectedGates []corev1.PodReadinessGate
+	}{
+		{
+			name: "IPv4 only - single gate",
+			gwConfig: gwConfigWithSubnets([]meridio2v1alpha1.InternalSubnet{
+				{CIDR: "192.168.100.0/24"},
+			}),
+			expectedGates: []corev1.PodReadinessGate{
+				{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+			},
+		},
+		{
+			name: "IPv6 only - single gate",
+			gwConfig: gwConfigWithSubnets([]meridio2v1alpha1.InternalSubnet{
+				{CIDR: "2001:db8:100::/64"},
+			}),
+			expectedGates: []corev1.PodReadinessGate{
+				{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+			},
+		},
+		{
+			name: "Dual-stack - both gates",
+			gwConfig: gwConfigWithSubnets([]meridio2v1alpha1.InternalSubnet{
+				{CIDR: "192.168.100.0/24"},
+				{CIDR: "2001:db8:100::/64"},
+			}),
+			expectedGates: []corev1.PodReadinessGate{
+				{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+			},
+		},
+		{
+			name: "Replaces existing stale readiness gates",
+			gwConfig: gwConfigWithSubnets([]meridio2v1alpha1.InternalSubnet{
+				{CIDR: "192.168.100.0/24"},
+			}),
+			expectedGates: []corev1.PodReadinessGate{
+				{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{Name: "loadbalancer"}},
+						},
+					},
+				},
+			}
+			if tt.name == "Replaces existing stale readiness gates" {
+				deployment.Spec.Template.Spec.ReadinessGates = []corev1.PodReadinessGate{
+					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+				}
+			}
+			applyReadinessGates(deployment, tt.gwConfig)
+			assert.Equal(t, tt.expectedGates, deployment.Spec.Template.Spec.ReadinessGates)
+		})
+	}
+}
+
+// Helper to create a GatewayConfiguration with specified subnets for testing
+func gwConfigWithSubnets(subnets []meridio2v1alpha1.InternalSubnet) *meridio2v1alpha1.GatewayConfiguration {
+	return &meridio2v1alpha1.GatewayConfiguration{
+		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
+			InternalSubnets: subnets,
+		},
+	}
+}
+
+func TestInjectRouterPodIdentityEnvVars(t *testing.T) {
+	fieldRefEnv := func(name, fieldPath string) corev1.EnvVar {
+		return corev1.EnvVar{
+			Name: name,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: fieldPath},
+			},
+		}
+	}
+
+	t.Run("InjectsPodNameNamespaceAndUID", func(t *testing.T) {
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "loadbalancer"},
+							{Name: "router", Env: []corev1.EnvVar{
+								{Name: "MERIDIO_GATEWAY_NAME", Value: "gw1"},
+							}},
+						},
+					},
+				},
+			},
+		}
+
+		injectRouterPodIdentityEnvVars(deployment)
+
+		router := deployment.Spec.Template.Spec.Containers[1]
+		assert.Contains(t, router.Env, fieldRefEnv("POD_NAME", "metadata.name"))
+		assert.Contains(t, router.Env, fieldRefEnv("POD_NAMESPACE", "metadata.namespace"))
+		assert.Contains(t, router.Env, fieldRefEnv("POD_UID", "metadata.uid"))
+	})
+
+	t.Run("NoRouterContainer_NoOp", func(t *testing.T) {
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "loadbalancer"},
+						},
+					},
+				},
+			},
+		}
+
+		injectRouterPodIdentityEnvVars(deployment) // should not panic
+
+		assert.Len(t, deployment.Spec.Template.Spec.Containers[0].Env, 0)
+	})
+
+	t.Run("AlreadyHasEnvVars_Idempotent", func(t *testing.T) {
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "router", Env: []corev1.EnvVar{
+								fieldRefEnv("POD_NAME", "metadata.name"),
+								fieldRefEnv("POD_NAMESPACE", "metadata.namespace"),
+								fieldRefEnv("POD_UID", "metadata.uid"),
+							}},
+						},
+					},
+				},
+			},
+		}
+
+		injectRouterPodIdentityEnvVars(deployment)
+		injectRouterPodIdentityEnvVars(deployment)
+
+		router := deployment.Spec.Template.Spec.Containers[0]
+		// Count occurrences — should be exactly one of each
+		count := 0
+		for _, env := range router.Env {
+			if env.Name == "POD_NAME" || env.Name == "POD_NAMESPACE" || env.Name == "POD_UID" {
+				count++
+			}
+		}
+		assert.Equal(t, 3, count)
 	})
 }
