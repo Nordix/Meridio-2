@@ -262,8 +262,12 @@ func monitorConnectivity(
 				// Rebuild family map on every tick — reads from informer cache (no API call)
 				// and BuildFamilyMap is a trivial loop. Handles GatewayRouter add/remove/replace.
 				routers, err := getGatewayRoutersFromCache(ctx, mgr.GetClient(), cfg.GatewayName, cfg.GatewayNamespace)
-				if err == nil && len(routers) > 0 {
-					ipv4, ipv6 := router.ClassifyConnectivityByFamily(status.Protocols, router.BuildFamilyMap(routers))
+				if err == nil {
+					var ipv4, ipv6 bool
+					if len(routers) > 0 {
+						ipv4, ipv6 = router.ClassifyConnectivityByFamily(status.Protocols, router.BuildFamilyMap(routers))
+					}
+					// When no routers exist, ipv4/ipv6 stay false — gates set to False
 					if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
 						log.Error(err, "failed to update readiness gates")
 					}

@@ -214,6 +214,12 @@ func (cgm *ConnectivityGateManager) handleGate(ctx context.Context, gate *bool, 
 		return nil // Already True, no pending write
 	}
 
+	// Note: if gate is True on API but dirty (failed False write), and connectivity
+	// recovers, the hold timer runs but the gate never went False on the API.
+	// This bypasses damping for one cycle. Acceptable: the LB has connectivity
+	// (it recovered), traffic is safe, and the scenario requires both a failed API
+	// write AND immediate recovery within one tick — extremely narrow window.
+
 	// Start hold timer if not already started
 	now := time.Now()
 	if upSince.IsZero() {
