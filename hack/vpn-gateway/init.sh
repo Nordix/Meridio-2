@@ -45,8 +45,18 @@ ip link set vlan7 up
 ip addr add 169.254.50.150/24 dev vlan7
 ip addr add 200.50.0.100/32 dev vlan7
 
+# VLAN 800 — tcp-ao gw-b1
+ip link add link eth0 name vlan8 type vlan id 800
+ip link set vlan8 up
+ip addr add 169.254.103.150/24 dev vlan8
+
+# VLAN 900 — tcp-ao gw-b2
+ip link add link eth0 name vlan9 type vlan id 900
+ip link set vlan9 up
+ip addr add 169.254.203.150/24 dev vlan9
+
 ethtool -K eth0 tx off
 
-echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700"
+echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700, 800, 900"
 
 /usr/sbin/bird -d -c /etc/bird/bird-gw.conf

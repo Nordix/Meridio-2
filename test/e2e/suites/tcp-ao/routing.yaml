@@ -1,0 +1,110 @@
+---
+# Secret containing TCP-AO master keys
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bgp-tcpao-secret
+type: Opaque
+stringData:
+  master-key-1: "my-secure-master-key-string"
+  master-key-2: "my-new-master-key-for-rotation"
+---
+# gw-b1 router (VLAN 800, ASN 64520)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-b1-router-v4
+spec:
+  gatewayRef:
+    name: gw-b1
+  interface: "vlan-800"
+  address: "169.254.103.150"
+  bgp:
+    localASN: 64520
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    authentication:
+      keychain:
+        - keyId: 1
+          rNextKeyId: 1
+          algorithm: hmac-sha-256
+          secretName: bgp-tcpao-secret
+          secretKey: master-key-1
+      currentKeyId: 1
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-b1
+spec:
+  parentRefs:
+  - name: gw-b1
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-b1
+  destinationCIDRs:
+  - "30.0.0.1/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100
+---
+# gw-b2 router (VLAN 900, ASN 64521)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-b2-router-v4
+spec:
+  gatewayRef:
+    name: gw-b2
+  interface: "vlan-900"
+  address: "169.254.203.150"
+  bgp:
+    localASN: 64521
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    authentication:
+      keychain:
+        - keyId: 1
+          rNextKeyId: 1
+          algorithm: hmac-sha-256
+          secretName: bgp-tcpao-secret
+          secretKey: master-key-1
+      currentKeyId: 1
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-b2
+spec:
+  parentRefs:
+  - name: gw-b2
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-b2
+  destinationCIDRs:
+  - "30.0.0.2/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100

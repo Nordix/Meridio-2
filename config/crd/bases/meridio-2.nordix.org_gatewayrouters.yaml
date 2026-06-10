@@ -51,6 +51,60 @@ spec:
                   If the Protocol is bgp, the minimal parameters to be defined in bgp properties
                   are RemoteASN and LocalASN
                 properties:
+                  authentication:
+                    description: BGP authentication with TCP Authentication Option
+                      (RFC5925).
+                    properties:
+                      currentKeyId:
+                        description: CurrentKeyId specifies the active key ID for
+                          sending.
+                        type: integer
+                      keychain:
+                        description: KeyChain defines the list of TCP-AO keys for
+                          authentication and rotation.
+                        items:
+                          description: TcpAoKeyChain defines a single TCP-AO key configuration.
+                          properties:
+                            algorithm:
+                              description: |-
+                                Algorithm specifies the cryptographic algorithm.
+                                Valid values: "hmac-sha-1", "hmac-sha-256", "cmac-aes-128"
+                              enum:
+                              - hmac-sha-1
+                              - hmac-sha-256
+                              - cmac-aes-128
+                              type: string
+                            keyId:
+                              description: KeyId is the Send_ID for this key (0-255).
+                              type: integer
+                            rNextKeyId:
+                              description: RNextKeyId is the Recv_ID for this key
+                                (0-255).
+                              type: integer
+                            secretKey:
+                              description: SecretKey is the key in the Secret's data
+                                section containing the master key value.
+                              minLength: 1
+                              type: string
+                            secretName:
+                              description: SecretName is the name of the Kubernetes
+                                Secret containing the master key.
+                              minLength: 1
+                              type: string
+                          required:
+                          - algorithm
+                          - keyId
+                          - rNextKeyId
+                          - secretKey
+                          - secretName
+                          type: object
+                        minItems: 1
+                        type: array
+                      nextKeyId:
+                        description: NextKeyId specifies the key ID to use for key
+                          rotation.
+                        type: integer
+                    type: object
                   bfd:
                     description: BFD monitoring of BGP session.
                     properties:

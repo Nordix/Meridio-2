@@ -71,6 +71,7 @@ jobs:
           - separate-appnetwork
           - sctp-multihoming
           - low-mtu
+          - tcp-ao
         k8s_version:
           - v1.32.2
           - v1.31.6

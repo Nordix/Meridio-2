@@ -74,6 +74,10 @@ type BgpSpec struct {
 	// BGP listening port of the Attractor FrontEnds.
 	// +optional
 	LocalPort *uint16 `json:"localPort,omitempty"`
+
+	// BGP authentication with TCP Authentication Option (RFC5925).
+	// +optional
+	Authentication *BgpTcpAoSpec `json:"authentication,omitempty"`
 }
 
 type BfdSpec struct {
@@ -101,6 +105,46 @@ type BfdSpec struct {
 	// When this number of bfd packets failed to receive, bfd session will go down.
 	// +optional
 	Multiplier *uint16 `json:"multiplier,omitempty"`
+}
+
+// BgpTcpAo defines the parameters to configure TCP Authentication Option (RFC5925).
+type BgpTcpAoSpec struct {
+	// KeyChain defines the list of TCP-AO keys for authentication and rotation.
+	// +kubebuilder:validation:MinItems=1
+	// +optional
+	Keychain []TcpAoKeyChain `json:"keychain,omitempty"`
+
+	// CurrentKeyId specifies the active key ID for sending.
+	// TODO: Implement in BIRD config generation (all keys currently marked preferred)
+	// +optional
+	CurrentKeyId *uint8 `json:"currentKeyId,omitempty"`
+
+	// NextKeyId specifies the key ID to use for key rotation.
+	// TODO: Implement in BIRD config generation (all keys currently marked preferred)
+	// +optional
+	NextKeyId *uint8 `json:"nextKeyId,omitempty"`
+}
+
+// TcpAoKeyChain defines a single TCP-AO key configuration.
+type TcpAoKeyChain struct {
+	// KeyId is the Send_ID for this key (0-255).
+	KeyId uint8 `json:"keyId"`
+
+	// RNextKeyId is the Recv_ID for this key (0-255).
+	RNextKeyId uint8 `json:"rNextKeyId"`
+
+	// Algorithm specifies the cryptographic algorithm.
+	// Valid values: "hmac-sha-1", "hmac-sha-256", "cmac-aes-128"
+	// +kubebuilder:validation:Enum=hmac-sha-1;hmac-sha-256;cmac-aes-128
+	Algorithm string `json:"algorithm"`
+
+	// SecretName is the name of the Kubernetes Secret containing the master key.
+	// +kubebuilder:validation:MinLength=1
+	SecretName string `json:"secretName"`
+
+	// SecretKey is the key in the Secret's data section containing the master key value.
+	// +kubebuilder:validation:MinLength=1
+	SecretKey string `json:"secretKey"`
 }
 
 // GatewayRouterStatus defines the observed state of GatewayRouter.
