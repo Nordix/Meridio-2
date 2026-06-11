@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/go-logr/logr"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/vishvananda/netlink"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -318,44 +319,40 @@ func (c *Controller) isOwnedByPod(enc *meridio2v1alpha1.EndpointNetworkConfigura
 	return false
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (c *Controller) SetupWithManager(mgr ctrl.Manager, cfg interface{ GetTableIDMappingFile() string }) error {
-	// Store mapping file path from config
-	c.mappingFile = cfg.GetTableIDMappingFile()
-
-	// Initialize allocator and load persisted mapping before reconciliation starts
+// recoverState initializes allocator and managedVIPs, restoring from persisted
+// mapping and kernel state. Logs warnings on partial recovery but continues.
+func (c *Controller) recoverState(log logr.Logger) {
 	c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
 	c.managedVIPs = make(map[string]map[string]struct{})
 
-	setupLog := mgr.GetLogger().WithName("sidecar-setup")
-
 	// Load persisted table ID mapping
 	if err := loadMapping(c.tableIDs, c.mappingFile); err != nil {
-		// Log warning but continue - reconcile will rebuild state from ENC
-		setupLog.Error(err, "failed to load table ID mapping, starting fresh")
-	} else if c.mappingFile != "" {
-		mapping := c.tableIDs.snapshot()
-		if len(mapping) > 0 {
-			setupLog.Info("loaded table ID mapping from file", "gateways", len(mapping))
-		} else {
-			setupLog.Info("no persisted table ID mapping found (first run or clean state)")
-		}
+		log.Error(err, "failed to load table ID mapping, starting fresh")
+	} else if len(c.tableIDs.snapshot()) > 0 {
+		log.Info("loaded table ID mapping from file", "gateways", len(c.tableIDs.snapshot()))
 	}
 
-	// Scan kernel for existing VIPs to seed managedVIPs (prevents VIP leak on restart)
+	// Scan kernel for existing VIPs
 	nl := &netlink.Handle{}
-	if scannedVIPs, err := scanManagedVIPs(nl); err != nil {
-		setupLog.Error(err, "failed to scan existing VIPs, starting fresh")
-	} else {
-		c.managedVIPs = scannedVIPs
-		totalVIPs := 0
-		for _, vips := range scannedVIPs {
-			totalVIPs += len(vips)
-		}
-		if totalVIPs > 0 {
-			setupLog.Info("scanned existing VIPs from kernel", "interfaces", len(scannedVIPs), "vips", totalVIPs)
-		}
+	scannedVIPs, err := scanManagedVIPs(nl)
+	if err != nil {
+		log.Error(err, "failed to scan existing VIPs, starting fresh")
+		return
 	}
+	c.managedVIPs = scannedVIPs
+	totalVIPs := 0
+	for _, vips := range scannedVIPs {
+		totalVIPs += len(vips)
+	}
+	if totalVIPs > 0 {
+		log.Info("scanned existing VIPs from kernel", "interfaces", len(scannedVIPs), "vips", totalVIPs)
+	}
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (c *Controller) SetupWithManager(mgr ctrl.Manager, cfg interface{ GetTableIDMappingFile() string }) error {
+	c.mappingFile = cfg.GetTableIDMappingFile()
+	c.recoverState(mgr.GetLogger().WithName("sidecar-setup"))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.EndpointNetworkConfiguration{}).
