@@ -27,6 +27,7 @@ import (
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -41,9 +42,6 @@ const (
 	kindDistributionGroup    = "DistributionGroup"
 	labelGatewayName         = "gateway.networking.k8s.io/gateway-name"
 	attachmentTypeNAD        = "NAD"
-	// Readiness gate condition types (to be consolidated to shared package)
-	readinessGateIPv4 = "meridio-2.nordix.org/ipv4-connectivity"
-	readinessGateIPv6 = "meridio-2.nordix.org/ipv6-connectivity"
 )
 
 // resolveGatewayConnections determines which Gateways a Pod participates in
@@ -266,11 +264,11 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 			}
 			// Level 2: per-IP-family gate check
 			if parsed.To4() != nil {
-				if hasConnectivityGate(&pod, readinessGateIPv4) {
+				if hasConnectivityGate(&pod, constants.ReadinessGateIPv4) {
 					ipv4 = append(ipv4, ip)
 				}
 			} else {
-				if hasConnectivityGate(&pod, readinessGateIPv6) {
+				if hasConnectivityGate(&pod, constants.ReadinessGateIPv6) {
 					ipv6 = append(ipv6, ip)
 				}
 			}
