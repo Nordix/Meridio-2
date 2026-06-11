@@ -26,6 +26,7 @@ import (
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -517,13 +518,13 @@ func applyReadinessGates(deployment *appsv1.Deployment, gatewayConfig *meridio2v
 
 	if hasIPv4 {
 		gates = append(gates, corev1.PodReadinessGate{
-			ConditionType: ReadinessGateIPv4,
+			ConditionType: constants.ReadinessGateIPv4,
 		})
 	}
 
 	if hasIPv6 {
 		gates = append(gates, corev1.PodReadinessGate{
-			ConditionType: ReadinessGateIPv6,
+			ConditionType: constants.ReadinessGateIPv6,
 		})
 	}
 

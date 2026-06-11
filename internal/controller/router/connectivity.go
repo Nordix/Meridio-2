@@ -24,6 +24,7 @@ import (
 	"time"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,17 +76,17 @@ func (cgm *ConnectivityGateManager) DiscoverGates(ctx context.Context) error {
 
 	for _, gate := range pod.Spec.ReadinessGates {
 		switch gate.ConditionType {
-		case ReadinessGateIPv4:
+		case constants.ReadinessGateIPv4:
 			cgm.ipv4Gate = new(bool)
 			for _, c := range pod.Status.Conditions {
-				if string(c.Type) == ReadinessGateIPv4 {
+				if string(c.Type) == constants.ReadinessGateIPv4 {
 					*cgm.ipv4Gate = c.Status == corev1.ConditionTrue
 				}
 			}
-		case ReadinessGateIPv6:
+		case constants.ReadinessGateIPv6:
 			cgm.ipv6Gate = new(bool)
 			for _, c := range pod.Status.Conditions {
-				if string(c.Type) == ReadinessGateIPv6 {
+				if string(c.Type) == constants.ReadinessGateIPv6 {
 					*cgm.ipv6Gate = c.Status == corev1.ConditionTrue
 				}
 			}
@@ -162,12 +163,12 @@ func (cgm *ConnectivityGateManager) patchGateCondition(ctx context.Context, cond
 func (cgm *ConnectivityGateManager) SetAllGatesFalse(ctx context.Context) error {
 	var errFinal error
 	if cgm.ipv4Gate != nil {
-		if err := cgm.patchGateCondition(ctx, ReadinessGateIPv4, false); err != nil {
+		if err := cgm.patchGateCondition(ctx, constants.ReadinessGateIPv4, false); err != nil {
 			errFinal = errors.Join(errFinal, err)
 		}
 	}
 	if cgm.ipv6Gate != nil {
-		if err := cgm.patchGateCondition(ctx, ReadinessGateIPv6, false); err != nil {
+		if err := cgm.patchGateCondition(ctx, constants.ReadinessGateIPv6, false); err != nil {
 			errFinal = errors.Join(errFinal, err)
 		}
 	}
@@ -179,10 +180,10 @@ func (cgm *ConnectivityGateManager) SetAllGatesFalse(ctx context.Context) error 
 // with continuous connectivity before the gate is set to True.
 func (cgm *ConnectivityGateManager) OnStatusUpdate(ctx context.Context, ipv4Connected, ipv6Connected bool) error {
 	var errFinal error
-	if err := cgm.handleGate(ctx, cgm.ipv4Gate, ipv4Connected, &cgm.ipv4UpSince, ReadinessGateIPv4); err != nil {
+	if err := cgm.handleGate(ctx, cgm.ipv4Gate, ipv4Connected, &cgm.ipv4UpSince, constants.ReadinessGateIPv4); err != nil {
 		errFinal = errors.Join(errFinal, err)
 	}
-	if err := cgm.handleGate(ctx, cgm.ipv6Gate, ipv6Connected, &cgm.ipv6UpSince, ReadinessGateIPv6); err != nil {
+	if err := cgm.handleGate(ctx, cgm.ipv6Gate, ipv6Connected, &cgm.ipv6UpSince, constants.ReadinessGateIPv6); err != nil {
 		errFinal = errors.Join(errFinal, err)
 	}
 	return errFinal
@@ -241,7 +242,7 @@ func (cgm *ConnectivityGateManager) handleGate(ctx context.Context, gate *bool, 
 }
 
 func (cgm *ConnectivityGateManager) getDirty(conditionType string) *bool {
-	if conditionType == ReadinessGateIPv4 {
+	if conditionType == constants.ReadinessGateIPv4 {
 		return &cgm.ipv4Dirty
 	}
 	return &cgm.ipv6Dirty
