@@ -325,6 +325,11 @@ func (c *Controller) recoverState(log logr.Logger) {
 	c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
 	c.managedVIPs = make(map[string]map[string]struct{})
 
+	// Initialize netlink handle if not already set (test hook)
+	if c.nl == nil {
+		c.nl = &netlink.Handle{}
+	}
+
 	// Load persisted table ID mapping
 	if err := loadMapping(c.tableIDs, c.mappingFile); err != nil {
 		log.Error(err, "failed to load table ID mapping, starting fresh")
@@ -333,8 +338,7 @@ func (c *Controller) recoverState(log logr.Logger) {
 	}
 
 	// Scan kernel for existing VIPs
-	nl := &netlink.Handle{}
-	scannedVIPs, err := scanManagedVIPs(nl)
+	scannedVIPs, err := scanManagedVIPs(c.nl)
 	if err != nil {
 		log.Error(err, "failed to scan existing VIPs, starting fresh")
 		return

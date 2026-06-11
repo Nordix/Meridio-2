@@ -115,9 +115,9 @@ The manager's cache is configured to watch only the single ENC matching the Pod 
 
 **ObservedGeneration:** Tracks which ENC generation was processed
 
-## Known Limitations: Restart Recovery
+## Restart Recovery
 
-The controller keeps `tableIDs`, `managedVIPs`, and `nl` in memory. On restart (Pod restart, OOM kill, node reboot), all in-memory state is lost. The first reconcile after restart re-initializes these as empty, which causes several issues:
+The controller keeps `tableIDs`, `managedVIPs`, and `nl` in memory. On restart (Pod restart, OOM kill, node reboot), this in-memory state is lost. If the first reconcile after restart re-initializes these as empty (no recovery mechanism), several issues can occur:
 
 ### Issues
 
@@ -131,11 +131,11 @@ Note: VIP re-add after restart is not an issue — `syncVIPs` tolerates `EEXIST`
 
 #### Issue 1: VIP leak
 
-`managedVIPs` is empty after restart, so VIPs from a previous run that are no longer desired are never removed — `syncVIPs` only removes VIPs within its managed set.
+Without recovery, `managedVIPs` would be empty after restart, so VIPs from a previous run that are no longer desired would never be removed — `syncVIPs` only removes VIPs within its managed set.
 
 #### Issues 2 & 3: Orphaned routes and rules on table ID shift
 
-Both share the same root cause: after restart the `tableIDAllocator` has no memory of previously-used table IDs, so tables from a previous run that aren't re-allocated become invisible orphans.
+Both share the same root cause: without recovery, the `tableIDAllocator` after restart has no memory of previously-used table IDs, so tables from a previous run that aren't re-allocated become invisible orphans.
 
 **Concrete scenario:**
 
@@ -145,16 +145,16 @@ Before restart:
 - Kernel: table 50000 has gw-a routes/rules, table 50001 has gw-b routes/rules
 
 After restart, `gw-a` is removed from the ENC:
-- Allocator starts fresh: `gw-b → 50000` (first and only allocation)
+- Without recovery, allocator starts fresh: `gw-b → 50000` (first and only allocation)
 - Controller writes gw-b's routes into table 50000 via `RouteReplace`, overwriting gw-a's old routes — this is fine
 - But table 50001 (gw-b's old table) is never allocated to any gateway
 - `flushTable` only runs for gateways removed from the *current* ENC spec, and the allocator doesn't know 50001 was ever used
 - `syncRules` only scans rules matching its own `tableID`, so rules pointing to 50001 are never cleaned
 - Result: table 50001 retains stale routes and rules indefinitely
 
-Table ID shift is a latent condition that builds up during normal operation through gateway add/remove cycles, but only manifests after a restart. For example: `gw-c → 50000`, `gw-d → 50001` are added first, then `gw-a → 50002`, `gw-b → 50003`. Later `gw-c` and `gw-d` are removed (properly cleaned, IDs 50000-50001 freed). Running state is now `gw-a → 50002`, `gw-b → 50003` — correct while the process is alive. After restart, the fresh allocator assigns `gw-a → 50000`, `gw-b → 50001`. Tables 50002 and 50003 are now orphaned with stale routes and rules.
+Table ID shift is a latent condition that builds up during normal operation through gateway add/remove cycles, but only manifests after a restart. For example: `gw-c → 50000`, `gw-d → 50001` are added first, then `gw-a → 50002`, `gw-b → 50003`. Later `gw-c` and `gw-d` are removed (properly cleaned, IDs 50000-50001 freed). Running state is now `gw-a → 50002`, `gw-b → 50003` — correct while the process is alive. After restart without recovery, the fresh allocator assigns `gw-a → 50000`, `gw-b → 50001`. Tables 50002 and 50003 are now orphaned with stale routes and rules.
 
-A simpler variant: the gateway set shrinks while the sidecar is down (e.g. `gw-b` removed from the ENC during a restart). The running sidecar would have cleaned table 50001 via the stale gateway path, but since it wasn't running, the cleanup never happened. After restart, only `gw-a → 50000` is allocated — table 50001 retains gw-b's old routes and rules with no code path to reach it.
+A simpler variant: the gateway set shrinks while the sidecar is down (e.g. `gw-b` removed from the ENC during a restart). The running sidecar would have cleaned table 50001 via the stale gateway path, but since it wasn't running, the cleanup never happened. After restart without recovery, only `gw-a → 50000` is allocated — table 50001 retains gw-b's old routes and rules with no code path to reach it.
 
 Note: a pure ID swap (same gateways, different assignment) is self-healing — `RouteReplace` overwrites old routes and `syncRules` cleans stale rules in all actively-allocated tables. The problem is only with *unallocated* tables that no gateway claims.
 
@@ -182,7 +182,7 @@ Store `hash(gatewayName) → tableID` in a `mark : mark` nftables map. Avoids th
 
 The mapping file is saved after each successful reconcile and loaded at startup. Persistence can be disabled by setting `--table-id-mapping-file=""` (useful for testing or when table ID stability is not required).
 
-**Why hybrid:** Neither approach alone solves all issues. Kernel scan addresses VIP leaks but cannot recover table IDs (no `gatewayName` in kernel state). emptyDir preserves table IDs but cannot discover stale VIPs (file only contains current gateways). Together they provide complete restart recovery without traffic disruption.
+**Why hybrid:** Neither approach alone solves all issues. Kernel scan addresses VIP leaks but cannot recover table IDs (no `gatewayName` in kernel state). emptyDir preserves table IDs but cannot discover stale VIPs (file only contains current gateways). Together they can provide restart recovery without traffic disruption.
 
 ## Error Handling
 

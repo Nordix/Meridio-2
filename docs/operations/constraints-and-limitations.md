@@ -84,9 +84,9 @@ BFD source ports comply with the IANA-approved range (49152–65535) per RFC 588
 
 ## Sidecar Controller
 
-**18. No sidecar restart recovery**
+**18. ~~No sidecar restart recovery~~ (Resolved)**
 
-All in-memory state (`tableIDs`, `managedVIPs`) is lost on sidecar container restart. This causes VIP leaks (old VIPs not removed from the interface) and orphaned routing rules/tables when table IDs are reallocated differently after restart. Restarting the sidecar container/process is not recommended.
+The sidecar implements restart recovery via hybrid approach: emptyDir persistence for table ID mappings and kernel VIP scanning. Primary issues (table ID shifts, VIP leaks on in-scope interfaces, orphaned routes/rules) are resolved. Some edge cases remain (VIP cleanup for removed-gateway exclusive interfaces). See [Sidecar Controller docs](../controllers/sidecar.md#restart-recovery) for details.
 
 **19. Sidecar policy routing rule priority not configurable** *(architectural constraint)*
 

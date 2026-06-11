@@ -84,10 +84,9 @@ func (a *tableIDAllocator) activeGateways() map[string]int {
 }
 
 // snapshot returns the current gateway → tableID mapping for persistence.
+// Delegates to activeGateways to avoid duplication.
 func (a *tableIDAllocator) snapshot() map[string]int {
-	result := make(map[string]int, len(a.assigned))
-	maps.Copy(result, a.assigned)
-	return result
+	return a.activeGateways()
 }
 
 // restore seeds the allocator with a saved mapping. Validates table IDs are in range.
