@@ -54,9 +54,11 @@ The LB controller assigns fwmarks and routing table IDs dynamically per Distribu
 
 The router now gates VIP advertisement on LB readiness. The collocated LB controller writes `lb-ready-<distGroupName>` files to a shared directory when a DistributionGroup has ready targets. The router watches this directory via fsnotify and suppresses VIPs until at least one readiness file exists. Configurable via `--readiness-dir` / `MERIDIO_READINESS_DIR` (default: `/var/run/meridio`).
 
-**11. No connectivity-based readiness signaling to the controller-manager** *(partially resolved)*
+**11. ~~No connectivity-based readiness signaling to the controller-manager~~ (Resolved)**
 
-The router now sets per-IP-family Pod readiness gates (`meridio-2.nordix.org/ipv4-connectivity`, `meridio-2.nordix.org/ipv6-connectivity`) based on BGP session state (PR #142). However, the ENC controller does not yet consume these gates to filter next-hop lists (gh-123). Until step 3 is implemented, application Pods may still route return traffic through an LB that has lost external connectivity.
+~~The router now sets per-IP-family Pod readiness gates (`meridio-2.nordix.org/ipv4-connectivity`, `meridio-2.nordix.org/ipv6-connectivity`) based on BGP session state (PR #142). However, the ENC controller does not yet consume these gates to filter next-hop lists (gh-123). Until step 3 is implemented, application Pods may still route return traffic through an LB that has lost external connectivity.~~
+
+The full three-step solution is now implemented: the gateway controller declares readiness gates (PR #125), the router sets gate conditions based on BGP state with damped transitions (PR #142), and the ENC controller filters next-hops using two-level checks — container readiness plus per-IP-family gate conditions (PR #155).
 
 **12. BIRD error propagation missing**
 
