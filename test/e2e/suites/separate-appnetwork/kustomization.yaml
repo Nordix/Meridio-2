@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: e2e-separate-appnet
+namespace: e2e-separate-appnetwork
 
 resources:
 - ../../../../config/default
@@ -11,11 +11,11 @@ images:
   newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
   newTag: latest
 
-nameSuffix: -separate-appnet
+nameSuffix: -separate-appnetwork
 
 labels:
 - pairs:
-    e2e-suite: separate-appnet
+    e2e-suite: separate-appnetwork
 
 patches:
 - patch: |-
@@ -24,24 +24,24 @@ patches:
     metadata:
       name: not-important
       annotations:
-        cert-manager.io/inject-ca-from: e2e-separate-appnet/meridio-2-serving-cert-separate-appnet
+        cert-manager.io/inject-ca-from: e2e-separate-appnetwork/meridio-2-serving-cert-separate-appnet
     webhooks:
     - name: vl34route-v1alpha1.kb.io
       namespaceSelector:
         matchLabels:
-          e2e-suite: separate-appnet
+          e2e-suite: separate-appnetwork
       clientConfig:
         service:
           name: meridio-2-webhook-service-separate-appnet
-          namespace: e2e-separate-appnet
+          namespace: e2e-separate-appnetwork
   target:
     kind: ValidatingWebhookConfiguration
 - patch: |-
     - op: replace
       path: /spec/dnsNames
       value:
-      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnet.svc
-      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnet.svc.cluster.local
+      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnetwork.svc
+      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnetwork.svc.cluster.local
     - op: replace
       path: /spec/secretName
       value: webhook-server-cert-separate-appnet

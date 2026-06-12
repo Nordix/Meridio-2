@@ -2,6 +2,7 @@
 
 sysctl -w net.ipv4.fib_multipath_hash_policy=1
 sysctl -w net.ipv4.conf.all.forwarding=1
+sysctl -w net.ipv6.conf.all.forwarding=1
 
 # VLAN 100 — separate-appnetwork gw-a1
 ip link add link eth0 name vlan1 type vlan id 100
