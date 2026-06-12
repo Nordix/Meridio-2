@@ -193,7 +193,7 @@ common-appnetwork: deploy-common-appnetwork test-common-appnetwork ## Deploy and
 
 .PHONY: deploy-common-appnetwork
 deploy-common-appnetwork: cluster ## Deploy common-appnetwork topology.
-	$(call deploy-suite,e2e-common-appnet,$(shell pwd)/suites/common-appnetwork,common-appnet,sllb-gw-b1 sllb-gw-b2)
+	$(call deploy-suite,e2e-common-appnetwork,$(shell pwd)/suites/common-appnetwork,common-appnetwork,sllb-gw-b1 sllb-gw-b2)
 
 .PHONY: test-common-appnetwork
 test-common-appnetwork: ## Run e2e tests for common-appnetwork suite.
@@ -201,8 +201,8 @@ test-common-appnetwork: ## Run e2e tests for common-appnetwork suite.
 
 .PHONY: undeploy-common-appnetwork
 undeploy-common-appnetwork: ## Undeploy common-appnetwork topology.
-	@NS=e2e-common-appnet; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-common-appnet --ignore-not-found=true; \
+	@NS=e2e-common-appnetwork; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-common-appnetwork --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
@@ -214,7 +214,7 @@ separate-appnetwork: deploy-separate-appnetwork test-separate-appnetwork ## Depl
 
 .PHONY: deploy-separate-appnetwork
 deploy-separate-appnetwork: cluster ## Deploy separate-appnetwork topology.
-	$(call deploy-suite,e2e-separate-appnet,$(shell pwd)/suites/separate-appnetwork,separate-appnet,sllb-gw-a1 sllb-gw-a2)
+	$(call deploy-suite,e2e-separate-appnetwork,$(shell pwd)/suites/separate-appnetwork,separate-appnetwork,sllb-gw-a1 sllb-gw-a2)
 
 .PHONY: test-separate-appnetwork
 test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
@@ -222,8 +222,8 @@ test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
 
 .PHONY: undeploy-separate-appnetwork
 undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
-	@NS=e2e-separate-appnet; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet --ignore-not-found=true; \
+	@NS=e2e-separate-appnetwork; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnetwork --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
@@ -266,6 +266,27 @@ test-low-mtu: ## Run e2e tests for low-mtu suite.
 undeploy-low-mtu: ## Undeploy low-mtu topology.
 	@NS=e2e-low-mtu; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-low-mtu --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
+##@ Suite: dual-stack
+################################################################################
+
+.PHONY: dual-stack
+dual-stack: deploy-dual-stack test-dual-stack ## Deploy and test dual-stack suite.
+
+.PHONY: deploy-dual-stack
+deploy-dual-stack: cluster ## Deploy dual-stack topology.
+	$(call deploy-suite,e2e-dual-stack,$(shell pwd)/suites/dual-stack,dual-stack,sllb-gw-ds)
+
+.PHONY: test-dual-stack
+test-dual-stack: ## Run e2e tests for dual-stack suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Dual Stack" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-dual-stack
+undeploy-dual-stack: ## Undeploy dual-stack topology.
+	@NS=e2e-dual-stack; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################

@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: e2e-common-appnet
+namespace: e2e-common-appnetwork
 
 resources:
 - ../../../../config/default
@@ -11,11 +11,11 @@ images:
   newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
   newTag: latest
 
-nameSuffix: -common-appnet
+nameSuffix: -common-appnetwork
 
 labels:
 - pairs:
-    e2e-suite: common-appnet
+    e2e-suite: common-appnetwork
 
 patches:
 - patch: |-
@@ -24,24 +24,24 @@ patches:
     metadata:
       name: not-important
       annotations:
-        cert-manager.io/inject-ca-from: e2e-common-appnet/meridio-2-serving-cert-common-appnet
+        cert-manager.io/inject-ca-from: e2e-common-appnetwork/meridio-2-serving-cert-common-appnet
     webhooks:
     - name: vl34route-v1alpha1.kb.io
       namespaceSelector:
         matchLabels:
-          e2e-suite: common-appnet
+          e2e-suite: common-appnetwork
       clientConfig:
         service:
           name: meridio-2-webhook-service-common-appnet
-          namespace: e2e-common-appnet
+          namespace: e2e-common-appnetwork
   target:
     kind: ValidatingWebhookConfiguration
 - patch: |-
     - op: replace
       path: /spec/dnsNames
       value:
-      - meridio-2-webhook-service-common-appnet.e2e-common-appnet.svc
-      - meridio-2-webhook-service-common-appnet.e2e-common-appnet.svc.cluster.local
+      - meridio-2-webhook-service-common-appnet.e2e-common-appnetwork.svc
+      - meridio-2-webhook-service-common-appnet.e2e-common-appnetwork.svc.cluster.local
     - op: replace
       path: /spec/secretName
       value: webhook-server-cert-common-appnet

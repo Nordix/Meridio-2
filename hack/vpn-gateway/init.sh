@@ -2,6 +2,7 @@
 
 sysctl -w net.ipv4.fib_multipath_hash_policy=1
 sysctl -w net.ipv4.conf.all.forwarding=1
+sysctl -w net.ipv6.conf.all.forwarding=1
 
 # VLAN 100 — separate-appnetwork gw-a1
 ip link add link eth0 name vlan1 type vlan id 100
@@ -45,8 +46,15 @@ ip link set vlan7 up
 ip addr add 169.254.50.150/24 dev vlan7
 ip addr add 200.50.0.100/32 dev vlan7
 
+# VLAN 800 — dual-stack gw-ds
+ip link add link eth0 name vlan8 type vlan id 800
+ip link set vlan8 up
+ip addr add 169.254.103.150/24 dev vlan8
+ip addr add fd00:cafe:800::150/64 dev vlan8
+ip addr add 200.100.0.103/32 dev vlan8
+
 ethtool -K eth0 tx off
 
-echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700"
+echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700, 800"
 
 /usr/sbin/bird -d -c /etc/bird/bird-gw.conf

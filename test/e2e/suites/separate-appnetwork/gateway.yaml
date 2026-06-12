@@ -25,17 +25,17 @@ spec:
   - type: NAD
     nad:
       name: sysctl-tuning
-      namespace: e2e-separate-appnet
+      namespace: e2e-separate-appnetwork
       interface: dummy
   - type: NAD
     nad:
       name: vlan-100
-      namespace: e2e-separate-appnet
+      namespace: e2e-separate-appnetwork
       interface: vlan-100
   - type: NAD
     nad:
       name: app-net-a1
-      namespace: e2e-separate-appnet
+      namespace: e2e-separate-appnetwork
       interface: net-a1
   internalSubnets:
   - attachmentType: NAD
@@ -69,17 +69,17 @@ spec:
   - type: NAD
     nad:
       name: sysctl-tuning
-      namespace: e2e-separate-appnet
+      namespace: e2e-separate-appnetwork
       interface: dummy
   - type: NAD
     nad:
       name: vlan-200
-      namespace: e2e-separate-appnet
+      namespace: e2e-separate-appnetwork
       interface: vlan-200
   - type: NAD
     nad:
       name: app-net-a2
-      namespace: e2e-separate-appnet
+      namespace: e2e-separate-appnetwork
       interface: net-a2
   internalSubnets:
   - attachmentType: NAD
