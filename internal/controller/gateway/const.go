@@ -42,8 +42,4 @@ const (
 	labelGatewayName = "gateway.networking.k8s.io/gateway-name"
 	labelManagedBy   = "app.kubernetes.io/managed-by"
 	managedByValue   = "gateway-controller.meridio-2.nordix.org"
-
-	// Readiness gates for external connectivity - used by LB Deployment pods to signal connectivity status
-	ReadinessGateIPv4 = "meridio-2.nordix.org/ipv4-connectivity"
-	ReadinessGateIPv6 = "meridio-2.nordix.org/ipv6-connectivity"
 )

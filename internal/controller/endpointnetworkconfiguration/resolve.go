@@ -25,6 +25,7 @@ import (
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -236,6 +237,10 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 		if pod.Status.Phase != corev1.PodRunning {
 			continue
 		}
+		// Level 1: container readiness (all non-init containers must be Ready)
+		if !isLBPodReady(&pod) {
+			continue
+		}
 		for cidr, attachmentType := range subnetToType {
 			ip := scraper(&pod, cidr, attachmentType)
 			if ip == "" {
@@ -245,10 +250,15 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 			if parsed == nil {
 				continue
 			}
+			// Level 2: per-IP-family gate check
 			if parsed.To4() != nil {
-				ipv4 = append(ipv4, ip)
+				if hasConnectivityGate(&pod, constants.ReadinessGateIPv4) {
+					ipv4 = append(ipv4, ip)
+				}
 			} else {
-				ipv6 = append(ipv6, ip)
+				if hasConnectivityGate(&pod, constants.ReadinessGateIPv6) {
+					ipv6 = append(ipv6, ip)
+				}
 			}
 		}
 	}
@@ -471,4 +481,44 @@ func scrapeInterfaceForSubnet(pod *corev1.Pod, cidr string) string {
 		}
 	}
 	return ""
+}
+
+// isLBPodReady(pod) bool - checks all non-init container statuses are Ready. Returns false if any container is not ready or if Pod is being deleted.
+func isLBPodReady(pod *corev1.Pod) bool {
+	if pod.DeletionTimestamp != nil {
+		return false
+	}
+	oneReady := false
+	for _, cs := range pod.Status.ContainerStatuses {
+		if !cs.Ready {
+			return false
+		} else { // At least one container is ready
+			oneReady = true
+		}
+	}
+	return oneReady
+}
+
+// hasConnectivityGate - Checks if a specific readiness gate condition is True on the Pod.
+func hasConnectivityGate(pod *corev1.Pod, conditionType string) bool {
+	// Check if the gate is declared in the Pod spec
+	gateDeclared := false
+	for _, gate := range pod.Spec.ReadinessGates {
+		if string(gate.ConditionType) == conditionType {
+			gateDeclared = true
+			break
+		}
+	}
+	// gate not applicable for this IP family: if gate not declared, include the Pod (skip filtering)
+	if !gateDeclared {
+		return true
+	}
+	// Check if the condition is True in the Pod status
+	for _, condition := range pod.Status.Conditions {
+		if string(condition.Type) == conditionType {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	// Gate declared but condition not found - treat as not ready
+	return false
 }

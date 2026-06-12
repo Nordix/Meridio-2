@@ -175,6 +175,10 @@ The monitoring goroutine sets per-IP-family Pod readiness gate conditions based 
 - **Per-IP-family independence**: IPv4 and IPv6 gates are managed independently with separate hold timers.
 - **Configuration**: Requires `POD_NAME`, `POD_NAMESPACE`, `POD_UID` environment variables (Downward API, injected by Gateway controller in LB Deployment template).
 - **RBAC**: Requires `pods/get` + `pods/status/update` (configured in `config/rbac/lb-serviceaccount.yaml`).
+- **Downstream consumer**: The ENC controller uses these gate conditions to filter LB Pods from next-hop lists via two-level filtering:
+  1. Container readiness — all containers must be Ready and Pod not being deleted
+  2. Per-IP-family gate — `ipv4-connectivity=True` required for IPv4 next-hops, `ipv6-connectivity=True` for IPv6
+  If a gate is not declared for a specific IP family (e.g., IPv4-only Gateway), the Pod is included for that family (gate not applicable).
 
 ### Metrics and Route Monitoring (post-MVP)
 

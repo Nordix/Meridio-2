@@ -23,6 +23,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/bird"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -252,7 +253,7 @@ func TestPatchGateCondition(t *testing.T) {
 			Build()
 
 		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 10*time.Second)
-		err := mgr.patchGateCondition(context.Background(), ReadinessGateIPv4, true)
+		err := mgr.patchGateCondition(context.Background(), constants.ReadinessGateIPv4, true)
 		assert.NoError(t, err)
 
 		// Verify condition was set
@@ -262,7 +263,7 @@ func TestPatchGateCondition(t *testing.T) {
 
 		var found bool
 		for _, c := range updated.Status.Conditions {
-			if c.Type == corev1.PodConditionType(ReadinessGateIPv4) {
+			if c.Type == corev1.PodConditionType(constants.ReadinessGateIPv4) {
 				assert.Equal(t, corev1.ConditionTrue, c.Status)
 				found = true
 			}
@@ -285,7 +286,7 @@ func TestPatchGateCondition(t *testing.T) {
 			Build()
 
 		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 10*time.Second)
-		err := mgr.patchGateCondition(context.Background(), ReadinessGateIPv6, false)
+		err := mgr.patchGateCondition(context.Background(), constants.ReadinessGateIPv6, false)
 		assert.NoError(t, err)
 
 		updated := &corev1.Pod{}
@@ -294,7 +295,7 @@ func TestPatchGateCondition(t *testing.T) {
 
 		var found bool
 		for _, c := range updated.Status.Conditions {
-			if c.Type == corev1.PodConditionType(ReadinessGateIPv6) {
+			if c.Type == corev1.PodConditionType(constants.ReadinessGateIPv6) {
 				assert.Equal(t, corev1.ConditionFalse, c.Status)
 				found = true
 			}
@@ -313,7 +314,7 @@ func TestPatchGateCondition(t *testing.T) {
 			Status: corev1.PodStatus{
 				Conditions: []corev1.PodCondition{
 					{
-						Type:   corev1.PodConditionType(ReadinessGateIPv4),
+						Type:   corev1.PodConditionType(constants.ReadinessGateIPv4),
 						Status: corev1.ConditionFalse,
 					},
 				},
@@ -325,7 +326,7 @@ func TestPatchGateCondition(t *testing.T) {
 			Build()
 
 		mgr := NewConnectivityGateManager(fakeClient, "test-pod", "default", "uid-1", 10*time.Second)
-		err := mgr.patchGateCondition(context.Background(), ReadinessGateIPv4, true)
+		err := mgr.patchGateCondition(context.Background(), constants.ReadinessGateIPv4, true)
 		assert.NoError(t, err)
 
 		updated := &corev1.Pod{}
@@ -333,7 +334,7 @@ func TestPatchGateCondition(t *testing.T) {
 		assert.NoError(t, err)
 
 		for _, c := range updated.Status.Conditions {
-			if c.Type == corev1.PodConditionType(ReadinessGateIPv4) {
+			if c.Type == corev1.PodConditionType(constants.ReadinessGateIPv4) {
 				assert.Equal(t, corev1.ConditionTrue, c.Status)
 			}
 		}
@@ -491,7 +492,7 @@ func TestDamping(t *testing.T) {
 		updated := &corev1.Pod{}
 		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
 		for _, c := range updated.Status.Conditions {
-			if string(c.Type) == ReadinessGateIPv4 {
+			if string(c.Type) == constants.ReadinessGateIPv4 {
 				assert.Equal(t, corev1.ConditionTrue, c.Status, "gate should be True before drop")
 			}
 		}
@@ -502,7 +503,7 @@ func TestDamping(t *testing.T) {
 
 		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
 		for _, c := range updated.Status.Conditions {
-			if string(c.Type) == ReadinessGateIPv4 {
+			if string(c.Type) == constants.ReadinessGateIPv4 {
 				assert.Equal(t, corev1.ConditionFalse, c.Status, "gate should be False immediately on down (no damping)")
 			}
 		}
@@ -533,7 +534,7 @@ func TestDamping(t *testing.T) {
 		updated := &corev1.Pod{}
 		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
 		for _, c := range updated.Status.Conditions {
-			if string(c.Type) == ReadinessGateIPv4 {
+			if string(c.Type) == constants.ReadinessGateIPv4 {
 				assert.Equal(t, corev1.ConditionFalse, c.Status, "gate should still be False during hold time")
 			}
 		}
@@ -547,7 +548,7 @@ func TestDamping(t *testing.T) {
 
 		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
 		for _, c := range updated.Status.Conditions {
-			if string(c.Type) == ReadinessGateIPv4 {
+			if string(c.Type) == constants.ReadinessGateIPv4 {
 				assert.Equal(t, corev1.ConditionTrue, c.Status, "gate should be True after hold time")
 			}
 		}
@@ -585,7 +586,7 @@ func TestDamping(t *testing.T) {
 		updated := &corev1.Pod{}
 		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
 		for _, c := range updated.Status.Conditions {
-			if string(c.Type) == ReadinessGateIPv4 {
+			if string(c.Type) == constants.ReadinessGateIPv4 {
 				assert.Equal(t, corev1.ConditionFalse, c.Status, "gate should remain False after flap")
 			}
 		}
@@ -640,6 +641,6 @@ func TestDamping(t *testing.T) {
 		updated := &corev1.Pod{}
 		_ = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-pod", Namespace: "default"}, updated)
 		assert.Len(t, updated.Status.Conditions, 1)
-		assert.Equal(t, corev1.PodConditionType(ReadinessGateIPv4), updated.Status.Conditions[0].Type)
+		assert.Equal(t, corev1.PodConditionType(constants.ReadinessGateIPv4), updated.Status.Conditions[0].Type)
 	})
 }
