@@ -1,0 +1,66 @@
+---
+# IPv4 router (VLAN 800, ASN 64519)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-ds-router-v4
+spec:
+  gatewayRef:
+    name: gw-ds
+  interface: "vlan-800"
+  address: "169.254.103.150"
+  bgp:
+    localASN: 64519
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+# IPv6 router (VLAN 800, ASN 64519)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-ds-router-v6
+spec:
+  gatewayRef:
+    name: gw-ds
+  interface: "vlan-800"
+  address: "fd00:cafe:800::150"
+  bgp:
+    localASN: 64519
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+# L34Route with both IPv4 and IPv6 VIPs
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-ds
+spec:
+  parentRefs:
+  - name: gw-ds
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-ds
+  destinationCIDRs:
+  - "60.0.0.1/32"
+  - "fd00:cafe:1::1/128"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100

@@ -1,0 +1,45 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-ds
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-ds
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-ds
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-dual-stack
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-800
+      namespace: e2e-dual-stack
+      interface: vlan-800
+  - type: NAD
+    nad:
+      name: app-net-ds
+      namespace: e2e-dual-stack
+      interface: net-ds
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.103.0/24"
+  - attachmentType: NAD
+    cidr: "fd00:cafe:103::/64"
+  horizontalScaling:
+    replicas: 2
