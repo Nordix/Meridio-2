@@ -82,3 +82,33 @@ func (a *tableIDAllocator) activeGateways() map[string]int {
 	maps.Copy(result, a.assigned)
 	return result
 }
+
+// snapshot returns the current gateway → tableID mapping for persistence.
+// Delegates to activeGateways to avoid duplication.
+func (a *tableIDAllocator) snapshot() map[string]int {
+	return a.activeGateways()
+}
+
+// restore seeds the allocator with a saved mapping. Validates table IDs are in range.
+// Returns error if any table ID is out of range or if there are duplicate IDs.
+func (a *tableIDAllocator) restore(gatewayName string, tableID int) error {
+	if tableID < a.minID || tableID > a.maxID {
+		return fmt.Errorf("table ID %d for gateway %s is out of range [%d, %d]", tableID, gatewayName, a.minID, a.maxID)
+	}
+
+	// Check for duplicate table IDs
+	for gw, id := range a.assigned {
+		if id == tableID {
+			return fmt.Errorf("table ID %d already assigned to gateway %s, cannot assign to %s", tableID, gw, gatewayName)
+		}
+	}
+
+	a.assigned[gatewayName] = tableID
+
+	// Update nextID to avoid reusing restored IDs
+	if tableID >= a.nextID {
+		a.nextID = tableID + 1
+	}
+
+	return nil
+}

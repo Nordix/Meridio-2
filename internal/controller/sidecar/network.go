@@ -85,25 +85,63 @@ func interfaceMatchesSubnet(nl netlinkOps, link netlink.Link, subnet *net.IPNet)
 	return false
 }
 
+// scanManagedVIPs scans all secondary interfaces for /32 and /128 addresses.
+// Returns map[interfaceName]map[vipString]true for seeding managedVIPs on startup.
+// Excludes primary interface (lo, eth0) to avoid touching cluster networking.
+func scanManagedVIPs(nl netlinkOps) (map[string]map[string]struct{}, error) {
+	result := make(map[string]map[string]struct{})
+
+	links, err := nl.LinkList()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list interfaces: %w", err)
+	}
+
+	for _, link := range links {
+		ifName := link.Attrs().Name
+		// Skip primary interfaces
+		if ifName == "lo" || ifName == "eth0" {
+			continue
+		}
+
+		addrs, err := nl.AddrList(link, netlink.FAMILY_ALL)
+		if err != nil {
+			continue // Skip interfaces we can't read
+		}
+
+		for _, addr := range addrs {
+			// Only consider /32 (IPv4) and /128 (IPv6) as VIPs
+			ones, bits := addr.Mask.Size()
+			if ones == bits { // /32 or /128
+				if result[ifName] == nil {
+					result[ifName] = make(map[string]struct{})
+				}
+				result[ifName][addr.IP.String()] = struct{}{}
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // syncVIPs ensures exactly the desired VIPs are present on the interface.
 // Adds missing VIPs, removes stale ones (only within the managed set).
 // Always returns the current managed set reflecting actual kernel state,
 // even on error, so the caller can track partially-applied changes.
-func syncVIPs(nl netlinkOps, link netlink.Link, desiredVIPs []net.IP, managedVIPs map[string]bool) (map[string]bool, error) {
+func syncVIPs(nl netlinkOps, link netlink.Link, desiredVIPs []net.IP, managedVIPs map[string]struct{}) (map[string]struct{}, error) {
 	// Clone managed set — we mutate it incrementally to track actual state
-	current := make(map[string]bool, len(managedVIPs)+len(desiredVIPs))
+	current := make(map[string]struct{}, len(managedVIPs)+len(desiredVIPs))
 	for k := range managedVIPs {
-		current[k] = true
+		current[k] = struct{}{}
 	}
 
-	desired := make(map[string]bool, len(desiredVIPs))
+	desired := make(map[string]struct{}, len(desiredVIPs))
 	for _, vip := range desiredVIPs {
-		desired[vip.String()] = true
+		desired[vip.String()] = struct{}{}
 	}
 
 	// Remove stale managed VIPs (update current on each success)
 	for vipStr := range managedVIPs {
-		if desired[vipStr] {
+		if _, exists := desired[vipStr]; exists {
 			continue
 		}
 		ip := net.ParseIP(vipStr)
@@ -121,7 +159,7 @@ func syncVIPs(nl netlinkOps, link netlink.Link, desiredVIPs []net.IP, managedVIP
 	// Add missing VIPs (update current on each success)
 	for _, vip := range desiredVIPs {
 		vipStr := vip.String()
-		if current[vipStr] {
+		if _, exists := current[vipStr]; exists {
 			continue // already present
 		}
 		addr := &netlink.Addr{IPNet: vipToIPNet(vip)}
@@ -131,7 +169,7 @@ func syncVIPs(nl netlinkOps, link netlink.Link, desiredVIPs []net.IP, managedVIP
 		if err := nl.AddrAdd(link, addr); err != nil && !errors.Is(err, syscall.EEXIST) {
 			return current, fmt.Errorf("failed to add VIP %s: %w", vipStr, err)
 		}
-		current[vipStr] = true
+		current[vipStr] = struct{}{}
 	}
 
 	return current, nil

@@ -126,7 +126,7 @@ func runSidecar(cfg *config.SidecarConfig) error {
 		PodUID:     cfg.PodUID,
 		MinTableID: cfg.MinTableID,
 		MaxTableID: cfg.MaxTableID,
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, cfg); err != nil {
 		return fmt.Errorf("failed to setup controller: %w", err)
 	}
 

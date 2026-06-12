@@ -6,6 +6,9 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -258,6 +261,235 @@ var _ = Describe("E2E Test Suites", func() {
 					}
 				})
 			})
+
+			// Sidecar restart recovery test (for suites with 2+ gateways)
+			if len(suite.gateways) >= 2 {
+				Context("Sidecar Restart Recovery", func() {
+					var (
+						targetPod string
+						gw1       gwTestCase // First gateway (will be preserved)
+						gw2       gwTestCase // Second gateway (will be deleted)
+						tableID1  string
+						tableID2  string
+					)
+
+					BeforeAll(func() {
+						gw1 = suite.gateways[0]
+						gw2 = suite.gateways[1]
+
+						By("selecting first target pod")
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
+								"-l", "app="+suite.targetApp, "--field-selector=status.phase=Running",
+								"-o", "jsonpath={.items[0].metadata.name}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							targetPod = strings.TrimSpace(out)
+							g.Expect(targetPod).NotTo(BeEmpty())
+						}).Should(Succeed())
+
+						By("waiting for ENC to be Ready")
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "enc", targetPod, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"))
+						}).Should(Succeed())
+
+						By("capturing initial table IDs")
+						cmd := exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+							"-c", "network-sidecar", "--", "ip", "rule", "show")
+						out, err := utils.Run(cmd)
+						Expect(err).NotTo(HaveOccurred())
+
+						for _, line := range strings.Split(out, "\n") {
+							if strings.Contains(line, gw1.vip) {
+								fields := strings.Fields(line)
+								for i, f := range fields {
+									if f == "lookup" && i+1 < len(fields) {
+										tableID1 = fields[i+1]
+										break
+									}
+								}
+							} else if strings.Contains(line, gw2.vip) {
+								fields := strings.Fields(line)
+								for i, f := range fields {
+									if f == "lookup" && i+1 < len(fields) {
+										tableID2 = fields[i+1]
+										break
+									}
+								}
+							}
+						}
+						Expect(tableID1).NotTo(BeEmpty(), "should find table ID for %s", gw1.name)
+						Expect(tableID2).NotTo(BeEmpty(), "should find table ID for %s", gw2.name)
+
+						By("setting restart gate marker")
+						cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+							"-c", "network-sidecar", "--", "sh", "-c",
+							"touch /restart-gate/already-started && rm -f /restart-gate/release-restart")
+						_, err = utils.Run(cmd)
+						Expect(err).NotTo(HaveOccurred())
+					})
+
+					AfterAll(func() {
+						By(fmt.Sprintf("restoring %s gateway for subsequent tests", gw2.name))
+						// Find the gateway.yaml relative to this test file
+						_, filename, _, ok := runtime.Caller(0)
+						Expect(ok).To(BeTrue(), "failed to get test file path")
+						testDir := filepath.Dir(filename)
+
+						// Derive suite directory from suite name
+						var suiteDir string
+						switch suite.name {
+						case "Common App Network":
+							suiteDir = "common-appnetwork"
+						case "Separate App Network":
+							suiteDir = "separate-appnetwork"
+						default:
+							Skip(fmt.Sprintf("Unknown suite: %s", suite.name))
+						}
+
+						gatewayPath := filepath.Join(testDir, "suites", suiteDir, "gateway.yaml")
+						cmd := exec.Command("kubectl", "apply", "-f", gatewayPath, "-n", suite.namespace)
+						_, err := utils.Run(cmd)
+						Expect(err).NotTo(HaveOccurred())
+
+						By(fmt.Sprintf("waiting for %s to be Accepted", gw2.name))
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "gateway", gw2.name, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"))
+						}).Should(Succeed())
+
+						By(fmt.Sprintf("waiting for %s to be Programmed", gw2.name))
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "gateway", gw2.name, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"))
+						}).Should(Succeed())
+
+						By(fmt.Sprintf("waiting for %s ENC to include %s", targetPod, gw2.name))
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "enc", targetPod, "-n", suite.namespace,
+								"-o", "jsonpath={.spec.gateways[*].name}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(ContainSubstring(gw2.name))
+						}).Should(Succeed())
+
+						By(fmt.Sprintf("waiting for sidecar to configure %s VIP", gw2.name))
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+								"-c", "network-sidecar", "--", "ip", "addr", "show")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(ContainSubstring(gw2.vip))
+						}).Should(Succeed())
+					})
+
+					It("should preserve table IDs and clean up deleted gateway state", func() {
+						By("killing sidecar container (will pause at restart gate)")
+						cmd := exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+							"-c", "network-sidecar", "--", "kill", "1")
+						utils.Run(cmd) // Ignore error (container dies)
+
+						By("waiting for sidecar to reach restart gate")
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "logs", "-n", suite.namespace, targetPod,
+								"-c", "network-sidecar", "--tail=5")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(ContainSubstring("Restart detected"))
+						}).Should(Succeed())
+
+						By(fmt.Sprintf("deleting %s gateway while sidecar is paused", gw2.name))
+						cmd = exec.Command("kubectl", "delete", "gateway", gw2.name, "-n", suite.namespace)
+						_, err := utils.Run(cmd)
+						Expect(err).NotTo(HaveOccurred())
+
+						By(fmt.Sprintf("waiting for ENC controller to remove %s from ENC", gw2.name))
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "enc", targetPod, "-n", suite.namespace,
+								"-o", "jsonpath={.spec.gateways[*].name}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).NotTo(ContainSubstring(gw2.name))
+							g.Expect(out).To(ContainSubstring(gw1.name))
+						}).Should(Succeed())
+
+						By("releasing restart gate")
+						cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+							"-c", "network-sidecar", "--", "touch", "/restart-gate/release-restart")
+						_, err = utils.Run(cmd)
+						Expect(err).NotTo(HaveOccurred())
+
+						By("waiting for sidecar to become ready")
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "pod", targetPod, "-n", suite.namespace,
+								"-o", "jsonpath={.status.containerStatuses[?(@.name=='network-sidecar')].ready}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("true"))
+						}).Should(Succeed())
+
+						By("waiting for ENC to be Ready after restart")
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "get", "enc", targetPod, "-n", suite.namespace,
+								"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).To(Equal("True"))
+						}).Should(Succeed())
+
+						By(fmt.Sprintf("waiting for %s VIP to be removed", gw2.name))
+						Eventually(func(g Gomega) {
+							cmd := exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+								"-c", "network-sidecar", "--", "ip", "addr", "show")
+							out, err := utils.Run(cmd)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(out).NotTo(ContainSubstring(gw2.vip))
+						}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+						By(fmt.Sprintf("verifying %s table ID unchanged and no orphaned rules/tables", gw1.name))
+						cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+							"-c", "network-sidecar", "--", "ip", "rule", "show")
+						out, err := utils.Run(cmd)
+						Expect(err).NotTo(HaveOccurred())
+
+						var newTableID1 string
+						for _, line := range strings.Split(out, "\n") {
+							if strings.Contains(line, gw1.vip) {
+								fields := strings.Fields(line)
+								for i, f := range fields {
+									if f == "lookup" && i+1 < len(fields) {
+										newTableID1 = fields[i+1]
+										break
+									}
+								}
+							}
+						}
+						Expect(newTableID1).To(Equal(tableID1), "%s table ID should be preserved", gw1.name)
+						Expect(out).To(ContainSubstring(gw1.vip), "%s rule should be present", gw1.name)
+						Expect(out).NotTo(ContainSubstring(gw2.vip), "%s rule should be removed (no orphan)", gw2.name)
+						hasOrphanedTable := strings.Contains(out, "lookup "+tableID2)
+						Expect(hasOrphanedTable).To(BeFalse(), "%s old table %s should be cleaned up (no orphan)", gw2.name, tableID2)
+
+						By(fmt.Sprintf("verifying no VIP leak (%s VIP removed)", gw2.name))
+						cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
+							"-c", "network-sidecar", "--", "ip", "addr", "show")
+						out, err = utils.Run(cmd)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(out).To(ContainSubstring(gw1.vip), "%s VIP should be present", gw1.name)
+						Expect(out).NotTo(ContainSubstring(gw2.vip), "%s VIP should be removed (no leak)", gw2.name)
+					})
+				})
+			}
 		})
 	}
 

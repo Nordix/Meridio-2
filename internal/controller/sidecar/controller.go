@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/go-logr/logr"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/vishvananda/netlink"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -47,15 +48,16 @@ import (
 //   - Container capability: NET_ADMIN
 type Controller struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	PodName    string
-	PodUID     string
-	MinTableID int
-	MaxTableID int
+	Scheme      *runtime.Scheme
+	PodName     string
+	PodUID      string
+	MinTableID  int
+	MaxTableID  int
+	mappingFile string
 
 	nl          netlinkOps
 	tableIDs    *tableIDAllocator
-	managedVIPs map[string]map[string]bool // interface name → VIP string → true
+	managedVIPs map[string]map[string]struct{} // interface name → VIP string set
 }
 
 // domainState holds the desired network state for a single domain.
@@ -71,10 +73,7 @@ type domainState struct {
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	if c.tableIDs == nil {
-		c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
-		c.managedVIPs = make(map[string]map[string]bool)
-	}
+	// Initialize netlink handle if not already set (test hook)
 	if c.nl == nil {
 		c.nl = &netlink.Handle{}
 	}
@@ -138,6 +137,12 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			c.tableIDs.release(gwName)
 			log.Info("cleaned up stale gateway", "gateway", gwName, "tableID", tableID)
 		}
+	}
+
+	// Persist table ID mapping after successful configuration
+	if err := saveMapping(c.tableIDs, c.mappingFile); err != nil {
+		log.Error(err, "failed to save table ID mapping")
+		// Non-fatal: continue with status update
 	}
 
 	// Success
@@ -281,7 +286,7 @@ func (c *Controller) cleanupAll(ctx context.Context) {
 		// requeue on partial cleanup failure instead of silently succeeding.
 		_, _ = syncVIPs(c.nl, link, nil, managed)
 	}
-	c.managedVIPs = make(map[string]map[string]bool)
+	c.managedVIPs = make(map[string]map[string]struct{})
 }
 
 func (c *Controller) updateStatus(ctx context.Context, enc *meridio2v1alpha1.EndpointNetworkConfiguration, reconcileErr error) error {
@@ -314,8 +319,45 @@ func (c *Controller) isOwnedByPod(enc *meridio2v1alpha1.EndpointNetworkConfigura
 	return false
 }
 
+// recoverState initializes allocator and managedVIPs, restoring from persisted
+// mapping and kernel state. Logs warnings on partial recovery but continues.
+func (c *Controller) recoverState(log logr.Logger) {
+	c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
+	c.managedVIPs = make(map[string]map[string]struct{})
+
+	// Initialize netlink handle if not already set (test hook)
+	if c.nl == nil {
+		c.nl = &netlink.Handle{}
+	}
+
+	// Load persisted table ID mapping
+	if err := loadMapping(c.tableIDs, c.mappingFile); err != nil {
+		log.Error(err, "failed to load table ID mapping, starting fresh")
+	} else if len(c.tableIDs.snapshot()) > 0 {
+		log.Info("loaded table ID mapping from file", "gateways", len(c.tableIDs.snapshot()))
+	}
+
+	// Scan kernel for existing VIPs
+	scannedVIPs, err := scanManagedVIPs(c.nl)
+	if err != nil {
+		log.Error(err, "failed to scan existing VIPs, starting fresh")
+		return
+	}
+	c.managedVIPs = scannedVIPs
+	totalVIPs := 0
+	for _, vips := range scannedVIPs {
+		totalVIPs += len(vips)
+	}
+	if totalVIPs > 0 {
+		log.Info("scanned existing VIPs from kernel", "interfaces", len(scannedVIPs), "vips", totalVIPs)
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
-func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
+func (c *Controller) SetupWithManager(mgr ctrl.Manager, cfg interface{ GetTableIDMappingFile() string }) error {
+	c.mappingFile = cfg.GetTableIDMappingFile()
+	c.recoverState(mgr.GetLogger().WithName("sidecar-setup"))
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.EndpointNetworkConfiguration{}).
 		Named("sidecar").
