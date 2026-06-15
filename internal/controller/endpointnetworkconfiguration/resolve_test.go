@@ -180,7 +180,7 @@ func TestResolveGatewaysForDG_DirectParentRef(t *testing.T) {
 	result, err := r.resolveGatewaysForDG(context.Background(), dg)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
-	assert.Equal(t, "sllb-a", result[0].Name)
+	assert.Equal(t, "sllb-a", result[0].gw.Name)
 }
 
 func TestResolveGatewaysForDG_IndirectViaL34Route(t *testing.T) {
@@ -192,7 +192,7 @@ func TestResolveGatewaysForDG_IndirectViaL34Route(t *testing.T) {
 	result, err := r.resolveGatewaysForDG(context.Background(), dg)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
-	assert.Equal(t, "sllb-a", result[0].Name)
+	assert.Equal(t, "sllb-a", result[0].gw.Name)
 }
 
 func TestResolveGatewaysForDG_Deduplication(t *testing.T) {
@@ -223,38 +223,117 @@ func TestResolveGatewaysForDG_NotAccepted(t *testing.T) {
 // --- extractVIPs tests ---
 
 func TestExtractVIPs_DualStack(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "2001:db8::1")
-	ipv4, ipv6 := extractVIPs(gw)
+	ipv4, ipv6 := extractVIPs([]string{"20.0.0.1", "2001:db8::1"})
 	assert.Equal(t, []string{"20.0.0.1"}, ipv4)
 	assert.Equal(t, []string{"2001:db8::1"}, ipv6)
 }
 
 func TestExtractVIPs_IPv4Only(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "20.0.0.2")
-	ipv4, ipv6 := extractVIPs(gw)
+	ipv4, ipv6 := extractVIPs([]string{"20.0.0.1", "20.0.0.2"})
 	assert.Equal(t, []string{"20.0.0.1", "20.0.0.2"}, ipv4)
 	assert.Nil(t, ipv6)
 }
 
 func TestExtractVIPs_Empty(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName)
-	ipv4, ipv6 := extractVIPs(gw)
+	ipv4, ipv6 := extractVIPs([]string{})
 	assert.Nil(t, ipv4)
 	assert.Nil(t, ipv6)
 }
 
 func TestExtractVIPs_PlainIPNotCIDR(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1")
-	ipv4, _ := extractVIPs(gw)
+	ipv4, _ := extractVIPs([]string{"20.0.0.1"})
 	require.Len(t, ipv4, 1)
 	assert.Equal(t, "20.0.0.1", ipv4[0], "must be plain IP, not CIDR")
 	assert.NotContains(t, ipv4[0], "/")
 }
 
 func TestExtractVIPs_Deduplication(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "20.0.0.1")
-	ipv4, _ := extractVIPs(gw)
+	ipv4, _ := extractVIPs([]string{"20.0.0.1", "20.0.0.1"})
 	assert.Len(t, ipv4, 1)
+}
+
+func TestExtractVIPs_CIDRs(t *testing.T) {
+	ipv4, ipv6 := extractVIPs([]string{"10.0.0.1/32", "192.168.1.0/24", "fd00::1/128"})
+	assert.Equal(t, []string{"10.0.0.1", "192.168.1.0"}, ipv4)
+	assert.Equal(t, []string{"fd00::1"}, ipv6)
+}
+
+func TestExtractVIPs_Garbage(t *testing.T) {
+	ipv4, ipv6 := extractVIPs([]string{"not-an-ip", "", "hello world", "999.999.999.999", "20.0.0.1"})
+	assert.Equal(t, []string{"20.0.0.1"}, ipv4)
+	assert.Nil(t, ipv6)
+}
+
+func TestBuildGatewayConnection_VIPsSorted(t *testing.T) {
+	gw := acceptedGateway("sllb-a", testControllerName)
+	gc := newGatewayConfig([]string{testSubnetV4, testSubnetV6})
+	sllbrPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sllb-sllb-a-abc",
+			Namespace: testNamespace,
+			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
+	targetPod.Annotations = map[string]string{
+		"k8s.v1.cni.cncf.io/network-status": `[
+			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
+			{"name":"net1","interface":"net1","ips":["169.111.100.10","fd00::100:a"]}
+		]`,
+	}
+
+	r, _ := setupReconciler(gw, gc, sllbrPod, targetPod)
+	r.IPScraper = func(pod *corev1.Pod, cidr, _ string) string {
+		if cidr == testSubnetV4 {
+			return testNextHopV4
+		}
+		if cidr == testSubnetV6 {
+			return testNextHopV6
+		}
+		return ""
+	}
+
+	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gatewayVipPair{
+		gw: gw,
+		vips: []string{
+			"192.168.1.1", "fd00::9", "10.0.0.5", "fd00::1", "172.16.0.1",
+			"10.0.0.2", "fd00::5", "10.0.0.1", "192.168.0.1", "172.16.0.2",
+			"fd00::3", "fd00::2",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	require.Len(t, conn.Domains, 2)
+
+	domainMap := make(map[string]meridio2v1alpha1.NetworkDomain)
+	for _, d := range conn.Domains {
+		domainMap[d.IPFamily] = d
+	}
+	assert.Equal(t, []string{"10.0.0.1", "10.0.0.2", "10.0.0.5", "172.16.0.1", "172.16.0.2", "192.168.0.1", "192.168.1.1"}, domainMap["IPv4"].VIPs)
+	assert.Equal(t, []string{"fd00::1", "fd00::2", "fd00::3", "fd00::5", "fd00::9"}, domainMap["IPv6"].VIPs)
+}
+
+// --- updateGwVipMap tests ---
+
+func TestUpdateGwVipMap_Insert(t *testing.T) {
+	m := make(map[string]gatewayVipPair)
+	gw := acceptedGateway("sllb-a", testControllerName)
+	updateGwVipMap(m, "key1", gatewayVipPair{gw: gw, vips: []string{"10.0.0.1"}})
+
+	assert.Len(t, m, 1)
+	assert.Equal(t, []string{"10.0.0.1"}, m["key1"].vips)
+}
+
+func TestUpdateGwVipMap_MergeVips(t *testing.T) {
+	m := make(map[string]gatewayVipPair)
+	gw := acceptedGateway("sllb-a", testControllerName)
+	original := []string{"10.0.0.1"}
+	updateGwVipMap(m, "key1", gatewayVipPair{gw: gw, vips: original})
+	updateGwVipMap(m, "key1", gatewayVipPair{gw: gw, vips: []string{"10.0.0.2", "10.0.0.3"}})
+
+	assert.Equal(t, []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}, m["key1"].vips)
+	assert.Equal(t, []string{"10.0.0.1"}, original, "original slice must not be mutated")
 }
 
 // --- getNetworkContexts tests ---
@@ -395,7 +474,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 		return ""
 	}
 
-	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gw)
+	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gatewayVipPair{gw: gw, vips: []string{"20.0.0.1", "2001:db8::1"}})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
@@ -436,7 +515,7 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 		return ""
 	}
 
-	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gw)
+	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gatewayVipPair{gw: gw, vips: []string{"20.0.0.1", "2001:db8::1"}})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
