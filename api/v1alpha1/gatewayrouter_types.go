@@ -22,7 +22,11 @@ import (
 )
 
 // GatewayRouterSpec defines the desired state of GatewayRouter
+// +kubebuilder:validation:XValidation:rule="self.protocol != 'Static' || has(self.static)",message="static is required when protocol is Static"
+// +kubebuilder:validation:XValidation:rule="self.protocol != 'BGP' || has(self.bgp)",message="bgp is required when protocol is BGP"
+// +kubebuilder:validation:XValidation:rule="(self.protocol != 'BGP' || !has(self.static)) && (self.protocol != 'Static' || !has(self.bgp))",message="bgp and static are mutually exclusive"
 type GatewayRouterSpec struct {
+	// gatewayRef references the Gateway this router peers with.
 	GatewayRef gatewayapiv1.ParentReference `json:"gatewayRef"`
 
 	// Name of the interface to reach external gateway
@@ -33,17 +37,32 @@ type GatewayRouterSpec struct {
 	// Address of the Gateway Router
 	Address string `json:"address"`
 
+	// protocol selects the routing protocol for this peering.
+	// +kubebuilder:validation:Enum=BGP;Static
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="protocol is immutable"
+	Protocol RoutingProtocol `json:"protocol"`
+
+	// bgp defines BGP session parameters. Required when protocol is BGP.
 	// Parameters to set up the BGP session to specified Address.
 	// If the Protocol is bgp, the minimal parameters to be defined in bgp properties
 	// are RemoteASN and LocalASN
-	BGP BgpSpec `json:"bgp"`
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="!oldSelf.hasValue() || self == oldSelf.value()",message="bgp is immutable once set",optionalOldSelf=true
+	BGP *BgpSpec `json:"bgp,omitempty"`
+
+	// static defines static routing with BFD supervision. Required when protocol is Static.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="!oldSelf.hasValue() || self == oldSelf.value()",message="static is immutable once set",optionalOldSelf=true
+	Static *StaticSpec `json:"static,omitempty"`
 }
 
 type BgpSpec struct {
 	// The ASN number of the Gateway Router
+	// +required
 	RemoteASN uint32 `json:"remoteASN"`
 
 	// The ASN number of the system where the Attractor FrontEnds locates
+	// +required
 	LocalASN uint32 `json:"localASN"`
 
 	// BFD monitoring of BGP session.
@@ -52,7 +71,7 @@ type BgpSpec struct {
 
 	// +kubebuilder:validation:XValidation:rule=duration(self) >= duration('3s'),message=Must be at least 3s
 
-	// Hold timer of the BGP session. Please refere to BGP material to understand what this implies.
+	// Hold timer of the BGP session. Please refer to BGP material to understand what this implies.
 	// The value must be a valid duration format. For example, 90s, 1m, 1h.
 	// The duration will be rounded by second
 	// Minimum duration is 3s.
@@ -77,31 +96,37 @@ type BgpSpec struct {
 	LocalPort *uint16 `json:"localPort,omitempty"`
 }
 
+// +enum
+type RoutingProtocol string
+
+const (
+	RoutingProtocolBGP    RoutingProtocol = "BGP"
+	RoutingProtocolStatic RoutingProtocol = "Static"
+)
+
+type StaticSpec struct {
+	// BFD monitoring of the static next-hop.
+	// +optional
+	BFD *BfdSpec `json:"bfd,omitempty"`
+}
+
 type BfdSpec struct {
-	// BFD monitoring.
-	// Valid values are:
-	// - false: no BFD monitoring;
-	// - true: turns on the BFD monitoring.
-	// When left empty, there is no BFD monitoring.
-	// +optional
-	Switch *bool `json:"switch,omitempty"`
-
-	// Min-tx timer of bfd session. Please refere to BFD material to understand what this implies.
+	// Min-tx timer of bfd session. Please refer to bird BFD documentation to understand what this implies.
 	// The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
 	// The duration will be rounded by millisecond.
-	// +optional
-	MinTx string `json:"minTx,omitempty"`
+	// +required
+	MinTx string `json:"minTx"`
 
-	// Min-rx timer of bfd session. Please refere to BFD material to understand what this implies.
+	// Min-rx timer of bfd session. Please refer to bird BFD documentation to understand what this implies.
 	// The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
 	// The duration will be rounded by millisecond.
-	// +optional
-	MinRx string `json:"minRx,omitempty"`
+	// +required
+	MinRx string `json:"minRx"`
 
 	// Multiplier of bfd session.
 	// When this number of bfd packets failed to receive, bfd session will go down.
-	// +optional
-	Multiplier *uint16 `json:"multiplier,omitempty"`
+	// +required
+	Multiplier uint16 `json:"multiplier"`
 }
 
 // GatewayRouterStatus defines the observed state of GatewayRouter.

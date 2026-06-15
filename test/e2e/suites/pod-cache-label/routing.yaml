@@ -8,6 +8,7 @@ spec:
     name: gw-pcl
   interface: "vlan-800"
   address: "169.254.50.150"
+  protocol: "BGP"
   bgp:
     remoteASN: 4200000000
     localASN: 64519
@@ -15,7 +16,6 @@ spec:
     remotePort: 10179
     localPort: 10179
     bfd:
-      switch: true
       minTx: 300ms
       minRx: 300ms
       multiplier: 3

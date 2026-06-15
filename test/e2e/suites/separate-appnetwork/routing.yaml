@@ -9,6 +9,7 @@ spec:
     name: gw-a1
   interface: "vlan-100"
   address: "169.254.10.150"
+  protocol: "BGP"
   bgp:
     localASN: 64512
     remoteASN: 4200000000
@@ -16,7 +17,6 @@ spec:
     remotePort: 10179
     holdTime: 24s
     bfd:
-      switch: true
       minTx: 300ms
       minRx: 300ms
       multiplier: 3
@@ -51,6 +51,7 @@ spec:
     name: gw-a2
   interface: "vlan-200"
   address: "169.254.11.150"
+  protocol: "BGP"
   bgp:
     localASN: 64513
     remoteASN: 4200000000
@@ -58,7 +59,6 @@ spec:
     remotePort: 10179
     holdTime: 24s
     bfd:
-      switch: true
       minTx: 300ms
       minRx: 300ms
       multiplier: 3

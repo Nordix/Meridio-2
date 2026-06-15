@@ -80,9 +80,11 @@ PMTU handling is implemented: the LB controller creates a nftables PMTU SNAT cha
 
 The GatewayRouter CRD has no field for BGP MD5 or TCP-AO authentication. Meridio v1 supported this.
 
-**16. Static routing with BFD not supported**
+**16. ~~Static routing with BFD not supported~~ (Resolved)**
 
-Only BGP-based GatewayRouter configuration is implemented. Static routing with BFD (as an alternative to BGP for simpler deployments) is not supported.
+Static routing is now supported via `spec.protocol: Static` in the GatewayRouter CRD. When configured, the router generates a BIRD static protocol block with a default route via the specified address/interface, supervised by BFD when `spec.static.bfd` is set.
+
+**BFD interface parameter constraint:** BIRD allows only one set of BFD parameters per interface. When multiple static GatewayRouters share the same interface, the controller uses the BFD parameters from the first GatewayRouter alphabetically (by `.metadata.name`). Users must define the same BFD parameters (`minTx`, `minRx`, `multiplier`) for all static GatewayRouters on the same interface to avoid unexpected behavior.
 
 **17. ~~BFD not fully restricted~~ (Resolved)**
 
