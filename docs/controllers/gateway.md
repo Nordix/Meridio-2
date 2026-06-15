@@ -14,7 +14,7 @@ The Gateway controller manages the lifecycle of Gateway API Gateway resources, c
 
 **GatewayConfiguration**: Implementation-specific parameters (replicas, resources, network attachments) referenced via `Gateway.spec.infrastructure.parametersRef`.
 
-**LB Deployment**: A Kubernetes Deployment running load balancer and router containers. Named `sllb-<gateway-name>` and owned by the Gateway via ownerReference.
+**LB Deployment**: A Kubernetes Deployment running load balancer and router containers. Named `sllbr-<gateway-name>` and owned by the Gateway via ownerReference.
 
 ### Design Principles
 
@@ -129,11 +129,11 @@ LB Deployment (owned by Gateway)
 ### 6. Reconcile LB Deployment
 - Use pre-fetched template and GatewayConfiguration from step 3
 - Customize for this Gateway:
-  - Name: `sllb-<gateway-name>`
+  - Name: `sllbr-<gateway-name>`
   - Namespace: same as Gateway
-  - Labels: `app=sllb-<gateway-name>`, `gateway.networking.k8s.io/gateway-name=<gateway-name>`
+  - Labels: `app=sllbr-<gateway-name>`, `gateway.networking.k8s.io/gateway-name=<gateway-name>`
   - ServiceAccount: from `--lb-service-account` flag (injected by Kustomize)
-  - Selector: `app=sllb-<gateway-name>` (immutable)
+  - Selector: `app=sllbr-<gateway-name>` (immutable)
   - Anti-affinity: updated to match deployment-specific labels
   - Gateway name injection: `MERIDIO_GATEWAY_NAME` env var in containers
 - Merge `spec.infrastructure.labels` and `spec.infrastructure.annotations`
@@ -182,7 +182,7 @@ The controller injects Gateway identity into LB pod containers via environment v
 The controller applies labels/annotations in three layers with specific precedence:
 
 1. **Controller-managed labels** (always enforced, highest priority):
-   - `app: sllb-<gateway-name>` - Used for selector (immutable) and pod anti-affinity
+   - `app: sllbr-<gateway-name>` - Used for selector (immutable) and pod anti-affinity
    - `gateway.networking.k8s.io/gateway-name: <gateway-name>` - Gateway API standard label
 
 2. **Gateway infrastructure labels/annotations** (user-controlled, middle priority):
@@ -449,7 +449,7 @@ networkAttachments:
 - User must resolve conflict (rename/delete conflicting Deployment or Gateway)
 
 **Naming enforcement:**
-- Controller uses strict name-based lookup: `sllb-<gateway-name>`
+- Controller uses strict name-based lookup: `sllbr-<gateway-name>`
 - No label-based fallback (ensures consistent naming for external tools like HPA)
 - If Deployment is manually renamed, controller creates new Deployment with correct name
 - Old Deployment remains orphaned (manual cleanup required)
@@ -732,12 +732,12 @@ kubectl -n meridio-2 get gateway test-gateway -o jsonpath='{.status.conditions[?
 # Expected: status=True, reason=Programmed
 
 # Deployment exists with ownerReference
-kubectl -n meridio-2 get deployment sllb-test-gateway \
+kubectl -n meridio-2 get deployment sllbr-test-gateway \
   -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}'
 # Expected: Gateway/test-gateway
 
 # ServiceAccount from controller flag
-kubectl -n meridio-2 get deployment sllb-test-gateway -o jsonpath='{.spec.template.spec.serviceAccountName}'
+kubectl -n meridio-2 get deployment sllbr-test-gateway -o jsonpath='{.spec.template.spec.serviceAccountName}'
 # Expected: stateless-load-balancer (or whatever --lb-service-account is set to)
 ```
 
@@ -745,23 +745,23 @@ kubectl -n meridio-2 get deployment sllb-test-gateway -o jsonpath='{.spec.templa
 
 ```bash
 # NAD annotation present on pod template with both interfaces
-kubectl -n meridio-2 get deployment sllb-test-gateway \
+kubectl -n meridio-2 get deployment sllbr-test-gateway \
   -o jsonpath='{.spec.template.metadata.annotations.k8s\.v1\.cni\.cncf\.io/networks}'
 # Expected: JSON array containing vlan-100 (interface: ext1) and macvlan-net1 (interface: net1)
 
 # Capture current pod names before NAD change
-PODS_BEFORE=$(kubectl -n meridio-2 get pods -l app=sllb-test-gateway -o jsonpath='{.items[*].metadata.name}')
+PODS_BEFORE=$(kubectl -n meridio-2 get pods -l app=sllbr-test-gateway -o jsonpath='{.items[*].metadata.name}')
 
 # Remove one NAD from GatewayConfiguration
 kubectl -n meridio-2 patch gatewayconfiguration test-gwconfig --type=json \
   -p '[{"op":"replace","path":"/spec/networkAttachments","value":[{"type":"NAD","nad":{"name":"vlan-100","namespace":"meridio-2","interface":"ext1"}}]}]'
 sleep 10
-kubectl -n meridio-2 get deployment sllb-test-gateway \
+kubectl -n meridio-2 get deployment sllbr-test-gateway \
   -o jsonpath='{.spec.template.metadata.annotations.k8s\.v1\.cni\.cncf\.io/networks}'
 # Expected: JSON array containing only vlan-100 (macvlan-net1 removed)
 
 # Verify pods were recreated (NAD change modifies pod template → rolling update)
-PODS_AFTER=$(kubectl -n meridio-2 get pods -l app=sllb-test-gateway -o jsonpath='{.items[*].metadata.name}')
+PODS_AFTER=$(kubectl -n meridio-2 get pods -l app=sllbr-test-gateway -o jsonpath='{.items[*].metadata.name}')
 [ "$PODS_BEFORE" != "$PODS_AFTER" ] && echo "PASS: pods recreated" || echo "FAIL: pods unchanged"
 
 # Restore both NADs
@@ -773,13 +773,13 @@ kubectl -n meridio-2 patch gatewayconfiguration test-gwconfig --type=json \
 
 ```bash
 # Replicas match GatewayConfiguration
-kubectl -n meridio-2 get deployment sllb-test-gateway -o jsonpath='{.spec.replicas}'
+kubectl -n meridio-2 get deployment sllbr-test-gateway -o jsonpath='{.spec.replicas}'
 # Expected: 2
 
 # Manually scale - controller should revert
-kubectl -n meridio-2 scale deployment sllb-test-gateway --replicas=5
+kubectl -n meridio-2 scale deployment sllbr-test-gateway --replicas=5
 sleep 3
-kubectl -n meridio-2 get deployment sllb-test-gateway -o jsonpath='{.spec.replicas}'
+kubectl -n meridio-2 get deployment sllbr-test-gateway -o jsonpath='{.spec.replicas}'
 # Expected: 2 (controller enforces)
 ```
 
@@ -792,9 +792,9 @@ kubectl -n meridio-2 patch gatewayconfiguration test-gwconfig --type=merge \
 sleep 3
 
 # Manually scale - controller should NOT revert
-kubectl -n meridio-2 scale deployment sllb-test-gateway --replicas=5
+kubectl -n meridio-2 scale deployment sllbr-test-gateway --replicas=5
 sleep 3
-kubectl -n meridio-2 get deployment sllb-test-gateway -o jsonpath='{.spec.replicas}'
+kubectl -n meridio-2 get deployment sllbr-test-gateway -o jsonpath='{.spec.replicas}'
 # Expected: 5 (controller defers to external scaler)
 
 # Restore enforcing mode
@@ -806,12 +806,12 @@ kubectl -n meridio-2 patch gatewayconfiguration test-gwconfig --type=merge \
 
 ```bash
 # Loadbalancer container resources match GatewayConfiguration
-kubectl -n meridio-2 get deployment sllb-test-gateway \
+kubectl -n meridio-2 get deployment sllbr-test-gateway \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="loadbalancer")].resources}'
 # Expected: requests.cpu=200m, requests.memory=256Mi, limits.cpu=1, limits.memory=1Gi
 
 # Router container keeps template defaults (not in verticalScaling)
-kubectl -n meridio-2 get deployment sllb-test-gateway \
+kubectl -n meridio-2 get deployment sllbr-test-gateway \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="router")].resources}'
 # Expected: template defaults (requests.cpu=100m, requests.memory=128Mi, etc.)
 
@@ -819,7 +819,7 @@ kubectl -n meridio-2 get deployment sllb-test-gateway \
 kubectl -n meridio-2 patch gatewayconfiguration test-gwconfig --type=json \
   -p '[{"op":"replace","path":"/spec/verticalScaling/containers","value":[{"name":"loadbalancer","enforceResources":true,"resources":{"requests":{"cpu":"500m","memory":"512Mi"},"limits":{"cpu":"2","memory":"2Gi"}}}]}]'
 sleep 3
-kubectl -n meridio-2 get deployment sllb-test-gateway \
+kubectl -n meridio-2 get deployment sllbr-test-gateway \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="loadbalancer")].resources.requests.cpu}'
 # Expected: 500m
 ```
@@ -833,7 +833,7 @@ kubectl -n meridio-2 patch gatewayconfiguration test-gwconfig --type=json \
 sleep 3
 
 # Resources should remain at previous values (controller defers)
-kubectl -n meridio-2 get deployment sllb-test-gateway \
+kubectl -n meridio-2 get deployment sllbr-test-gateway \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="loadbalancer")].resources.requests.cpu}'
 # Expected: 500m (unchanged, controller does not enforce)
 ```
@@ -990,7 +990,7 @@ kubectl -n meridio-2 get gateway test-gateway 2>&1 | grep "NotFound"
 # Expected: deleted immediately (no Terminating state)
 
 sleep 5
-kubectl -n meridio-2 get deployment sllb-test-gateway 2>&1 | grep "NotFound"
+kubectl -n meridio-2 get deployment sllbr-test-gateway 2>&1 | grep "NotFound"
 # Expected: Deployment auto-deleted via ownerReference
 ```
 
@@ -1054,7 +1054,7 @@ kubectl delete net-attach-def vlan-100 macvlan-net1 -n meridio-2 --ignore-not-fo
 metadata:
   labels:
     gateway.networking.k8s.io/gateway-name: <gateway-name>  # Gateway API standard
-    app: sllb-<gateway-name>                                # Deployment selector
+    app: sllbr-<gateway-name>                                # Deployment selector
     app.kubernetes.io/managed-by: gateway-controller.meridio-2.nordix.org  # Operator identity
 ```
 
@@ -1074,7 +1074,7 @@ metadata:
   labels:
     # Existing (implemented)
     gateway.networking.k8s.io/gateway-name: <gateway-name>
-    app: sllb-<gateway-name>
+    app: sllbr-<gateway-name>
     app.kubernetes.io/managed-by: gateway-controller.meridio-2.nordix.org
     
     # Add for better compliance

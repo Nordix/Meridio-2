@@ -673,7 +673,7 @@ kubectl -n meridio-2 get gateway test-gateway \
   -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
 # Expected: True
 
-kubectl -n meridio-2 get deployment sllb-test-gateway
+kubectl -n meridio-2 get deployment sllbr-test-gateway
 ```
 
 #### Test 2: Verify EndpointSlices
@@ -708,7 +708,7 @@ TARGET_POD_UID=$(kubectl get pod -n meridio-2 "$TARGET_POD" \
 # Collect LB pod net1 IPs for ECMP next-hops
 LB_NET1_IPv4=()
 LB_NET1_IPv6=()
-for LB_POD in $(kubectl get pods -n meridio-2 -l app=sllb-test-gateway \
+for LB_POD in $(kubectl get pods -n meridio-2 -l app=sllbr-test-gateway \
   -o jsonpath='{.items[*].metadata.name}'); do
   NET_STATUS=$(kubectl get pod -n meridio-2 "$LB_POD" \
     -o jsonpath='{.metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}')
