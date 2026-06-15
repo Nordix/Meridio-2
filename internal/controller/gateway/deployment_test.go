@@ -40,16 +40,16 @@ func TestLbDeploymentName(t *testing.T) {
 
 	name := lbDeploymentName(gw)
 
-	assert.Equal(t, "sllb-my-gateway", name)
+	assert.Equal(t, "sllbr-my-gateway", name)
 }
 
 func TestSetControllerLabels(t *testing.T) {
 	t.Run("SetsRequiredLabels", func(t *testing.T) {
 		meta := &metav1.ObjectMeta{}
 
-		setControllerLabels(meta, "sllb-test", "test-gw")
+		setControllerLabels(meta, "sllbr-test", "test-gw")
 
-		assert.Equal(t, "sllb-test", meta.Labels["app"])
+		assert.Equal(t, "sllbr-test", meta.Labels["app"])
 		assert.Equal(t, "test-gw", meta.Labels[labelGatewayName])
 		assert.Equal(t, managedByValue, meta.Labels[labelManagedBy])
 	})
@@ -57,7 +57,7 @@ func TestSetControllerLabels(t *testing.T) {
 	t.Run("InitializesLabelsMapIfNil", func(t *testing.T) {
 		meta := &metav1.ObjectMeta{Labels: nil}
 
-		setControllerLabels(meta, "sllb-test", "test-gw")
+		setControllerLabels(meta, "sllbr-test", "test-gw")
 
 		assert.NotNil(t, meta.Labels)
 		assert.Len(t, meta.Labels, 3)
@@ -68,7 +68,7 @@ func TestSetControllerLabels(t *testing.T) {
 			Labels: map[string]string{"existing": "label"},
 		}
 
-		setControllerLabels(meta, "sllb-test", "test-gw")
+		setControllerLabels(meta, "sllbr-test", "test-gw")
 
 		assert.Equal(t, "label", meta.Labels["existing"])
 		assert.Len(t, meta.Labels, 4)
@@ -248,10 +248,10 @@ func TestReconcileLBDeployment(t *testing.T) {
 		var deployment appsv1.Deployment
 		err = fakeClient.Get(context.Background(), client.ObjectKey{
 			Namespace: gw.Namespace,
-			Name:      "sllb-" + gw.Name,
+			Name:      lbDeploymentPrefix + gw.Name,
 		}, &deployment)
 		assert.NoError(t, err)
-		assert.Equal(t, "sllb-"+gw.Name, deployment.Name)
+		assert.Equal(t, lbDeploymentPrefix+gw.Name, deployment.Name)
 		assert.Equal(t, "template-value", deployment.Labels["template-label"])
 		assert.Equal(t, gw.Name, deployment.Labels[labelGatewayName])
 	})
@@ -267,7 +267,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 
 		existing := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "sllb-" + gw.Name,
+				Name:      lbDeploymentPrefix + gw.Name,
 				Namespace: gw.Namespace,
 				Labels: map[string]string{
 					"template-label": "old-value",
@@ -288,7 +288,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 			Spec: appsv1.DeploymentSpec{
 				Replicas: ptr(int32(1)),
 				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": "sllb-" + gw.Name},
+					MatchLabels: map[string]string{"app": lbDeploymentPrefix + gw.Name},
 				},
 			},
 		}
@@ -301,7 +301,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 		var deployment appsv1.Deployment
 		err = fakeClient.Get(context.Background(), client.ObjectKey{
 			Namespace: gw.Namespace,
-			Name:      "sllb-" + gw.Name,
+			Name:      lbDeploymentPrefix + gw.Name,
 		}, &deployment)
 		assert.NoError(t, err)
 		assert.Equal(t, "new-value", deployment.Labels["template-label"])
@@ -363,7 +363,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 
 		var deployment appsv1.Deployment
 		err = fakeClient.Get(context.Background(), client.ObjectKey{
-			Namespace: gw.Namespace, Name: "sllb-" + gw.Name,
+			Namespace: gw.Namespace, Name: lbDeploymentPrefix + gw.Name,
 		}, &deployment)
 		assert.NoError(t, err)
 		assert.Equal(t, []corev1.PodReadinessGate{
@@ -387,7 +387,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 
 		var deployment appsv1.Deployment
 		err = fakeClient.Get(context.Background(), client.ObjectKey{
-			Namespace: gw.Namespace, Name: "sllb-" + gw.Name,
+			Namespace: gw.Namespace, Name: lbDeploymentPrefix + gw.Name,
 		}, &deployment)
 		assert.NoError(t, err)
 		assert.Equal(t, []corev1.PodReadinessGate{
@@ -413,7 +413,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 
 		var deployment appsv1.Deployment
 		err = fakeClient.Get(context.Background(), client.ObjectKey{
-			Namespace: gw.Namespace, Name: "sllb-" + gw.Name,
+			Namespace: gw.Namespace, Name: lbDeploymentPrefix + gw.Name,
 		}, &deployment)
 		assert.NoError(t, err)
 
