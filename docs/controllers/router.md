@@ -23,7 +23,9 @@ GatewayRouter (cluster-scoped per Gateway namespace)
 ├── spec.gatewayRef → Gateway
 ├── spec.address → external router IP
 ├── spec.interface → network interface name
-└── spec.bgp → BGP session parameters (ASN, ports, hold time, BFD)
+├── spec.protocol → BGP or Static
+├── spec.bgp → BGP session parameters (ASN, ports, hold time, BFD)
+└── spec.static → Static routing parameters (BFD supervision)
 ```
 
 ### Reconcile Flow
@@ -84,13 +86,26 @@ BIRD runs as a child process of the router binary, started via `exec.CommandCont
 
 ### Config Generation
 
-BIRD config is generated using `text/template` and assembled from three parts:
+BIRD config is generated using `text/template` and assembled from these parts:
 
 1. **Base config**: Static filters, kernel protocol, BFD protocol, BGP template
 2. **VIP statics**: `protocol static VIP4/VIP6` with routes via loopback
-3. **Router protocols**: One `protocol bgp 'NBR-<name>'` per GatewayRouter
+3. **BGP router protocols**: One `protocol bgp 'NBR-<name>'` per BGP GatewayRouter
+4. **Static router protocols**: One `protocol static 'NBR-<name>'` per Static GatewayRouter, with a default route (`0.0.0.0/0` or `0::/0`) via the router's address/interface and optional BFD supervision
 
 VIPs arrive as plain IPs from `Gateway.status.addresses` (filtered to `IPAddressType` only) and are converted to CIDRs (`/32` or `/128`) inside the BIRD package via `vipsToCidr()`.
+
+#### Static Routing
+
+When `spec.protocol` is `Static`, the controller generates a BIRD static protocol block with a default route pointing to the GatewayRouter's address via its interface. If `spec.static.bfd` is set, the route is supervised with BFD (`route ... bfd;`).
+
+#### BFD Interface Parameters (first-alphabetically-wins)
+
+BIRD's BFD protocol block defines per-interface parameters (min rx/tx intervals, multiplier). Because BIRD allows only one set of BFD parameters per interface, the controller must select a single set of parameters when multiple GatewayRouters share the same interface.
+
+The selection rule is **first alphabetically wins**: GatewayRouters are sorted by name, and the BFD parameters from the first GatewayRouter (alphabetically by `.metadata.name`) that has BFD enabled on a given interface are used for that interface's BFD configuration. Parameters from subsequent GatewayRouters on the same interface are ignored.
+
+**Important:** Users should define the same BFD parameters (`minTx`, `minRx`, `multiplier`) for all static GatewayRouters on the same interface. While the controller deterministically selects parameters using the alphabetical rule, mismatched BFD parameters across routers on the same interface can lead to confusion and unexpected behavior. This matches the guidance from Meridio v1.
 
 ### Policy Routing
 

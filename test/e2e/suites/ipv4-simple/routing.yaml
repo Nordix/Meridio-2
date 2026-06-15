@@ -8,6 +8,7 @@ spec:
     name: gw-m1
   interface: "vlan-700"
   address: "169.254.40.150"
+  protocol: "BGP"
   bgp:
     localASN: 64518
     remoteASN: 4200000000
@@ -15,7 +16,6 @@ spec:
     remotePort: 10179
     holdTime: 24s
     bfd:
-      switch: true
       minTx: 300ms
       minRx: 300ms
       multiplier: 3

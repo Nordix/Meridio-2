@@ -20,10 +20,19 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"text/template"
 	"time"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+)
+
+const (
+	defaultRouteIPv4 = "0.0.0.0/0"
+	defaultRouteIPv6 = "0::/0"
+
+	ipFamilyIPv4 = "ipv4"
+	ipFamilyIPv6 = "ipv6"
 )
 
 type birdConfigData struct {
@@ -32,11 +41,17 @@ type birdConfigData struct {
 	LogParams      BirdLogParams
 	IPv4VIPs       []string
 	IPv6VIPs       []string
-	Routers        []routerData
-	BGPInterfaces  []string
+	BGPRouters     []bgpRouterData
+	StaticRouters  []staticRouterData
+	BFDInterfaces  []bfdInterfaceData
 }
 
-type routerData struct {
+type bfdInterfaceData struct {
+	Name   string
+	Params string
+}
+
+type bgpRouterData struct {
 	Name       string
 	Interface  string
 	Address    string
@@ -49,8 +64,25 @@ type routerData struct {
 	IPFamily   string
 }
 
+type staticRouterData struct {
+	Name      string
+	Interface string
+	Address   string
+	BFD       string
+	IPFamily  string
+}
+
+var tmplFuncs = template.FuncMap{
+	"defaultRoute": func(ipFamily string) string {
+		if ipFamily == ipFamilyIPv6 {
+			return defaultRouteIPv6
+		}
+		return defaultRouteIPv4
+	},
+}
+
 //nolint:lll
-var birdConfigTmpl = template.Must(template.New("bird.conf").Parse(`{{- range .LogParams}}
+var birdConfigTmpl = template.Must(template.New("bird.conf").Funcs(tmplFuncs).Parse(`{{- range .LogParams}}
 {{.FmtParams}}
 {{- end}}
 
@@ -60,6 +92,12 @@ filter gateway_routes {
 	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
 	if ( net ~ [ 0::/0 ] ) then accept;
 	if source = RTS_BGP then accept;
+	else reject;
+}
+
+filter default_rt {
+	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
+	if ( net ~ [ 0::/0 ] ) then accept;
 	else reject;
 }
 
@@ -110,9 +148,9 @@ protocol kernel {
 
 protocol bfd {
 	accept direct;
-{{- if .BGPInterfaces}}
-{{- range .BGPInterfaces}}
-	interface "{{.}}" {};
+{{- if .BFDInterfaces}}
+{{- range .BFDInterfaces}}
+	interface "{{.Name}}" {{"{"}}{{.Params}}{{"}"}};
 {{- end}}
 {{- else}}
 	interface "*" {};
@@ -136,7 +174,7 @@ protocol static VIP6 {
 {{- end}}
 }
 {{- end}}
-{{- range .Routers}}
+{{- range .BGPRouters}}
 
 protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 	interface "{{.Interface}}";
@@ -150,49 +188,44 @@ protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 	};
 }
 {{- end}}
+{{- range .StaticRouters}}
+
+protocol static 'NBR-{{.Name}}' {
+	{{.IPFamily}} {
+		import filter default_rt;
+	};
+	route {{defaultRoute .IPFamily}} via {{.Address}}%'{{.Interface}}'{{.BFD}};
+}
+{{- end}}
 `))
 
-func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
+func toBGPRouterData(router *meridio2v1alpha1.GatewayRouter) (bgpRouterData, error) {
 	if router.Spec.BGP.LocalPort == nil {
-		return routerData{}, fmt.Errorf("router %q: LocalPort is required", router.Name)
+		return bgpRouterData{}, fmt.Errorf("router %q: LocalPort is required", router.Name)
 	}
 	if router.Spec.BGP.RemotePort == nil {
-		return routerData{}, fmt.Errorf("router %q: RemotePort is required", router.Name)
+		return bgpRouterData{}, fmt.Errorf("router %q: RemotePort is required", router.Name)
 	}
 	localPort := int(*router.Spec.BGP.LocalPort)
 	remotePort := int(*router.Spec.BGP.RemotePort)
 
 	t, err := time.ParseDuration(router.Spec.BGP.HoldTime)
 	if err != nil {
-		return routerData{}, fmt.Errorf("couldn't parse holdTime: %w", err)
+		return bgpRouterData{}, fmt.Errorf("couldn't parse holdTime: %w", err)
 	}
 	holdTime := strconv.Itoa(int(t.Seconds()))
 
 	bfd := "bfd off;"
-	if router.Spec.BGP.BFD != nil && router.Spec.BGP.BFD.Switch != nil && *router.Spec.BGP.BFD.Switch {
-		bfdConf := ""
-		if router.Spec.BGP.BFD.MinRx != "" {
-			bfdConf += fmt.Sprintf("\t\tmin rx interval %s;\n", router.Spec.BGP.BFD.MinRx)
-		}
-		if router.Spec.BGP.BFD.MinTx != "" {
-			bfdConf += fmt.Sprintf("\t\tmin tx interval %s;\n", router.Spec.BGP.BFD.MinTx)
-		}
-		if router.Spec.BGP.BFD.Multiplier != nil {
-			bfdConf += fmt.Sprintf("\t\tmultiplier %d;\n", *router.Spec.BGP.BFD.Multiplier)
-		}
-		if bfdConf != "" {
-			bfd = fmt.Sprintf("bfd {\n%s\t};", bfdConf)
-		} else {
-			bfd = "bfd on;"
-		}
+	if router.Spec.BGP.BFD != nil {
+		bfd = formatBFD(router.Spec.BGP.BFD)
 	}
 
-	ipFamily := "ipv4"
+	ipFamily := ipFamilyIPv4
 	if isIPv6(router.Spec.Address) {
-		ipFamily = "ipv6"
+		ipFamily = ipFamilyIPv6
 	}
 
-	return routerData{
+	return bgpRouterData{
 		Name:       router.Name,
 		Interface:  router.Spec.Interface,
 		Address:    router.Spec.Address,
@@ -204,6 +237,48 @@ func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
 		HoldTime:   holdTime,
 		IPFamily:   ipFamily,
 	}, nil
+}
+
+func toStaticRouterData(router *meridio2v1alpha1.GatewayRouter) staticRouterData {
+	bfd := ""
+	if isStaticBFDOn(router) {
+		bfd = " bfd"
+	}
+
+	ipFamily := ipFamilyIPv4
+	if isIPv6(router.Spec.Address) {
+		ipFamily = ipFamilyIPv6
+	}
+
+	return staticRouterData{
+		Name:      router.Name,
+		Interface: router.Spec.Interface,
+		Address:   router.Spec.Address,
+		BFD:       bfd,
+		IPFamily:  ipFamily,
+	}
+}
+
+func isStaticBFDOn(router *meridio2v1alpha1.GatewayRouter) bool {
+	return router.Spec.Static != nil && router.Spec.Static.BFD != nil
+}
+
+func formatBFD(spec *meridio2v1alpha1.BfdSpec) string {
+	params := formatBFDInterfaceParams(*spec)
+	if params != "" {
+		return fmt.Sprintf("bfd { %s };", params)
+	}
+	return "bfd on;"
+}
+
+// formatBFDInterfaceParams formats BFD parameters for the protocol bfd interface block.
+// All fields are required by the BfdSpec API, so no empty checks are needed.
+func formatBFDInterfaceParams(spec meridio2v1alpha1.BfdSpec) string {
+	return strings.Join([]string{
+		fmt.Sprintf("min rx interval %s;", spec.MinRx),
+		fmt.Sprintf("min tx interval %s;", spec.MinTx),
+		fmt.Sprintf("multiplier %d;", spec.Multiplier),
+	}, " ")
 }
 
 func isIPv6(ipOrCIDR string) bool {

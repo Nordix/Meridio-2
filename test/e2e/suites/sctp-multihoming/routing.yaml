@@ -10,6 +10,7 @@ spec:
     namespace: e2e-sctp-multihoming
   interface: "vlan-500"
   address: "169.254.30.150"
+  protocol: "BGP"
   bgp:
     localASN: 64516
     remoteASN: 4200000000
@@ -17,7 +18,6 @@ spec:
     remotePort: 10179
     holdTime: 24s
     bfd:
-      switch: true
       minTx: 300ms
       minRx: 300ms
       multiplier: 5
@@ -33,6 +33,7 @@ spec:
     namespace: e2e-sctp-multihoming
   interface: "vlan-600"
   address: "169.254.31.150"
+  protocol: "BGP"
   bgp:
     localASN: 64517
     remoteASN: 4200000000
@@ -40,7 +41,6 @@ spec:
     remotePort: 10179
     holdTime: 24s
     bfd:
-      switch: true
       minTx: 300ms
       minRx: 300ms
       multiplier: 5

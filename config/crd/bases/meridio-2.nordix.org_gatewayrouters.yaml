@@ -47,6 +47,7 @@ spec:
                   rule: isIP(self)
               bgp:
                 description: |-
+                  bgp defines BGP session parameters. Required when protocol is BGP.
                   Parameters to set up the BGP session to specified Address.
                   If the Protocol is bgp, the minimal parameters to be defined in bgp properties
                   are RemoteASN and LocalASN
@@ -56,13 +57,13 @@ spec:
                     properties:
                       minRx:
                         description: |-
-                          Min-rx timer of bfd session. Please refere to BFD material to understand what this implies.
+                          Min-rx timer of bfd session. Please refer to bird BFD documentation to understand what this implies.
                           The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
                           The duration will be rounded by millisecond.
                         type: string
                       minTx:
                         description: |-
-                          Min-tx timer of bfd session. Please refere to BFD material to understand what this implies.
+                          Min-tx timer of bfd session. Please refer to bird BFD documentation to understand what this implies.
                           The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
                           The duration will be rounded by millisecond.
                         type: string
@@ -71,19 +72,15 @@ spec:
                           Multiplier of bfd session.
                           When this number of bfd packets failed to receive, bfd session will go down.
                         type: integer
-                      switch:
-                        description: |-
-                          BFD monitoring.
-                          Valid values are:
-                          - false: no BFD monitoring;
-                          - true: turns on the BFD monitoring.
-                          When left empty, there is no BFD monitoring.
-                        type: boolean
+                    required:
+                    - minRx
+                    - minTx
+                    - multiplier
                     type: object
                   holdTime:
                     default: 240s
                     description: |-
-                      Hold timer of the BGP session. Please refere to BGP material to understand what this implies.
+                      Hold timer of the BGP session. Please refer to BGP material to understand what this implies.
                       The value must be a valid duration format. For example, 90s, 1m, 1h.
                       The duration will be rounded by second
                       Minimum duration is 3s.
@@ -116,20 +113,12 @@ spec:
                 - localASN
                 - remoteASN
                 type: object
+                x-kubernetes-validations:
+                - message: bgp is immutable once set
+                  optionalOldSelf: true
+                  rule: '!oldSelf.hasValue() || self == oldSelf.value()'
               gatewayRef:
-                description: |-
-                  ParentReference identifies an API object (usually a Gateway) that can be considered
-                  a parent of this resource (usually a route). There are two kinds of parent resources
-                  with "Core" support:
-
-                  * Gateway (Gateway conformance profile)
-                  * Service (Mesh conformance profile, ClusterIP Services only)
-
-                  This API may be extended in the future to support additional kinds of parent
-                  resources.
-
-                  The API object must be valid in the cluster; the Group and Kind must
-                  be registered in the cluster for this reference to be valid.
+                description: gatewayRef references the Gateway this router peers with.
                 properties:
                   group:
                     default: gateway.networking.k8s.io
@@ -266,12 +255,63 @@ spec:
               interface:
                 description: Name of the interface to reach external gateway
                 type: string
+              protocol:
+                description: protocol selects the routing protocol for this peering.
+                enum:
+                - BGP
+                - Static
+                type: string
+                x-kubernetes-validations:
+                - message: protocol is immutable
+                  rule: self == oldSelf
+              static:
+                description: static defines static routing with BFD supervision. Required
+                  when protocol is Static.
+                properties:
+                  bfd:
+                    description: BFD monitoring of the static next-hop.
+                    properties:
+                      minRx:
+                        description: |-
+                          Min-rx timer of bfd session. Please refer to bird BFD documentation to understand what this implies.
+                          The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+                          The duration will be rounded by millisecond.
+                        type: string
+                      minTx:
+                        description: |-
+                          Min-tx timer of bfd session. Please refer to bird BFD documentation to understand what this implies.
+                          The value must be a valid duration format. For example, 300ms, 90s, 1m, 1h.
+                          The duration will be rounded by millisecond.
+                        type: string
+                      multiplier:
+                        description: |-
+                          Multiplier of bfd session.
+                          When this number of bfd packets failed to receive, bfd session will go down.
+                        type: integer
+                    required:
+                    - minRx
+                    - minTx
+                    - multiplier
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: static is immutable once set
+                  optionalOldSelf: true
+                  rule: '!oldSelf.hasValue() || self == oldSelf.value()'
             required:
             - address
-            - bgp
             - gatewayRef
             - interface
+            - protocol
             type: object
+            x-kubernetes-validations:
+            - message: static is required when protocol is Static
+              rule: self.protocol != 'Static' || has(self.static)
+            - message: bgp is required when protocol is BGP
+              rule: self.protocol != 'BGP' || has(self.bgp)
+            - message: bgp and static are mutually exclusive
+              rule: (self.protocol != 'BGP' || !has(self.static)) && (self.protocol
+                != 'Static' || !has(self.bgp))
           status:
             description: status defines the observed state of GatewayRouter
             properties:
