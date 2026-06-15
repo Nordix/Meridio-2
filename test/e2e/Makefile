@@ -133,7 +133,7 @@ cluster-cleanup: ## Cleanup cluster dependencies.
 ################################################################################
 
 # deploy-suite: Deploy a test suite
-# Args: $(1)=namespace, $(2)=suite-dir, $(3)=suite-label, $(4)=sllb-deployments
+# Args: $(1)=namespace, $(2)=suite-dir, $(3)=suite-label, $(4)=sllbr-deployments
 define deploy-suite
 	@NS=$(1); \
 	SUITE_DIR=$(2); \
@@ -193,7 +193,7 @@ common-appnetwork: deploy-common-appnetwork test-common-appnetwork ## Deploy and
 
 .PHONY: deploy-common-appnetwork
 deploy-common-appnetwork: cluster ## Deploy common-appnetwork topology.
-	$(call deploy-suite,e2e-common-appnet,$(shell pwd)/suites/common-appnetwork,common-appnet,sllb-gw-b1 sllb-gw-b2)
+	$(call deploy-suite,e2e-common-appnet,$(shell pwd)/suites/common-appnetwork,common-appnet,sllbr-gw-b1 sllbr-gw-b2)
 
 .PHONY: test-common-appnetwork
 test-common-appnetwork: ## Run e2e tests for common-appnetwork suite.
@@ -214,7 +214,7 @@ separate-appnetwork: deploy-separate-appnetwork test-separate-appnetwork ## Depl
 
 .PHONY: deploy-separate-appnetwork
 deploy-separate-appnetwork: cluster ## Deploy separate-appnetwork topology.
-	$(call deploy-suite,e2e-separate-appnet,$(shell pwd)/suites/separate-appnetwork,separate-appnet,sllb-gw-a1 sllb-gw-a2)
+	$(call deploy-suite,e2e-separate-appnet,$(shell pwd)/suites/separate-appnetwork,separate-appnet,sllbr-gw-a1 sllbr-gw-a2)
 
 .PHONY: test-separate-appnetwork
 test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
@@ -235,7 +235,7 @@ sctp-multihoming: deploy-sctp-multihoming test-sctp-multihoming ## Deploy and te
 
 .PHONY: deploy-sctp-multihoming
 deploy-sctp-multihoming: cluster ## Deploy sctp-multihoming topology.
-	$(call deploy-suite,e2e-sctp-multihoming,$(shell pwd)/suites/sctp-multihoming,sctp-multihoming,sllb-sctp-gw1 sllb-sctp-gw2)
+	$(call deploy-suite,e2e-sctp-multihoming,$(shell pwd)/suites/sctp-multihoming,sctp-multihoming,sllbr-sctp-gw1 sllbr-sctp-gw2)
 
 .PHONY: test-sctp-multihoming
 test-sctp-multihoming: ## Run e2e tests for sctp-multihoming suite.
@@ -256,7 +256,7 @@ low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
 
 .PHONY: deploy-low-mtu
 deploy-low-mtu: cluster ## Deploy low-mtu topology.
-	$(call deploy-suite,e2e-low-mtu,$(shell pwd)/suites/low-mtu,low-mtu,sllb-gw-m1)
+	$(call deploy-suite,e2e-low-mtu,$(shell pwd)/suites/low-mtu,low-mtu,sllbr-gw-m1)
 
 .PHONY: test-low-mtu
 test-low-mtu: ## Run e2e tests for low-mtu suite.

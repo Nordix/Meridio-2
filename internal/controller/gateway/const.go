@@ -34,7 +34,7 @@ const (
 	yamlDecoderBufferSize = 4096
 
 	// LB Deployment naming
-	lbDeploymentPrefix = "sllb-"
+	lbDeploymentPrefix = "sllbr-"
 	// LBDeploymentTemplateFile is the filename for the LB Deployment template
 	LBDeploymentTemplateFile = "lb-deployment.yaml"
 

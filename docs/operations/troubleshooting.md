@@ -60,7 +60,7 @@ kubectl get pods -n <namespace>
 
 Expected Pods:
 - **controller-manager** — 1 Pod, 1/1 Ready
-- **sllb-\<gateway-name\>** — LB Pods (2 containers each: `loadbalancer` + `router`), count matches `GatewayConfiguration.spec.horizontalScaling.replicas` (default: 2) unless HPA is managing the Deployment (`enforceReplicas: false`)
+- **sllbr-\<gateway-name\>** — LB Pods (2 containers each: `loadbalancer` + `router`), count matches `GatewayConfiguration.spec.horizontalScaling.replicas` (default: 2) unless HPA is managing the Deployment (`enforceReplicas: false`)
 - **Application Pods** — with network-sidecar container if using EndpointNetworkConfiguration
 
 All Pods should be Running with all containers ready. Check for restarts.
@@ -102,10 +102,10 @@ Both containers drop all capabilities and add only what's needed:
 
 Verify file capabilities on the binaries:
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- getcap /app/stateless-load-balancer
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- getcap /app/stateless-load-balancer
 # Expected: /app/stateless-load-balancer cap_net_admin,cap_ipc_lock,cap_ipc_owner=ep
 
-kubectl exec -n <ns> <sllb-pod> -c router -- getcap /app/router
+kubectl exec -n <ns> <sllbr-pod> -c router -- getcap /app/router
 # Expected: /app/router cap_net_admin,cap_net_bind_service,cap_net_raw=ep
 ```
 
@@ -126,7 +126,7 @@ Both containers run with `readOnlyRootFilesystem: true` and require emptyDir vol
 
 Verify mounts:
 ```bash
-kubectl get pod -n <ns> <sllb-pod> -o jsonpath='{.spec.containers[*].volumeMounts}' | jq .
+kubectl get pod -n <ns> <sllbr-pod> -o jsonpath='{.spec.containers[*].volumeMounts}' | jq .
 ```
 
 ## Logs
@@ -137,15 +137,15 @@ Check logs with:
 kubectl logs -n <ns> <controller-manager-pod>
 
 # LB Pod containers
-kubectl logs -n <ns> <sllb-pod> -c loadbalancer
-kubectl logs -n <ns> <sllb-pod> -c router
+kubectl logs -n <ns> <sllbr-pod> -c loadbalancer
+kubectl logs -n <ns> <sllbr-pod> -c router
 ```
 
 Meridio-2 uses structured JSON logging via controller-runtime's zap logger.
 
 BIRD logs are not sent to stdout — they are written to a file inside the router container. To view BIRD logs:
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- cat /var/log/bird/bird.log
+kubectl exec -n <ns> <sllbr-pod> -c router -- cat /var/log/bird/bird.log
 ```
 The log file path and size limit are configurable via `MERIDIO_BIRD_LOG_FILE` and `MERIDIO_BIRD_LOG_FILE_SIZE`.
 
@@ -240,7 +240,7 @@ The router container runs BIRD 3.x for BGP session management.
 ### Check BIRD is running
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- birdc -s /var/run/bird/bird.ctl show status
+kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl show status
 ```
 
 If BIRD is not running, `birdc` will fail with `Cannot connect to BIRD control socket`. Check the router container logs for startup errors. See also limitation about BIRD error propagation missing — the router controller does not crash if BIRD fails.
@@ -248,7 +248,7 @@ If BIRD is not running, `birdc` will fail with `Cannot connect to BIRD control s
 ### Check BGP session status
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- birdc -s /var/run/bird/bird.ctl show protocols
+kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl show protocols
 ```
 
 Expected output shows BGP sessions in `Established` state:
@@ -273,8 +273,8 @@ If sessions are `DOWN` or `Active`, check:
 ### Check advertised VIP routes
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- birdc -s /var/run/bird/bird.ctl show route protocol VIP4
-kubectl exec -n <ns> <sllb-pod> -c router -- birdc -s /var/run/bird/bird.ctl show route protocol VIP6
+kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl show route protocol VIP4
+kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl show route protocol VIP6
 ```
 
 VIPs should appear as static routes on `lo` exported to BGP peers.
@@ -282,19 +282,19 @@ VIPs should appear as static routes on `lo` exported to BGP peers.
 ### Check routes learned from BGP peers
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- birdc -s /var/run/bird/bird.ctl show protocols
+kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl show protocols
 ```
 
 Use the BGP protocol names from the output (e.g., `NBR-gateway-router-v4`) to check learned routes:
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- birdc -s /var/run/bird/bird.ctl 'show route where proto = "NBR-gateway-router-v4"'
+kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl 'show route where proto = "NBR-gateway-router-v4"'
 ```
 
 ### Check kernel routing table
 
 BGP-learned routes (default routes from external gateways) should appear in kernel table 4096:
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- ip route show table 4096
+kubectl exec -n <ns> <sllbr-pod> -c router -- ip route show table 4096
 # Expected: default via <gateway-ip> dev <ext-interface> proto bird
 ```
 
@@ -303,7 +303,7 @@ If routes are missing or delayed (up to 60 seconds), this may be the BIRD 3.x sc
 ### Check policy routing rules
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c router -- ip rule
+kubectl exec -n <ns> <sllbr-pod> -c router -- ip rule
 ```
 
 Expected rules for VIP source-based routing:
@@ -321,7 +321,7 @@ Expected rules for VIP source-based routing:
 
 IP forwarding must be enabled in the LB Pod's network namespace for traffic to be forwarded to/from targets:
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- sysctl net.ipv4.conf.all.forwarding net.ipv6.conf.all.forwarding
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- sysctl net.ipv4.conf.all.forwarding net.ipv6.conf.all.forwarding
 # Expected: net.ipv4.conf.all.forwarding = 1
 #           net.ipv6.conf.all.forwarding = 1
 ```
@@ -329,7 +329,7 @@ kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- sysctl net.ipv4.conf.all.forw
 ### Check nftables
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- nft list ruleset
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nft list ruleset
 ```
 
 Example output:
@@ -385,7 +385,7 @@ Note: `nft` requires `NET_ADMIN` and `allowPrivilegeEscalation: true` as explain
 
 Verify that NFQLB is listening on the expected queues:
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- cat /proc/net/netfilter/nfnetlink_queue
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- cat /proc/net/netfilter/nfnetlink_queue
 ```
 
 Example output:
@@ -401,7 +401,7 @@ The first column is the queue number (0-3 matching the nftables `queue to 0-3` r
 ### Check NFQLB shared memory instances
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- nfqlb show --shm=tshm-<dg-name>
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb show --shm=tshm-<dg-name>
 ```
 
 Example output:
@@ -428,7 +428,7 @@ Shm: tshm-test-backend-indirect
 ### Check NFQLB flows
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- nfqlb flow-list
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb flow-list
 ```
 
 Example output:
@@ -464,8 +464,8 @@ Each flow corresponds to an L34Route. The `name` is `tshm-<dg-name>-<route-name>
 ### Check fwmark routing to targets
 
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- ip rule
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- ip route show table <fwmark>
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- ip rule
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- ip route show table <fwmark>
 ```
 
 Each active target per DistributionGroup should have:
@@ -474,7 +474,7 @@ Each active target per DistributionGroup should have:
 
 Verify target IPs are reachable:
 ```bash
-kubectl exec -n <ns> <sllb-pod> -c loadbalancer -- ping -c1 -W1 <target-ip>
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- ping -c1 -W1 <target-ip>
 ```
 Note: `ping` requires `NET_RAW` and `allowPrivilegeEscalation: true` as explained. Alternatively, use nsenter instead.
 

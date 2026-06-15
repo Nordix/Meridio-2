@@ -285,7 +285,7 @@ func TestGetSLLBRNextHops(t *testing.T) {
 	gw := acceptedGateway("sllb-a", testControllerName)
 	sllbrPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllb-sllb-a-abc",
+			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
@@ -294,7 +294,7 @@ func TestGetSLLBRNextHops(t *testing.T) {
 
 	r, _ := setupReconciler(gw, sllbrPod)
 	r.IPScraper = func(pod *corev1.Pod, cidr, attachmentType string) string {
-		if pod.Name == "sllb-sllb-a-abc" && cidr == testSubnetV4 {
+		if pod.Name == "sllbr-sllb-a-abc" && cidr == testSubnetV4 {
 			return testNextHopV4
 		}
 		return ""
@@ -314,7 +314,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 	gc := newGatewayConfig([]string{testSubnetV4, "fd00:100::/64"})
 	sllbrPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllb-sllb-a-abc",
+			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
@@ -355,7 +355,7 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 	gc := newGatewayConfig([]string{testSubnetV4, "fd00:100::/64"})
 	sllbrPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllb-sllb-a-abc",
+			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
@@ -424,7 +424,7 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 	dg := newDG("dg-1", map[string]string{"app": "web"}, "sllb-a")
 	sllbrPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllb-sllb-a-abc",
+			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
@@ -529,7 +529,7 @@ func TestSidecarContract_DualStack(t *testing.T) {
 	dg := newDG("dg-1", map[string]string{"app": "web"}, "sllb-a")
 	sllbrPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllb-sllb-a-abc",
+			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
