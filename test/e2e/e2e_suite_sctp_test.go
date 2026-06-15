@@ -42,7 +42,7 @@ var sctpTestCases = []sctpSuiteTestCase{
 	},
 }
 
-var _ = Describe("E2E SCTP Multihoming Suites", func() {
+var _ = Describe("E2E SCTP Multihoming Suites", Label("ipv4"), func() {
 	SetDefaultEventuallyTimeout(5 * time.Minute)
 	SetDefaultEventuallyPollingInterval(2 * time.Second)
 

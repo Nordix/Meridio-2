@@ -67,7 +67,7 @@ var lowMTUTestCase = suiteTestCase{
 	},
 }
 
-var _ = Describe("E2E Test Suites", func() {
+var _ = Describe("E2E Test Suites", Label("ipv4"), func() {
 	SetDefaultEventuallyTimeout(5 * time.Minute)
 	SetDefaultEventuallyPollingInterval(2 * time.Second)
 

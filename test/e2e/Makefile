@@ -29,6 +29,7 @@ WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
 SUITES ?= common-appnetwork separate-appnetwork sctp-multihoming low-mtu
+SUITES_DS ?= dual-stack
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
 GINKGO_FLAGS ?=
@@ -315,14 +316,30 @@ undeploy-dual-stack: ## Undeploy dual-stack topology.
 ##@ All suites
 ################################################################################
 
-.PHONY: deploy-all
-deploy-all: ## Deploy all suites.
+.PHONY: deploy
+deploy: ## Deploy all IPv4 suites.
 	@for suite in $(SUITES); do $(MAKE) deploy-$$suite || exit 1; done
 
 .PHONY: test
-test: ## Run all e2e tests in parallel.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e $(GINKGO_FLAGS)
+test: ## Run all IPv4 e2e tests in parallel.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=ipv4 $(GINKGO_FLAGS)
 
-.PHONY: undeploy-all
-undeploy-all: ## Undeploy all suites.
+.PHONY: undeploy
+undeploy: ## Undeploy all IPv4 suites.
 	@for suite in $(SUITES); do $(MAKE) undeploy-$$suite; done
+
+################################################################################
+##@ All dual-stack suites
+################################################################################
+
+.PHONY: deploy-ds
+deploy-ds: ## Deploy all dual-stack suites.
+	@for suite in $(SUITES_DS); do $(MAKE) deploy-$$suite || exit 1; done
+
+.PHONY: test-ds
+test-ds: ## Run all dual-stack e2e tests in parallel.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=dual-stack $(GINKGO_FLAGS)
+
+.PHONY: undeploy-ds
+undeploy-ds: ## Undeploy all dual-stack suites.
+	@for suite in $(SUITES_DS); do $(MAKE) undeploy-$$suite; done
