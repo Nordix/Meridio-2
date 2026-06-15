@@ -9,6 +9,7 @@ spec:
     name: gw-b1
   interface: "vlan-300"
   address: "169.254.20.150"
+  protocol: "BGP"
   bgp:
     localASN: 64514
     remoteASN: 4200000000
@@ -51,6 +52,7 @@ spec:
     name: gw-b2
   interface: "vlan-400"
   address: "169.254.21.150"
+  protocol: "BGP"
   bgp:
     localASN: 64515
     remoteASN: 4200000000
