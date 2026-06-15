@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES ?= common-appnetwork separate-appnetwork sctp-multihoming low-mtu
+SUITES ?= shared-appnetwork separate-appnetwork sctp-multihoming low-mtu
 SUITES_DS ?= dual-stack
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
@@ -186,24 +186,24 @@ define deploy-suite
 endef
 
 ################################################################################
-##@ Suite: common-appnetwork
+##@ Suite: shared-appnetwork
 ################################################################################
 
-.PHONY: common-appnetwork
-common-appnetwork: deploy-common-appnetwork test-common-appnetwork ## Deploy and test common-appnetwork suite.
+.PHONY: shared-appnetwork
+shared-appnetwork: deploy-shared-appnetwork test-shared-appnetwork ## Deploy and test shared-appnetwork suite.
 
-.PHONY: deploy-common-appnetwork
-deploy-common-appnetwork: cluster ## Deploy common-appnetwork topology.
-	$(call deploy-suite,e2e-common-appnetwork,$(shell pwd)/suites/common-appnetwork,common-appnetwork,sllbr-gw-b1 sllb-gw-b2)
+.PHONY: deploy-shared-appnetwork
+deploy-shared-appnetwork: cluster ## Deploy shared-appnetwork topology.
+	$(call deploy-suite,e2e-shared-appnetwork,$(shell pwd)/suites/shared-appnetwork,shared-appnet,sllbr-gw-b1 sllb-gw-b2)
 
-.PHONY: test-common-appnetwork
-test-common-appnetwork: ## Run e2e tests for common-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Common App Network" $(GINKGO_FLAGS)
+.PHONY: test-shared-appnetwork
+test-shared-appnetwork: ## Run e2e tests for shared-appnetwork suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Shared App Network" $(GINKGO_FLAGS)
 
-.PHONY: undeploy-common-appnetwork
-undeploy-common-appnetwork: ## Undeploy common-appnetwork topology.
-	@NS=e2e-common-appnetwork; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-common-appnetwork --ignore-not-found=true; \
+.PHONY: undeploy-shared-appnetwork
+undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
+	@NS=e2e-shared-appnetwork; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnetwork --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
@@ -215,7 +215,7 @@ separate-appnetwork: deploy-separate-appnetwork test-separate-appnetwork ## Depl
 
 .PHONY: deploy-separate-appnetwork
 deploy-separate-appnetwork: cluster ## Deploy separate-appnetwork topology.
-	$(call deploy-suite,e2e-separate-appnetwork,$(shell pwd)/suites/separate-appnetwork,separate-appnetwork,sllbr-gw-a1 sllb-gw-a2)
+	$(call deploy-suite,e2e-separate-appnetwork,$(shell pwd)/suites/separate-appnetwork,separate-appnet,sllbr-gw-a1 sllb-gw-a2)
 
 .PHONY: test-separate-appnetwork
 test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.

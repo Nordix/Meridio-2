@@ -21,7 +21,7 @@ var dualStackTestCase = suiteTestCase{
 	targetApp:      "target-ds",
 	targetReplicas: 2,
 	gateways: []gwTestCase{
-		{name: "gw-ds", vip: "60.0.0.1", targets: 2, dgName: "dg-ds"},
+		{name: "gw-ds", vip: "10.0.0.1", targets: 2, dgName: "dg-ds"},
 	},
 }
 
@@ -58,7 +58,7 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 					"-o", "jsonpath={.status.addresses[*].value}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring("60.0.0.1"), "should have IPv4 VIP")
+				g.Expect(out).To(ContainSubstring("10.0.0.1"), "should have IPv4 VIP")
 				g.Expect(out).To(ContainSubstring("fd00:cafe:1::1"), "should have IPv6 VIP")
 			}).Should(Succeed())
 		})
@@ -175,7 +175,7 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 					"-c", "example-target", "--", "ip", "addr", "show", "net1")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring("60.0.0.1/32"), "should have IPv4 VIP")
+				g.Expect(out).To(ContainSubstring("10.0.0.1/32"), "should have IPv4 VIP")
 				g.Expect(out).To(ContainSubstring("fd00:cafe:1::1/128"), "should have IPv6 VIP")
 			}).Should(Succeed())
 		})
@@ -194,7 +194,7 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 					"-c", "example-target", "--", "ip", "rule", "show")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring("from 60.0.0.1 lookup"), "should have IPv4 source routing rule")
+				g.Expect(out).To(ContainSubstring("from 10.0.0.1 lookup"), "should have IPv4 source routing rule")
 
 				// Check IPv6 rule
 				cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, targetPod,
@@ -222,7 +222,7 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 
 				var tableID string
 				for _, line := range strings.Split(ruleOut, "\n") {
-					if strings.Contains(line, "60.0.0.1") && strings.Contains(line, "lookup") {
+					if strings.Contains(line, "10.0.0.1") && strings.Contains(line, "lookup") {
 						fields := strings.Fields(line)
 						for i, f := range fields {
 							if f == "lookup" && i+1 < len(fields) {
@@ -309,13 +309,13 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 	Context("Traffic", func() {
 		BeforeAll(func() {
 			By("waiting for BGP routes to propagate to VPN gateway")
-			Eventually(func() error { return e2eutils.Ping("60.0.0.1") }).Should(Succeed())
+			Eventually(func() error { return e2eutils.Ping("10.0.0.1") }).Should(Succeed())
 			Eventually(func() error { return e2eutils.Ping("fd00:cafe:1::1") }).Should(Succeed())
 		})
 
 		Context("ICMP reachability", func() {
 			It("handles IPv4 ping on VIP", func() {
-				Eventually(func() error { return e2eutils.Ping("60.0.0.1") }).
+				Eventually(func() error { return e2eutils.Ping("10.0.0.1") }).
 					WithTimeout(30 * time.Second).Should(Succeed())
 			})
 
@@ -327,14 +327,14 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 
 		Context("IPv4 load balancing", func() {
 			It("distributes TCP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("60.0.0.1", 5000, "tcp", 100)
+				lastingConn, lostConn, err := e2eutils.SendTraffic("10.0.0.1", 5000, "tcp", 100)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(lostConn).To(BeZero(), "no connections should be lost")
 				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
 			})
 
 			It("distributes UDP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("60.0.0.1", 5001, "udp", 100)
+				lastingConn, lostConn, err := e2eutils.SendTraffic("10.0.0.1", 5001, "udp", 100)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(lostConn).To(BeZero(), "no connections should be lost")
 				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)

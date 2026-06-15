@@ -33,7 +33,7 @@ spec:
     kind: DistributionGroup
     name: dg-b1
   destinationCIDRs:
-  - "30.0.0.1/32"
+  - "20.0.0.1/32"
   protocols:
   - TCP
   - UDP
@@ -75,7 +75,7 @@ spec:
     kind: DistributionGroup
     name: dg-b2
   destinationCIDRs:
-  - "30.0.0.2/32"
+  - "20.0.0.2/32"
   protocols:
   - TCP
   - UDP

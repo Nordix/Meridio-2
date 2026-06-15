@@ -11,7 +11,7 @@ images:
   newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
   newTag: latest
 
-nameSuffix: -separate-appnetwork
+nameSuffix: -separate-appnet
 
 labels:
 - pairs:
