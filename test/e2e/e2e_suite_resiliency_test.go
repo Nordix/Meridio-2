@@ -35,9 +35,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-var _ = Describe("Resiliency", Serial, Ordered, func() {
+var _ = Describe("Resiliency", Label("ipv4"), Serial, Ordered, func() {
 	const (
-		namespace   = "e2e-low-mtu"
+		namespace   = "e2e-ipv4-simple"
 		gatewayName = "gw-m1"
 		vip         = "40.0.0.1"
 	)

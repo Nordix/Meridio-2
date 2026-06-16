@@ -60,7 +60,7 @@ var testCases = []suiteTestCase{
 
 var lowMTUTestCase = suiteTestCase{
 	name:      "Low MTU",
-	namespace: "e2e-low-mtu",
+	namespace: "e2e-ipv4-simple",
 	targetApp: "target-m",
 	gateways: []gwTestCase{
 		{name: "gw-m1", vip: "40.0.0.1", targets: 2},

@@ -24,17 +24,17 @@ spec:
   - type: NAD
     nad:
       name: sysctl-tuning
-      namespace: e2e-low-mtu
+      namespace: e2e-ipv4-simple
       interface: dummy
   - type: NAD
     nad:
       name: vlan-700
-      namespace: e2e-low-mtu
+      namespace: e2e-ipv4-simple
       interface: vlan-700
   - type: NAD
     nad:
       name: app-net-mtu1200
-      namespace: e2e-low-mtu
+      namespace: e2e-ipv4-simple
       interface: net-m
   internalSubnets:
   - attachmentType: NAD

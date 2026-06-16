@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork sctp-multihoming low-mtu
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork sctp-multihoming ipv4-simple
 SUITES_DS ?= dual-stack-simple
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
@@ -185,7 +185,21 @@ define deploy-suite
 	echo "All pods ready in namespace $$NS"
 endef
 
+#################################################################################
+##@ Topology: ipv4-simple
 ################################################################################
+
+.PHONY: deploy-ipv4-simple
+deploy-ipv4-simple: cluster ## Deploy ipv4-simple topology.
+	$(call deploy-suite,e2e-ipv4-simple,$(shell pwd)/suites/ipv4-simple,ipv4-simple,sllbr-gw-m1)
+
+.PHONY: undeploy-ipv4-simple
+undeploy-ipv4-simple: ## Undeploy ipv4-simple topology.
+	@NS=e2e-ipv4-simple; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-ipv4-simple --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+###############################################################################
 ##@ Suite: shared-appnetwork
 ################################################################################
 
@@ -226,6 +240,40 @@ undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 	@NS=e2e-separate-appnetwork; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnetwork --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
+##@ Suite: low-mtu
+################################################################################
+
+.PHONY: low-mtu
+low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
+
+.PHONY: deploy-low-mtu
+deploy-low-mtu: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+
+.PHONY: test-low-mtu
+test-low-mtu: ## Run PMTU discovery tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Low MTU" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-low-mtu
+undeploy-low-mtu: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+
+################################################################################
+##@ Suite: resiliency
+################################################################################
+
+.PHONY: resiliency
+resiliency: deploy-resiliency test-resiliency ## Deploy and test resiliency suite.
+
+.PHONY: deploy-resiliency
+deploy-resiliency: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+
+.PHONY: test-resiliency
+test-resiliency: ## Run process recovery tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Resiliency" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-resiliency
+undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
 
 ################################################################################
 ##@ Suite: sctp-multihoming
@@ -290,7 +338,7 @@ undeploy-pod-cache-label: ## Undeploy pod-cache-label topology.
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-pod-cache-label --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-################################################################################
+#################################################################################
 ##@ Suite: dual-stack
 ################################################################################
 
@@ -312,8 +360,8 @@ undeploy-dual-stack-simple: ## Undeploy dual-stack topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-################################################################################
-##@ All suites
+###############################################################################
+##@ All ipv4 suites
 ################################################################################
 
 .PHONY: deploy-ipv4
