@@ -74,7 +74,7 @@ spec:
               screen -d -m bash -c "./ctraffic -server -address [::]:5002" ;
               screen -d -m bash -c "./ctraffic -server -udp -address [::]:5100" ;
               screen -d -m bash -c "./ctraffic -server -udp -address [::]:5101" ;
-              tail -f /dev/null
+              trap 'exit 0' TERM; sleep infinity & wait
           securityContext:
             runAsNonRoot: true
             capabilities:
