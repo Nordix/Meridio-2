@@ -9,12 +9,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libreadline-dev \
     wget \
     ca-certificates \
+    autoconf \
+    automake \
+    libtool \
+    m4 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
-RUN wget https://bird.network.cz/download/bird-3.1.2.tar.gz \
-    && tar -xzf bird-3.1.2.tar.gz \
-    && cd bird-3.1.2 \
+RUN wget https://gitlab.nic.cz/labs/bird/-/archive/v3.1.2/bird-v3.1.2.tar.gz \
+    && tar -xzf bird-v3.1.2.tar.gz \
+    && cd bird-v3.1.2 \
+    && autoreconf -i \
     && ./configure \
     && make -j$(nproc) \
     && make install
