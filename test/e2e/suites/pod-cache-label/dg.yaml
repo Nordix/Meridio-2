@@ -1,0 +1,14 @@
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-pcl
+spec:
+  type: Maglev
+  maglev:
+    maxEndpoints: 8
+  selector:
+    matchLabels:
+      app: target-pcl
+  parentRefs:
+  - name: gw-pcl
