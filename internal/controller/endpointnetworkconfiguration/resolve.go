@@ -17,10 +17,12 @@ limitations under the License.
 package endpointnetworkconfiguration
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -79,6 +81,11 @@ func (r *Reconciler) resolveGatewayConnections(ctx context.Context, pod *corev1.
 			connections = append(connections, *conn)
 		}
 	}
+	// Sort connections by Gateway name: map iteration order is non-deterministic,
+	// and ordering differences would trigger unnecessary ENC updates.
+	slices.SortFunc(connections, func(a, b meridio2v1alpha1.GatewayConnection) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 
 	return connections, nil
 }
@@ -142,6 +149,11 @@ func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod
 	if len(domains) == 0 {
 		return nil, nil
 	}
+
+	// Sort domains by name: subnetToType map iteration order is non-deterministic.
+	slices.SortFunc(domains, func(a, b meridio2v1alpha1.NetworkDomain) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 
 	return &meridio2v1alpha1.GatewayConnection{
 		Name:    gw.Name,
@@ -252,6 +264,10 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 			}
 		}
 	}
+	// Sort for deterministic output: Pod list order from cache is not guaranteed,
+	// and non-deterministic ordering causes unnecessary ENC updates.
+	slices.Sort(ipv4)
+	slices.Sort(ipv6)
 	return ipv4, ipv6, nil
 }
 

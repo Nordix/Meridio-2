@@ -306,6 +306,52 @@ func TestGetSLLBRNextHops(t *testing.T) {
 	assert.Nil(t, ipv6)
 }
 
+func TestGetSLLBRNextHops_DeterministicOrdering(t *testing.T) {
+	gw := acceptedGateway("sllb-a", testControllerName)
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sllb-sllb-a-111", Namespace: testNamespace,
+			Labels: map[string]string{labelGatewayName: "sllb-a"},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sllb-sllb-a-222", Namespace: testNamespace,
+			Labels: map[string]string{labelGatewayName: "sllb-a"},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+
+	scraper := func(pod *corev1.Pod, cidr, attachmentType string) string {
+		switch pod.Name {
+		case "sllb-sllb-a-111":
+			return "192.168.100.11"
+		case "sllb-sllb-a-222":
+			return "192.168.100.22"
+		}
+		return ""
+	}
+	subnetToType := map[string]string{testSubnetV4: "NAD"}
+
+	// pod1 before pod2
+	r1, _ := setupReconciler(gw, pod1, pod2)
+	r1.IPScraper = scraper
+	ipv4a, _, err := r1.getSLLBRNextHops(context.Background(), gw, subnetToType)
+	require.NoError(t, err)
+
+	// pod2 before pod1 (reversed insertion order)
+	r2, _ := setupReconciler(gw, pod2, pod1)
+	r2.IPScraper = scraper
+	ipv4b, _, err := r2.getSLLBRNextHops(context.Background(), gw, subnetToType)
+	require.NoError(t, err)
+
+	// Both must produce the same sorted result
+	expected := []string{"192.168.100.11", "192.168.100.22"}
+	assert.Equal(t, expected, ipv4a)
+	assert.Equal(t, expected, ipv4b)
+}
+
 // --- buildGatewayConnection tests ---
 
 func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
@@ -450,6 +496,69 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 	assert.Equal(t, "net1", connections[0].Domains[0].Network.InterfaceHint)
 	assert.Equal(t, []string{"20.0.0.1"}, connections[0].Domains[0].VIPs)
 	assert.Equal(t, []string{testNextHopV4}, connections[0].Domains[0].NextHops)
+}
+
+func TestResolveGatewayConnections_DeterministicOrdering(t *testing.T) {
+	pod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
+	pod.Annotations = map[string]string{
+		"k8s.v1.cni.cncf.io/network-status": `[
+			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
+			{"name":"nad-1","interface":"net1","ips":["169.111.100.10","fd00::100:10"]}
+		]`,
+	}
+
+	names := []string{"gw-d", "gw-b", "gw-c", "gw-a"}
+	ipv4VIPs := []string{"40.0.0.1", "20.0.0.1", "30.0.0.1", "10.0.0.1"}
+	ipv6VIPs := []string{"2001:db8::4", "2001:db8::2", "2001:db8::3", "2001:db8::1"}
+
+	buildObjects := func(order []int) []client.Object {
+		var objs []client.Object
+		objs = append(objs, pod)
+		for _, i := range order {
+			gw := acceptedGateway(names[i], testControllerName, ipv4VIPs[i], ipv6VIPs[i])
+			gc := newGatewayConfig([]string{testSubnetV4, testSubnetV6})
+			gc.Name = names[i] + "-config"
+			dg := newDG("dg-"+names[i], map[string]string{"app": "web"}, names[i])
+			objs = append(objs, gw, gc, dg)
+		}
+		return objs
+	}
+
+	scraper := func(_ *corev1.Pod, cidr, _ string) string {
+		switch cidr {
+		case testSubnetV4:
+			return testNextHopV4
+		case testSubnetV6:
+			return testNextHopV6
+		}
+		return ""
+	}
+
+	// Two runs with different insertion orders
+	r1, _ := setupReconciler(buildObjects([]int{3, 2, 1, 0})...)
+	r1.IPScraper = scraper
+	conn1, err := r1.resolveGatewayConnections(context.Background(), pod)
+	require.NoError(t, err)
+
+	r2, _ := setupReconciler(buildObjects([]int{1, 3, 0, 2})...)
+	r2.IPScraper = scraper
+	conn2, err := r2.resolveGatewayConnections(context.Background(), pod)
+	require.NoError(t, err)
+
+	// Both must produce same sorted order
+	require.Len(t, conn1, 4)
+	require.Len(t, conn2, 4)
+	expectedGW := []string{"gw-a", "gw-b", "gw-c", "gw-d"}
+	for i, name := range expectedGW {
+		assert.Equal(t, name, conn1[i].Name, "conn1[%d]", i)
+		assert.Equal(t, name, conn2[i].Name, "conn2[%d]", i)
+		// Verify domain ordering (sorted by name within each connection)
+		require.Len(t, conn1[i].Domains, 2, "conn1[%d] domains", i)
+		require.Len(t, conn2[i].Domains, 2, "conn2[%d] domains", i)
+		assert.Equal(t, conn1[i].Domains[0].Name, conn2[i].Domains[0].Name)
+		assert.True(t, conn1[i].Domains[0].Name < conn1[i].Domains[1].Name,
+			"domains should be sorted: %s, %s", conn1[i].Domains[0].Name, conn1[i].Domains[1].Name)
+	}
 }
 
 // --- helper tests ---

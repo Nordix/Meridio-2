@@ -19,6 +19,7 @@ package endpointnetworkconfiguration
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -64,7 +65,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var pod corev1.Pod
 	if err := r.Get(ctx, req.NamespacedName, &pod); err != nil {
 		if apierrors.IsNotFound(err) {
-			// Pod deleted → ENC garbage-collected via ownerReference
+			// Pod deleted → ENC garbage-collected via ownerReference.
+			// Note: if pod-cache-label filtering is enabled and the label is removed
+			// at runtime, the Pod is evicted from cache (triggering this path) but
+			// still exists — GC won't fire. Calling deleteENCIfExists here instead
+			// of returning nil would handle that edge case.
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -81,7 +86,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to resolve gateway connections: %w", err)
 	}
 
-	log.V(1).Info("resolved gateway connections", "pod", pod.Name, "gateways", len(gatewayConnections))
+	log.V(1).Info("resolved gateway connections", "pod", pod.Name, "gateways", len(gatewayConnections), "hash", hashConnections(gatewayConnections))
+	log.V(2).Info("gateway connection details", "pod", pod.Name, "connections", gatewayConnections)
 
 	// 4. If no gateway connections, delete ENC if it exists
 	if len(gatewayConnections) == 0 {
@@ -89,13 +95,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// 5. Create or update ENC
-	return ctrl.Result{}, r.reconcileENC(ctx, &pod, gatewayConnections)
+	if err := r.reconcileENC(ctx, &pod, gatewayConnections); err != nil {
+		if apierrors.IsConflict(err) {
+			// Requeue immediately instead of returning error (which triggers exponential backoff).
+			// Conflicts are expected from stale cache reads or concurrent status writers;
+			// fast retry avoids prolonging stale next-hop configuration.
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Pod{}).
+		For(&corev1.Pod{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			// ENC reconciliation targets application Pods only; LB Pods are excluded.
+			_, isLBPod := obj.GetLabels()[labelGatewayName]
+			return !isLBPod
+		}))).
 		Owns(&meridio2v1alpha1.EndpointNetworkConfiguration{}).
 		Watches(&meridio2v1alpha1.DistributionGroup{},
 			handler.EnqueueRequestsFromMapFunc(r.mapDGToPods)).
@@ -156,4 +175,15 @@ func (r *Reconciler) deleteENCIfExists(ctx context.Context, key client.ObjectKey
 		return client.IgnoreNotFound(err)
 	}
 	return r.Delete(ctx, &enc)
+}
+
+func hashConnections(connections []meridio2v1alpha1.GatewayConnection) string {
+	if len(connections) == 0 {
+		// Note: FNV-32a can theoretically produce 0 for a non-empty input,
+		// but it's merely a log hint and no logic depends on it.
+		return "0"
+	}
+	h := fnv.New32a()
+	_, _ = fmt.Fprint(h, connections)
+	return fmt.Sprintf("%08x", h.Sum32())
 }
