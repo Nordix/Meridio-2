@@ -28,8 +28,8 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES ?= shared-appnetwork separate-appnetwork sctp-multihoming low-mtu
-SUITES_DS ?= dual-stack
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork sctp-multihoming low-mtu
+SUITES_DS ?= dual-stack-simple
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
 GINKGO_FLAGS ?=
@@ -194,7 +194,7 @@ shared-appnetwork: deploy-shared-appnetwork test-shared-appnetwork ## Deploy and
 
 .PHONY: deploy-shared-appnetwork
 deploy-shared-appnetwork: cluster ## Deploy shared-appnetwork topology.
-	$(call deploy-suite,e2e-shared-appnetwork,$(shell pwd)/suites/shared-appnetwork,shared-appnet,sllbr-gw-b1 sllb-gw-b2)
+	$(call deploy-suite,e2e-shared-appnetwork,$(shell pwd)/suites/shared-appnetwork,shared-appnet,sllbr-gw-b1 sllbr-gw-b2)
 
 .PHONY: test-shared-appnetwork
 test-shared-appnetwork: ## Run e2e tests for shared-appnetwork suite.
@@ -215,7 +215,7 @@ separate-appnetwork: deploy-separate-appnetwork test-separate-appnetwork ## Depl
 
 .PHONY: deploy-separate-appnetwork
 deploy-separate-appnetwork: cluster ## Deploy separate-appnetwork topology.
-	$(call deploy-suite,e2e-separate-appnetwork,$(shell pwd)/suites/separate-appnetwork,separate-appnet,sllbr-gw-a1 sllb-gw-a2)
+	$(call deploy-suite,e2e-separate-appnetwork,$(shell pwd)/suites/separate-appnetwork,separate-appnet,sllbr-gw-a1 sllbr-gw-a2)
 
 .PHONY: test-separate-appnetwork
 test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
@@ -294,19 +294,19 @@ undeploy-pod-cache-label: ## Undeploy pod-cache-label topology.
 ##@ Suite: dual-stack
 ################################################################################
 
-.PHONY: dual-stack
-dual-stack: deploy-dual-stack test-dual-stack ## Deploy and test dual-stack suite.
+.PHONY: dual-stack-simple
+dual-stack-simple: deploy-dual-stack test-dual-stack ## Deploy and test dual-stack suite.
 
-.PHONY: deploy-dual-stack
-deploy-dual-stack: cluster ## Deploy dual-stack topology.
+.PHONY: deploy-dual-stack-simple
+deploy-dual-stack-simple: cluster ## Deploy dual-stack topology.
 	$(call deploy-suite,e2e-dual-stack,$(shell pwd)/suites/dual-stack,dual-stack,sllbr-gw-ds)
 
-.PHONY: test-dual-stack
-test-dual-stack: ## Run e2e tests for dual-stack suite.
+.PHONY: test-dual-stack-simple
+test-dual-stack-simple: ## Run e2e tests for dual-stack suite.
 	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Dual Stack" $(GINKGO_FLAGS)
 
-.PHONY: undeploy-dual-stack
-undeploy-dual-stack: ## Undeploy dual-stack topology.
+.PHONY: undeploy-dual-stack-simple
+undeploy-dual-stack-simple: ## Undeploy dual-stack topology.
 	@NS=e2e-dual-stack; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
@@ -316,30 +316,30 @@ undeploy-dual-stack: ## Undeploy dual-stack topology.
 ##@ All suites
 ################################################################################
 
-.PHONY: deploy
-deploy: ## Deploy all IPv4 suites.
-	@for suite in $(SUITES); do $(MAKE) deploy-$$suite || exit 1; done
+.PHONY: deploy-ipv4
+deploy-ipv4: ## Deploy all IPv4 suites.
+	@for suite in $(SUITES_IPV4); do $(MAKE) deploy-$$suite || exit 1; done
 
-.PHONY: test
-test: ## Run all IPv4 e2e tests in parallel.
+.PHONY: test-ipv4
+test-ipv4: ## Run all IPv4 e2e tests in parallel.
 	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=ipv4 $(GINKGO_FLAGS)
 
-.PHONY: undeploy
-undeploy: ## Undeploy all IPv4 suites.
-	@for suite in $(SUITES); do $(MAKE) undeploy-$$suite; done
+.PHONY: undeploy-ipv4
+undeploy-ipv4: ## Undeploy all IPv4 suites.
+	@for suite in $(SUITES_IPV4); do $(MAKE) undeploy-$$suite; done
 
 ################################################################################
 ##@ All dual-stack suites
 ################################################################################
 
-.PHONY: deploy-ds
-deploy-ds: ## Deploy all dual-stack suites.
+.PHONY: deploy-dual-stack
+deploy-dual-stack: ## Deploy all dual-stack suites.
 	@for suite in $(SUITES_DS); do $(MAKE) deploy-$$suite || exit 1; done
 
-.PHONY: test-ds
-test-ds: ## Run all dual-stack e2e tests in parallel.
+.PHONY: test-dual-stack
+test-dual-stack: ## Run all dual-stack e2e tests in parallel.
 	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=dual-stack $(GINKGO_FLAGS)
 
-.PHONY: undeploy-ds
-undeploy-ds: ## Undeploy all dual-stack suites.
+.PHONY: undeploy-dual-stack
+undeploy-dual-stack: ## Undeploy all dual-stack suites.
 	@for suite in $(SUITES_DS); do $(MAKE) undeploy-$$suite; done

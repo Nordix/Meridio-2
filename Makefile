@@ -138,9 +138,9 @@ test: generate setup-envtest ## Run the unit tests.
 
 .PHONY: e2e
 e2e: ## Run end-to-end tests.
-	$(MAKE) -C test/e2e REGISTRY=$(REGISTRY) VERSION=$(VERSION) deploy
-	$(MAKE) -C test/e2e REGISTRY=$(REGISTRY) VERSION=$(VERSION) test
-	$(MAKE) -C test/e2e undeploy
+	$(MAKE) -C test/e2e REGISTRY=$(REGISTRY) VERSION=$(VERSION) deploy-ipv4
+	$(MAKE) -C test/e2e REGISTRY=$(REGISTRY) VERSION=$(VERSION) test-ipv4
+	$(MAKE) -C test/e2e undeploy-ipv4
 	$(MAKE) -C test/e2e cluster-cleanup
 
 .PHONY: install-hooks
