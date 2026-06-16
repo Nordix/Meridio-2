@@ -1,0 +1,73 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: e2e-pod-cache-label
+
+resources:
+- ../../../../config/default
+
+images:
+- name: controller-manager
+  newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
+  newTag: latest
+
+nameSuffix: -pod-cache-label
+
+labels:
+- pairs:
+    e2e-suite: pod-cache-label
+
+patches:
+- patch: |-
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingWebhookConfiguration
+    metadata:
+      name: not-important
+      annotations:
+        cert-manager.io/inject-ca-from: e2e-pod-cache-label/meridio-2-serving-cert-pod-cache-label
+    webhooks:
+    - name: vl34route-v1alpha1.kb.io
+      namespaceSelector:
+        matchLabels:
+          e2e-suite: pod-cache-label
+      clientConfig:
+        service:
+          name: meridio-2-webhook-service-pod-cache-label
+          namespace: e2e-pod-cache-label
+  target:
+    kind: ValidatingWebhookConfiguration
+- patch: |-
+    - op: replace
+      path: /spec/dnsNames
+      value:
+      - meridio-2-webhook-service-pod-cache-label.e2e-pod-cache-label.svc
+      - meridio-2-webhook-service-pod-cache-label.e2e-pod-cache-label.svc.cluster.local
+    - op: replace
+      path: /spec/secretName
+      value: webhook-server-cert-pod-cache-label
+  target:
+    group: cert-manager.io
+    kind: Certificate
+    name: serving-cert
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: not-important
+    spec:
+      template:
+        spec:
+          containers:
+          - name: manager
+            env:
+            - name: MERIDIO_LB_SERVICE_ACCOUNT
+              value: meridio-2-stateless-load-balancer-pod-cache-label
+            - name: MERIDIO_POD_CACHE_LABEL
+              value: "meridio-2.nordix.org/managed=true"
+          volumes:
+          - name: webhook-certs
+            secret:
+              secretName: webhook-server-cert-pod-cache-label
+  target:
+    kind: Deployment
+    labelSelector: control-plane=controller-manager

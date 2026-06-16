@@ -1,0 +1,38 @@
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-router-pcl
+spec:
+  gatewayRef:
+    name: gw-pcl
+  interface: "vlan-800"
+  address: "169.254.103.150"
+  bgp:
+    remoteASN: 4200000000
+    localASN: 64519
+    holdTime: "24s"
+    remotePort: 10179
+    localPort: 10179
+    bfd:
+      switch: true
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-pcl
+spec:
+  parentRefs:
+  - name: gw-pcl
+  backendRefs:
+  - name: dg-pcl
+    group: meridio-2.nordix.org
+    kind: DistributionGroup
+  destinationCIDRs:
+  - "60.0.0.1/32"
+  protocols:
+  - TCP
+  priority: 1

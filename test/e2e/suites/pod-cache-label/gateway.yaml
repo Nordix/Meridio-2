@@ -1,0 +1,43 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-pcl
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-pcl
+  listeners:
+  - name: all
+    protocol: ALL
+    port: 1
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-pcl
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-pod-cache-label
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-800
+      namespace: e2e-pod-cache-label
+      interface: vlan-800
+  - type: NAD
+    nad:
+      name: app-net
+      namespace: e2e-pod-cache-label
+      interface: net1
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.103.0/24"
+  horizontalScaling:
+    replicas: 1

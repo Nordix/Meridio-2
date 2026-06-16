@@ -269,6 +269,27 @@ undeploy-low-mtu: ## Undeploy low-mtu topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
+##@ Pod Cache Label suite
+################################################################################
+
+.PHONY: pod-cache-label
+pod-cache-label: deploy-pod-cache-label test-pod-cache-label ## Deploy and test pod-cache-label suite.
+
+.PHONY: deploy-pod-cache-label
+deploy-pod-cache-label: cluster ## Deploy pod-cache-label topology.
+	$(call deploy-suite,e2e-pod-cache-label,$(shell pwd)/suites/pod-cache-label,pod-cache-label,sllbr-gw-pcl)
+
+.PHONY: test-pod-cache-label
+test-pod-cache-label: ## Run e2e tests for pod-cache-label suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Pod Cache Label" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-pod-cache-label
+undeploy-pod-cache-label: ## Undeploy pod-cache-label topology.
+	@NS=e2e-pod-cache-label; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-pod-cache-label --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
 ##@ All suites
 ################################################################################
 
