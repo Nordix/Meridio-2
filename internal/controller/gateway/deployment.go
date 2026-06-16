@@ -75,7 +75,7 @@ func (r *GatewayReconciler) reconcileLBDeployment(ctx context.Context, gw *gatew
 		base = &existing
 	}
 
-	desired := reconcileDeploymentSpec(base, template, gw, gwConfig, deploymentName, r.LBServiceAccount)
+	desired := r.reconcileDeploymentSpec(base, template, gw, gwConfig, deploymentName)
 	if !found {
 		if err := ctrl.SetControllerReference(gw, desired, r.Scheme); err != nil {
 			return fmt.Errorf("failed to set owner reference: %w", err)
@@ -102,20 +102,10 @@ func (r *GatewayReconciler) reconcileLBDeployment(ctx context.Context, gw *gatew
 	return nil
 }
 
-// getControllerOwner returns the controller owner of a Deployment as "Kind/Name"
-func getControllerOwner(deployment *appsv1.Deployment) string {
-	for _, ref := range deployment.OwnerReferences {
-		if ref.Controller != nil && *ref.Controller {
-			return fmt.Sprintf("%s/%s", ref.Kind, ref.Name)
-		}
-	}
-	return "unknown"
-}
-
 // reconcileDeploymentSpec builds desired deployment state (works for both create and update)
 // If base is nil, template is used as starting point (create scenario)
 // If base is provided, it's used as starting point and template fields are merged (update scenario)
-func reconcileDeploymentSpec(base, template *appsv1.Deployment, gw *gatewayv1.Gateway, gwConfig *meridio2v1alpha1.GatewayConfiguration, deploymentName, serviceAccount string) *appsv1.Deployment {
+func (r *GatewayReconciler) reconcileDeploymentSpec(base, template *appsv1.Deployment, gw *gatewayv1.Gateway, gwConfig *meridio2v1alpha1.GatewayConfiguration, deploymentName string) *appsv1.Deployment {
 	var desired *appsv1.Deployment
 
 	if base == nil {
@@ -150,11 +140,12 @@ func reconcileDeploymentSpec(base, template *appsv1.Deployment, gw *gatewayv1.Ga
 	// Set deployment-specific values (always enforced)
 	desired.Name = deploymentName
 	desired.Namespace = gw.Namespace
-	desired.Spec.Template.Spec.ServiceAccountName = serviceAccount
+	desired.Spec.Template.Spec.ServiceAccountName = r.LBServiceAccount
 
 	// Set controller-managed labels
 	setControllerLabels(&desired.ObjectMeta, deploymentName, gw.Name)
 	setControllerLabels(&desired.Spec.Template.ObjectMeta, deploymentName, gw.Name)
+	setPodCacheLabel(&desired.Spec.Template.ObjectMeta, r.PodCacheLabelKey, r.PodCacheLabelValue)
 
 	// Set selector (immutable, but safe to set on every reconcile)
 	desired.Spec.Selector = &metav1.LabelSelector{
@@ -180,6 +171,16 @@ func reconcileDeploymentSpec(base, template *appsv1.Deployment, gw *gatewayv1.Ga
 	injectRouterPodIdentityEnvVars(desired)
 
 	return desired
+}
+
+// getControllerOwner returns the controller owner of a Deployment as "Kind/Name"
+func getControllerOwner(deployment *appsv1.Deployment) string {
+	for _, ref := range deployment.OwnerReferences {
+		if ref.Controller != nil && *ref.Controller {
+			return fmt.Sprintf("%s/%s", ref.Kind, ref.Name)
+		}
+	}
+	return "unknown"
 }
 
 // deploymentNeedsUpdate checks if Deployment needs update using semantic equality
@@ -210,6 +211,17 @@ func setControllerLabels(meta *metav1.ObjectMeta, deploymentName, gatewayName st
 	meta.Labels["app"] = deploymentName
 	meta.Labels[labelGatewayName] = gatewayName
 	meta.Labels[labelManagedBy] = managedByValue
+}
+
+// setPodCacheLabel adds the pod cache filter label to the metadata (if configured).
+func setPodCacheLabel(meta *metav1.ObjectMeta, key, value string) {
+	if key == "" {
+		return
+	}
+	if meta.Labels == nil {
+		meta.Labels = make(map[string]string)
+	}
+	meta.Labels[key] = value
 }
 
 // mergeInfrastructureMetadata merges Gateway.spec.infrastructure labels/annotations

@@ -45,6 +45,9 @@ type ManagerConfig struct {
 	// Features
 	EnableTopologyHints bool
 
+	// Filtering
+	PodCacheLabel string
+
 	// Templates
 	TemplatePath string
 
@@ -90,6 +93,9 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	fs.BoolVar(&c.EnableTopologyHints, "enable-topology-hints", false,
 		"Enable Node watching for topology-aware endpoint hints. Requires RBAC permissions for nodes.")
+	fs.StringVar(&c.PodCacheLabel, "pod-cache-label", "",
+		"Label key=value to filter Pods in the informer cache (e.g., meridio-2.nordix.org/managed=true). "+
+			"When set, only Pods with this label are cached. Empty means all Pods are cached.")
 	fs.StringVar(&c.TemplatePath, "template-path", "/templates",
 		"Path to template directory containing deployment templates.")
 	fs.StringVar(&c.LBServiceAccount, "lb-service-account", "stateless-load-balancer",
@@ -129,6 +135,7 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
 	bindBool(fs, "enable-topology-hints", "MERIDIO_ENABLE_TOPOLOGY_HINTS", &c.EnableTopologyHints)
+	bindString(fs, "pod-cache-label", "MERIDIO_POD_CACHE_LABEL", &c.PodCacheLabel)
 	bindString(fs, "template-path", "MERIDIO_TEMPLATE_PATH", &c.TemplatePath)
 	bindString(fs, "lb-service-account", "MERIDIO_LB_SERVICE_ACCOUNT", &c.LBServiceAccount)
 	bindInt(fs, "webhook-port", "MERIDIO_WEBHOOK_PORT", &c.WebhookPort)

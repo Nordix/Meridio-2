@@ -21,10 +21,12 @@ import (
 	"crypto/tls"
 	goflag "flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -87,6 +89,13 @@ func NewRunCmd() *cobra.Command {
 
 			if cfg.CertWaitTimeout > time.Minute {
 				return fmt.Errorf("--cert-wait-timeout cannot exceed 1 minute (got %s)", cfg.CertWaitTimeout)
+			}
+
+			if cfg.PodCacheLabel != "" {
+				k, v, ok := strings.Cut(cfg.PodCacheLabel, "=")
+				if !ok || k == "" || v == "" || strings.Contains(v, "=") {
+					return fmt.Errorf("--pod-cache-label must be in key=value format, got %q", cfg.PodCacheLabel)
+				}
 			}
 
 			return nil
@@ -183,6 +192,18 @@ func runManager(cfg *config.ManagerConfig) error {
 		}
 	}
 
+	// Parse pod cache label once (already validated in PreRunE)
+	var podCacheLabelKey, podCacheLabelValue string
+	if cfg.PodCacheLabel != "" {
+		podCacheLabelKey, podCacheLabelValue, _ = strings.Cut(cfg.PodCacheLabel, "=")
+		if cacheOptions.ByObject == nil {
+			cacheOptions.ByObject = map[client.Object]cache.ByObject{}
+		}
+		cacheOptions.ByObject[&corev1.Pod{}] = cache.ByObject{
+			Label: labels.SelectorFromSet(labels.Set{podCacheLabelKey: podCacheLabelValue}),
+		}
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                        scheme,
 		Cache:                         cacheOptions,
@@ -209,12 +230,14 @@ func runManager(cfg *config.ManagerConfig) error {
 	}
 
 	if err = (&gateway.GatewayReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		ControllerName:   cfg.ControllerName,
-		Namespace:        cfg.Namespace,
-		TemplatePath:     cfg.TemplatePath,
-		LBServiceAccount: cfg.LBServiceAccount,
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		ControllerName:     cfg.ControllerName,
+		Namespace:          cfg.Namespace,
+		TemplatePath:       cfg.TemplatePath,
+		LBServiceAccount:   cfg.LBServiceAccount,
+		PodCacheLabelKey:   podCacheLabelKey,
+		PodCacheLabelValue: podCacheLabelValue,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Gateway")
 		return err

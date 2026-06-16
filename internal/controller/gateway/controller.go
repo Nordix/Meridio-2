@@ -36,11 +36,13 @@ import (
 // GatewayReconciler reconciles a Gateway object
 type GatewayReconciler struct {
 	client.Client
-	Scheme           *runtime.Scheme
-	ControllerName   string
-	Namespace        string // Namespace to watch (empty = all namespaces)
-	TemplatePath     string // Path to template directory (defaults to /templates)
-	LBServiceAccount string // ServiceAccount name for LB Deployment pods
+	Scheme             *runtime.Scheme
+	ControllerName     string
+	Namespace          string // Namespace to watch (empty = all namespaces)
+	TemplatePath       string // Path to template directory (defaults to /templates)
+	LBServiceAccount   string // ServiceAccount name for LB Deployment pods
+	PodCacheLabelKey   string // Optional label key for Pod cache filtering (added to LB Pod template)
+	PodCacheLabelValue string // Corresponding label value
 }
 
 // RBAC: See config/rbac/manager-role.yaml and manager-clusterrole.yaml for required permissions.
