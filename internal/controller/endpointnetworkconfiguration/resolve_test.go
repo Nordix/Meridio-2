@@ -18,7 +18,9 @@ package endpointnetworkconfiguration
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -289,7 +292,7 @@ func TestGetSLLBRNextHops(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(gw, sllbrPod)
@@ -313,14 +316,20 @@ func TestGetSLLBRNextHops_DeterministicOrdering(t *testing.T) {
 			Name: "sllb-sllb-a-111", Namespace: testNamespace,
 			Labels: map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
+		},
 	}
 	pod2 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "sllb-sllb-a-222", Namespace: testNamespace,
 			Labels: map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
+		},
 	}
 
 	scraper := func(pod *corev1.Pod, cidr, attachmentType string) string {
@@ -364,7 +373,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 	// Pod only has IPv4 address on net1 — no IPv6
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
@@ -405,7 +414,7 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 	// Target pod with Multus network-status annotation
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
@@ -474,7 +483,7 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(pod, gw, gc, dg, sllbrPod)
@@ -642,7 +651,7 @@ func TestSidecarContract_DualStack(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(pod, gw, gc, dg, sllbrPod)
@@ -719,4 +728,303 @@ func TestSidecarContract_DualStack(t *testing.T) {
 	assert.Equal(t, []string{testNextHopV6}, ipv6Domain.NextHops)
 	assert.Equal(t, testSubnetV6, ipv6Domain.Network.Subnet)
 	assert.Equal(t, "net1", ipv6Domain.Network.InterfaceHint)
+}
+
+func TestIsLBPodReady(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name: "all containers ready",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: true},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "one container not ready",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: false},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "pod being deleted",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "sllb-1",
+					DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: true},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "no container statuses yet (startup)",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status:     corev1.PodStatus{},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isLBPodReady(tt.pod)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestHasConnectivityGate(t *testing.T) {
+	tests := []struct {
+		name          string
+		pod           *corev1.Pod
+		conditionType string
+		expected      bool
+	}{
+		{
+			name: "condition True",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+		{
+			name: "condition False",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: corev1.ConditionFalse},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      false,
+		},
+		{
+			name: "gate not declared — not applicable, include Pod",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+		{
+			name: "gate declared but condition not yet set (readinessGate present, condition missing)",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      false,
+		},
+		{
+			name: "IPv6-only gateway — IPv4 gate not declared, include Pod",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv6-connectivity", Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasConnectivityGate(tt.pod, tt.conditionType)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
+	tests := []struct {
+		name     string
+		pods     []corev1.Pod
+		wantIPv4 []string
+		wantIPv6 []string
+	}{
+		{
+			name: "all pods healthy and connected — all included",
+			pods: []corev1.Pod{
+				makeLBPodWithGates("sllb-1", true, true, true),
+				makeLBPodWithGates("sllb-2", true, true, true),
+			},
+			wantIPv4: []string{"192.168.100.1", "192.168.100.2"},
+		},
+		{
+			name: "one pod container not ready — excluded from both families",
+			pods: []corev1.Pod{
+				makeLBPodWithGates("sllb-1", true, true, true),
+				makeLBPodWithGates("sllb-2", false, true, true), // container not ready
+			},
+			wantIPv4: []string{"192.168.100.1"},
+		},
+		{
+			name: "pod has IPv4 gate True but IPv6 gate False — only in IPv4 hops",
+			pods: []corev1.Pod{
+				makeLBPodWithGates("sllb-1", true, true, false),
+			},
+			wantIPv4: []string{"192.168.100.1"},
+			wantIPv6: nil,
+		},
+		{
+			name: "pod has no readiness gates — included (gate not applicable)",
+			pods: []corev1.Pod{
+				makeLBPodNoGates("sllb-1", true),
+			},
+			wantIPv4: []string{"192.168.100.1"},
+		},
+		{
+			name: "pod being deleted — excluded",
+			pods: []corev1.Pod{
+				makeLBPodDeleting("sllb-1"),
+			},
+			wantIPv4: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Reconciler{
+				IPScraper: func(pod *corev1.Pod, cidr, _ string) string {
+					// Return a deterministic IP based on pod name and CIDR family
+					idx := pod.Name[len(pod.Name)-1] - '0' // last char as index
+					if strings.Contains(cidr, ":") {
+						return fmt.Sprintf("2001:db8::%d", idx)
+					}
+					return fmt.Sprintf("192.168.100.%d", idx)
+				},
+			}
+
+			gw := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+			}
+
+			objects := make([]client.Object, 0, len(tt.pods))
+			for i := range tt.pods {
+				tt.pods[i].Namespace = "default"
+				tt.pods[i].Labels = map[string]string{labelGatewayName: "test-gw"}
+				objects = append(objects, &tt.pods[i])
+			}
+
+			fakeClient := fake.NewClientBuilder().WithObjects(objects...).Build()
+			r.Client = fakeClient
+
+			subnetToType := map[string]string{"192.168.100.0/24": "NAD"}
+			if tt.wantIPv6 != nil || tt.name == "pod has IPv4 gate True but IPv6 gate False — only in IPv4 hops" {
+				subnetToType["2001:db8::/64"] = "NAD"
+			}
+
+			ipv4, ipv6, err := r.getSLLBRNextHops(context.Background(), gw, subnetToType)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantIPv4, ipv4)
+			assert.Equal(t, tt.wantIPv6, ipv6)
+		})
+	}
+}
+
+// Helper functions for test Pod construction
+
+//nolint:unparam // test helper designed for varied usage
+func makeLBPodWithGates(name string, containersReady, ipv4GateTrue, ipv6GateTrue bool) corev1.Pod {
+	ipv4Status := corev1.ConditionFalse
+	if ipv4GateTrue {
+		ipv4Status = corev1.ConditionTrue
+	}
+	ipv6Status := corev1.ConditionFalse
+	if ipv6GateTrue {
+		ipv6Status = corev1.ConditionTrue
+	}
+	return corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: corev1.PodSpec{
+			ReadinessGates: []corev1.PodReadinessGate{
+				{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "loadbalancer", Ready: containersReady},
+				{Name: "router", Ready: containersReady},
+			},
+			Conditions: []corev1.PodCondition{
+				{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: ipv4Status},
+				{Type: "meridio-2.nordix.org/ipv6-connectivity", Status: ipv6Status},
+			},
+		},
+	}
+}
+
+func makeLBPodNoGates(name string, containersReady bool) corev1.Pod {
+	return corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "loadbalancer", Ready: containersReady},
+				{Name: "router", Ready: containersReady},
+			},
+		},
+	}
+}
+
+func makeLBPodDeleting(name string) corev1.Pod {
+	return corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Finalizers: []string{"test"}},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{},
+		},
+	}
 }
