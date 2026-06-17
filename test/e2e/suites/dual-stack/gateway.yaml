@@ -38,8 +38,8 @@ spec:
       interface: net-ds
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.103.0/24"
+    cidr: "169.111.10.0/24"
   - attachmentType: NAD
-    cidr: "fd00:cafe:103::/64"
+    cidr: "fd00:cafe:10::/64"
   horizontalScaling:
     replicas: 2

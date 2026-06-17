@@ -85,7 +85,7 @@ spec:
           "ipam": {
             "type": "whereabouts",
             "ipRanges": [
-              { "range": "169.111.100.0/24" }
+              { "range": "169.111.10.0/24" }
             ]
           }
         }
@@ -110,7 +110,7 @@ spec:
           "ipam": {
             "type": "whereabouts",
             "ipRanges": [
-              { "range": "169.111.200.0/24" }
+              { "range": "169.111.10.0/24" }
             ]
           }
         }

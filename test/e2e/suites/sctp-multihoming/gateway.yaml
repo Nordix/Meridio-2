@@ -39,7 +39,7 @@ spec:
       interface: net1
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.100.0/24"
+    cidr: "169.111.30.0/24"
   horizontalScaling:
     replicas: 2
     enforceReplicas: true
@@ -84,7 +84,7 @@ spec:
       interface: net2
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.200.0/24"
+    cidr: "169.111.30.0/24"
   horizontalScaling:
     replicas: 2
     enforceReplicas: true

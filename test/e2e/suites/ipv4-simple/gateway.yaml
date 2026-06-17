@@ -38,6 +38,6 @@ spec:
       interface: net-m
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.50.0/24"
+    cidr: "169.111.40.0/24"
   horizontalScaling:
     replicas: 1
