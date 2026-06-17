@@ -316,14 +316,20 @@ func TestGetSLLBRNextHops_DeterministicOrdering(t *testing.T) {
 			Name: "sllb-sllb-a-111", Namespace: testNamespace,
 			Labels: map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
+		},
 	}
 	pod2 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "sllb-sllb-a-222", Namespace: testNamespace,
 			Labels: map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
+		},
 	}
 
 	scraper := func(pod *corev1.Pod, cidr, attachmentType string) string {
