@@ -28,9 +28,9 @@ spec:
       interface: dummy
   - type: NAD
     nad:
-      name: vlan-800
+      name: vlan-100
       namespace: e2e-dual-stack
-      interface: vlan-800
+      interface: vlan-100
   - type: NAD
     nad:
       name: app-net-ds

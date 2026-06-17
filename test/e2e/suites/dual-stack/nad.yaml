@@ -27,23 +27,23 @@ spec:
       ]
   }'
 ---
-# VLAN 800 NAD for dual-stack BGP peering
+# VLAN 100 NAD for dual-stack BGP peering (reuses separate-appnetwork VLAN)
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-800
+  name: vlan-100
 spec:
   config: |
     {
       "cniVersion": "0.3.1",
       "type": "vlan",
       "master": "eth0",
-      "vlanId": 800,
+      "vlanId": 100,
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
-          { "range": "169.254.103.0/24", "exclude": ["169.254.103.150/32"] },
-          { "range": "fd00:cafe:800::/64", "exclude": ["fd00:cafe:800::150/128"] }
+          { "range": "169.254.100.0/24", "exclude": ["169.254.100.150/32"] },
+          { "range": "fd00:cafe:100::/64", "exclude": ["fd00:cafe:100::150/128"] }
         ]
       }
     }
