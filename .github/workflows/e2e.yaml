@@ -89,7 +89,7 @@ jobs:
           version: ${{ env.KIND_VERSION }}
           node_image: kindest/node:${{ matrix.image }}
           cluster_name: kind
-          config: test/e2e/kind-cluster/kind-basic.yaml
+          config: test/e2e/kind-cluster/kind.yaml
       - name: Check cluster
         run: |
           kubectl version
@@ -104,6 +104,14 @@ jobs:
           make -C test/e2e cluster
           docker ps
           kubectl get all -A -o wide
+      - name: Pre-pull images into Kind nodes
+        run: |
+          REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2
+          TAG=${{ needs.get-tag.outputs.tag }}
+          for img in controller-manager stateless-load-balancer router network-sidecar example-target; do
+            docker pull ${REGISTRY}/${img}:${TAG}
+            kind load docker-image ${REGISTRY}/${img}:${TAG} --name kind
+          done
       - name: Deploy ${{ matrix.suite }} suites
         run: |
           make -C test/e2e deploy-${{ matrix.suite }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }}
