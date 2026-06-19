@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork sctp-multihoming ipv4-simple
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork sctp-multihoming ipv4-simple pod-cache-label
 SUITES_DS ?= dual-stack-simple
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
@@ -199,28 +199,7 @@ undeploy-ipv4-simple: ## Undeploy ipv4-simple topology.
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-ipv4-simple --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-###############################################################################
-##@ Suite: shared-appnetwork
-################################################################################
-
-.PHONY: shared-appnetwork
-shared-appnetwork: deploy-shared-appnetwork test-shared-appnetwork ## Deploy and test shared-appnetwork suite.
-
-.PHONY: deploy-shared-appnetwork
-deploy-shared-appnetwork: cluster ## Deploy shared-appnetwork topology.
-	$(call deploy-suite,e2e-shared-appnetwork,$(shell pwd)/suites/shared-appnetwork,shared-appnet,sllbr-gw-b1 sllbr-gw-b2)
-
-.PHONY: test-shared-appnetwork
-test-shared-appnetwork: ## Run e2e tests for shared-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Shared App Network" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-shared-appnetwork
-undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
-	@NS=e2e-shared-appnetwork; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnetwork --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-################################################################################
+#################################################################################
 ##@ Suite: separate-appnetwork
 ################################################################################
 
@@ -241,7 +220,49 @@ undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnetwork --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
+##############################################################################
+##@ Suite: shared-appnetwork
 ################################################################################
+
+.PHONY: shared-appnetwork
+shared-appnetwork: deploy-shared-appnetwork test-shared-appnetwork ## Deploy and test shared-appnetwork suite.
+
+.PHONY: deploy-shared-appnetwork
+deploy-shared-appnetwork: cluster ## Deploy shared-appnetwork topology.
+	$(call deploy-suite,e2e-shared-appnetwork,$(shell pwd)/suites/shared-appnetwork,shared-appnet,sllbr-gw-b1 sllbr-gw-b2)
+
+.PHONY: test-shared-appnetwork
+test-shared-appnetwork: ## Run e2e tests for shared-appnetwork suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Shared App Network" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-shared-appnetwork
+undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
+	@NS=e2e-shared-appnetwork; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnetwork --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#################################################################################
+##@ Suite: sctp-multihoming
+################################################################################
+
+.PHONY: sctp-multihoming
+sctp-multihoming: deploy-sctp-multihoming test-sctp-multihoming ## Deploy and test sctp-multihoming suite.
+
+.PHONY: deploy-sctp-multihoming
+deploy-sctp-multihoming: cluster ## Deploy sctp-multihoming topology.
+	$(call deploy-suite,e2e-sctp-multihoming,$(shell pwd)/suites/sctp-multihoming,sctp-multihoming,sllbr-sctp-gw1 sllbr-sctp-gw2)
+
+.PHONY: test-sctp-multihoming
+test-sctp-multihoming: ## Run e2e tests for sctp-multihoming suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="SCTP Multihoming" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-sctp-multihoming
+undeploy-sctp-multihoming: ## Undeploy sctp-multihoming topology.
+	@NS=e2e-sctp-multihoming; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-sctp-multihoming --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+###############################################################################
 ##@ Suite: low-mtu
 ################################################################################
 
@@ -276,48 +297,6 @@ test-resiliency: ## Run process recovery tests.
 undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
 
 ################################################################################
-##@ Suite: sctp-multihoming
-################################################################################
-
-.PHONY: sctp-multihoming
-sctp-multihoming: deploy-sctp-multihoming test-sctp-multihoming ## Deploy and test sctp-multihoming suite.
-
-.PHONY: deploy-sctp-multihoming
-deploy-sctp-multihoming: cluster ## Deploy sctp-multihoming topology.
-	$(call deploy-suite,e2e-sctp-multihoming,$(shell pwd)/suites/sctp-multihoming,sctp-multihoming,sllbr-sctp-gw1 sllbr-sctp-gw2)
-
-.PHONY: test-sctp-multihoming
-test-sctp-multihoming: ## Run e2e tests for sctp-multihoming suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="SCTP Multihoming" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-sctp-multihoming
-undeploy-sctp-multihoming: ## Undeploy sctp-multihoming topology.
-	@NS=e2e-sctp-multihoming; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-sctp-multihoming --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-################################################################################
-##@ Suite: low-mtu
-################################################################################
-
-.PHONY: low-mtu
-low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
-
-.PHONY: deploy-low-mtu
-deploy-low-mtu: cluster ## Deploy low-mtu topology.
-	$(call deploy-suite,e2e-low-mtu,$(shell pwd)/suites/low-mtu,low-mtu,sllbr-gw-m1)
-
-.PHONY: test-low-mtu
-test-low-mtu: ## Run e2e tests for low-mtu suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Low MTU" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-low-mtu
-undeploy-low-mtu: ## Undeploy low-mtu topology.
-	@NS=e2e-low-mtu; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-low-mtu --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-################################################################################
 ##@ Suite: pod-cache-label
 ################################################################################
 
@@ -343,7 +322,7 @@ undeploy-pod-cache-label: ## Undeploy pod-cache-label topology.
 ################################################################################
 
 .PHONY: dual-stack-simple
-dual-stack-simple: deploy-dual-stack test-dual-stack ## Deploy and test dual-stack suite.
+dual-stack-simple: deploy-dual-stack-simple test-dual-stack-simple ## Deploy and test dual-stack suite.
 
 .PHONY: deploy-dual-stack-simple
 deploy-dual-stack-simple: cluster ## Deploy dual-stack topology.
@@ -358,11 +337,13 @@ undeploy-dual-stack-simple: ## Undeploy dual-stack topology.
 	@NS=e2e-dual-stack; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ###############################################################################
 ##@ All ipv4 suites
 ################################################################################
+
+.PHONY: ipv4
+ipv4: deploy-ipv4 test-ipv4 ## Deploy and test all ipv4 suites.
 
 .PHONY: deploy-ipv4
 deploy-ipv4: ## Deploy all IPv4 suites.
@@ -379,6 +360,9 @@ undeploy-ipv4: ## Undeploy all IPv4 suites.
 ################################################################################
 ##@ All dual-stack suites
 ################################################################################
+
+.PHONY: dual-stack
+dual-stack: deploy-dual-stack test-dual-stack ## Deploy and test all dual-stack suites.
 
 .PHONY: deploy-dual-stack
 deploy-dual-stack: ## Deploy all dual-stack suites.

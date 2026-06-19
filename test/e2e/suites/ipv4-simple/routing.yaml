@@ -7,7 +7,7 @@ spec:
   gatewayRef:
     name: gw-m1
   interface: "vlan-700"
-  address: "169.254.50.150"
+  address: "169.254.40.150"
   bgp:
     localASN: 64518
     remoteASN: 4200000000

@@ -41,11 +41,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Pod Cache Label", func() {
+var _ = Describe("Pod Cache Label", Ordered, Label("ipv4"), func() {
 	const (
 		namespace   = "e2e-pod-cache-label"
 		gatewayName = "gw-pcl"
-		vip         = "60.0.0.1"
+		vip         = "50.0.0.1"
 		cacheLabel  = "meridio-2.nordix.org/managed"
 		cacheLabelV = "true"
 	)

@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -142,8 +143,8 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 
 				for _, pod := range result.Items {
 					netStatus := pod.Metadata.Annotations["k8s.v1.cni.cncf.io/network-status"]
-					g.Expect(netStatus).To(ContainSubstring("169.111.103."), "should have IPv4 on net1")
-					g.Expect(netStatus).To(ContainSubstring("fd00:cafe:103::"), "should have IPv6 on net1")
+					g.Expect(netStatus).To(ContainSubstring("169.111.10."), "should have IPv4 on net1")
+					g.Expect(netStatus).To(ContainSubstring("fd00:cafe:110::"), "should have IPv6 on net1")
 				}
 			}).Should(Succeed())
 		})
@@ -166,17 +167,20 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 					"-l", "app=target-ds", "--field-selector=status.phase=Running",
-					"-o", "jsonpath={.items[0].metadata.name}")
-				targetPod, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(targetPod).NotTo(BeEmpty())
-
-				cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, strings.TrimSpace(targetPod),
-					"-c", "example-target", "--", "ip", "addr", "show", "net1")
+					"-o", "jsonpath={.items[*].metadata.name}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring("10.0.0.1/32"), "should have IPv4 VIP")
-				g.Expect(out).To(ContainSubstring("fd00:cafe:1::1/128"), "should have IPv6 VIP")
+				pods := strings.Fields(strings.TrimSpace(out))
+				g.Expect(pods).To(HaveLen(suite.targetReplicas))
+
+				for _, pod := range pods {
+					cmd = exec.Command("kubectl", "exec", "-n", suite.namespace, pod,
+						"-c", "example-target", "--", "ip", "addr", "show", "net1")
+					out, err = utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(out).To(ContainSubstring("10.0.0.1/32"), "pod %s should have IPv4 VIP", pod)
+					g.Expect(out).To(ContainSubstring("fd00:cafe:1::1/128"), "pod %s should have IPv6 VIP", pod)
+				}
 			}).Should(Succeed())
 		})
 
@@ -311,6 +315,21 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 			By("waiting for BGP routes to propagate to VPN gateway")
 			Eventually(func() error { return e2eutils.Ping("10.0.0.1") }).Should(Succeed())
 			Eventually(func() error { return e2eutils.Ping("fd00:cafe:1::1") }).Should(Succeed())
+
+			By("waiting for IPv6 load balancing path to converge")
+			Eventually(func() error {
+				lasting, lost, err := e2eutils.SendTraffic("fd00:cafe:1::1", 5000, "tcp", 100)
+				if err != nil {
+					return err
+				}
+				if lost > 0 {
+					return fmt.Errorf("%d connections lost", lost)
+				}
+				if len(lasting) < 2 {
+					return fmt.Errorf("expected 2 targets, got %d", len(lasting))
+				}
+				return nil
+			}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		Context("ICMP reachability", func() {
@@ -325,22 +344,6 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 			})
 		})
 
-		Context("IPv4 load balancing", func() {
-			It("distributes TCP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("10.0.0.1", 5000, "tcp", 100)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(lostConn).To(BeZero(), "no connections should be lost")
-				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
-			})
-
-			It("distributes UDP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("10.0.0.1", 5001, "udp", 100)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(lostConn).To(BeZero(), "no connections should be lost")
-				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
-			})
-		})
-
 		Context("IPv6 load balancing", func() {
 			It("distributes TCP traffic across targets", func() {
 				lastingConn, lostConn, err := e2eutils.SendTraffic("fd00:cafe:1::1", 5000, "tcp", 100)
@@ -351,6 +354,22 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 
 			It("distributes UDP traffic across targets", func() {
 				lastingConn, lostConn, err := e2eutils.SendTraffic("fd00:cafe:1::1", 5001, "udp", 100)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(lostConn).To(BeZero(), "no connections should be lost")
+				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
+			})
+		})
+
+		Context("IPv4 load balancing", func() {
+			It("distributes TCP traffic across targets", func() {
+				lastingConn, lostConn, err := e2eutils.SendTraffic("10.0.0.1", 5000, "tcp", 100)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(lostConn).To(BeZero(), "no connections should be lost")
+				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
+			})
+
+			It("distributes UDP traffic across targets", func() {
+				lastingConn, lostConn, err := e2eutils.SendTraffic("10.0.0.1", 5001, "udp", 100)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(lostConn).To(BeZero(), "no connections should be lost")
 				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)

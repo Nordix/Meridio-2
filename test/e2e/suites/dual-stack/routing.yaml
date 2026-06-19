@@ -8,7 +8,7 @@ spec:
   gatewayRef:
     name: gw-ds
   interface: "vlan-100"
-  address: "169.254.100.150"
+  address: "169.254.10.150"
   bgp:
     localASN: 64512
     remoteASN: 4200000000
@@ -30,7 +30,7 @@ spec:
   gatewayRef:
     name: gw-ds
   interface: "vlan-100"
-  address: "fd00:cafe:100::150"
+  address: "fd00:cafe:10::150"
   bgp:
     localASN: 64512
     remoteASN: 4200000000

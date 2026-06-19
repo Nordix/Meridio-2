@@ -42,13 +42,17 @@ spec:
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
-          { "range": "169.254.100.0/24", "exclude": ["169.254.100.150/32"] },
-          { "range": "fd00:cafe:100::/64", "exclude": ["fd00:cafe:100::150/128"] }
+          { "range": "169.254.10.0/24", "exclude": ["169.254.10.150/32"] },
+          { "range": "fd00:cafe:10::/64", "exclude": ["fd00:cafe:10::150/128"] }
         ]
       }
     }
 ---
 # Dual-stack app network
+# IPv6 uses fd00:cafe:110::/64 (internal) to avoid conflict with
+# fd00:cafe:10::/64 (external/VLAN). Mirrors IPv4 pattern:
+#   external 169.254.10.x vs internal 169.111.10.x
+#   external fd00:cafe:10::x vs internal fd00:cafe:110::x
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
@@ -67,7 +71,7 @@ spec:
             "type": "whereabouts",
             "ipRanges": [
               { "range": "169.111.10.0/24" },
-              { "range": "fd00:cafe:10::/64" }
+              { "range": "fd00:cafe:110::/64" }
             ]
           }
         }

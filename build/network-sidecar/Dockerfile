@@ -39,7 +39,7 @@ ARG HOME=/home/${USER}
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-RUN apk add --no-cache libcap \
+RUN apk add --no-cache libcap iproute2 \
   && addgroup -g ${UID} ${USER} \
   && adduser -D -h ${HOME} -u ${UID} -G ${USER} ${USER} \
   && chown -R :root "${HOME}" && chmod -R g+s=u "${HOME}"

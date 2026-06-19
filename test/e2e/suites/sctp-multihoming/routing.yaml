@@ -9,7 +9,7 @@ spec:
     name: sctp-gw1
     namespace: e2e-sctp-multihoming
   interface: "vlan-500"
-  address: "169.254.102.150"
+  address: "169.254.30.150"
   bgp:
     localASN: 64516
     remoteASN: 4200000000
@@ -32,7 +32,7 @@ spec:
     name: sctp-gw2
     namespace: e2e-sctp-multihoming
   interface: "vlan-600"
-  address: "169.254.202.150"
+  address: "169.254.31.150"
   bgp:
     localASN: 64517
     remoteASN: 4200000000
