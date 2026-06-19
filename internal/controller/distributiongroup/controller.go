@@ -99,7 +99,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to list matching pods")
 		return ctrl.Result{}, err
 	}
-	log.Info("found matching pods", "count", len(pods))
+	log.Info("matching pods", "count", len(pods))
 
 	// 4. If no Pods, delete all owned EndpointSlices and update status
 	if len(pods) == 0 {

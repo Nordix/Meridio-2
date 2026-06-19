@@ -24,6 +24,7 @@ import (
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -367,8 +368,8 @@ func TestReconcileLBDeployment(t *testing.T) {
 		}, &deployment)
 		assert.NoError(t, err)
 		assert.Equal(t, []corev1.PodReadinessGate{
-			{ConditionType: ReadinessGateIPv4},
-			{ConditionType: ReadinessGateIPv6},
+			{ConditionType: constants.ReadinessGateIPv4},
+			{ConditionType: constants.ReadinessGateIPv6},
 		}, deployment.Spec.Template.Spec.ReadinessGates)
 	})
 
@@ -391,7 +392,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 		}, &deployment)
 		assert.NoError(t, err)
 		assert.Equal(t, []corev1.PodReadinessGate{
-			{ConditionType: ReadinessGateIPv4},
+			{ConditionType: constants.ReadinessGateIPv4},
 		}, deployment.Spec.Template.Spec.ReadinessGates)
 	})
 
@@ -434,6 +435,45 @@ func TestReconcileLBDeployment(t *testing.T) {
 		assert.Equal(t, "metadata.name", envMap["POD_NAME"].ValueFrom.FieldRef.FieldPath)
 		assert.Equal(t, "metadata.namespace", envMap["POD_NAMESPACE"].ValueFrom.FieldRef.FieldPath)
 		assert.Equal(t, "metadata.uid", envMap["POD_UID"].ValueFrom.FieldRef.FieldPath)
+	})
+
+	t.Run("SetsPodCacheLabel", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		attachGatewayConfiguration(gw, gwConfig)
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
+		reconciler.PodCacheLabelKey = "meridio-2.nordix.org/managed"
+		reconciler.PodCacheLabelValue = "true"
+
+		err := reconciler.reconcileLBDeployment(context.Background(), gw, gwConfig, template)
+		assert.NoError(t, err)
+
+		var deployment appsv1.Deployment
+		err = fakeClient.Get(context.Background(), client.ObjectKey{
+			Namespace: gw.Namespace, Name: "sllbr-" + gw.Name,
+		}, &deployment)
+		assert.NoError(t, err)
+		assert.Equal(t, "true", deployment.Spec.Template.Labels["meridio-2.nordix.org/managed"])
+	})
+
+	t.Run("NoPodCacheLabel_WhenNotConfigured", func(t *testing.T) {
+		gwClass := newGatewayClass(testControllerName)
+		gw := newGateway(gwClass.Name)
+		gwConfig := newGatewayConfiguration()
+		attachGatewayConfiguration(gw, gwConfig)
+		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
+
+		err := reconciler.reconcileLBDeployment(context.Background(), gw, gwConfig, template)
+		assert.NoError(t, err)
+
+		var deployment appsv1.Deployment
+		err = fakeClient.Get(context.Background(), client.ObjectKey{
+			Namespace: gw.Namespace, Name: "sllbr-" + gw.Name,
+		}, &deployment)
+		assert.NoError(t, err)
+		_, exists := deployment.Spec.Template.Labels["meridio-2.nordix.org/managed"]
+		assert.False(t, exists)
 	})
 }
 

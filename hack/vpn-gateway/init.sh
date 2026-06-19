@@ -47,6 +47,11 @@ ip addr add 200.50.0.100/32 dev vlan7
 
 ethtool -K eth0 tx off
 
-echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700"
+# VLAN 800 — pod-cache-label gw-pcl
+ip link add link eth0 name vlan8 type vlan id 800
+ip link set vlan8 up
+ip addr add 169.254.103.150/24 dev vlan8
+
+echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700, 800"
 
 /usr/sbin/bird -d -c /etc/bird/bird-gw.conf

@@ -17,14 +17,17 @@ limitations under the License.
 package endpointnetworkconfiguration
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -41,6 +44,25 @@ const (
 	attachmentTypeNAD        = "NAD"
 )
 
+// gatewayVipPair pairs a Gateway with the VIPs relevant to the current resolution path.
+type gatewayVipPair struct {
+	gw   *gatewayv1.Gateway
+	vips []string
+}
+
+// updateGwVipMap inserts a new entry or merges VIPs into an existing entry, copying slices to avoid aliasing.
+func updateGwVipMap(m map[string]gatewayVipPair, key string, pair gatewayVipPair) {
+	existing, ok := m[key]
+	if !ok {
+		m[key] = pair
+		return
+	}
+	merged := make([]string, 0, len(existing.vips)+len(pair.vips))
+	merged = append(merged, existing.vips...)
+	merged = append(merged, pair.vips...)
+	m[key] = gatewayVipPair{gw: existing.gw, vips: merged}
+}
+
 // resolveGatewayConnections determines which Gateways a Pod participates in
 // and computes the desired ENC spec for each.
 func (r *Reconciler) resolveGatewayConnections(ctx context.Context, pod *corev1.Pod) ([]meridio2v1alpha1.GatewayConnection, error) {
@@ -53,17 +75,15 @@ func (r *Reconciler) resolveGatewayConnections(ctx context.Context, pod *corev1.
 	}
 
 	// Collect unique accepted Gateways across all matching DGs
-	gatewayMap := make(map[string]*gatewayv1.Gateway)
+	gatewayMap := make(map[string]gatewayVipPair)
 	for i := range dgs {
 		gateways, err := r.resolveGatewaysForDG(ctx, &dgs[i])
 		if err != nil {
 			return nil, err
 		}
 		for j := range gateways {
-			key := client.ObjectKeyFromObject(&gateways[j]).String()
-			if _, exists := gatewayMap[key]; !exists {
-				gatewayMap[key] = &gateways[j]
-			}
+			key := client.ObjectKeyFromObject(gateways[j].gw).String()
+			updateGwVipMap(gatewayMap, key, gateways[j])
 		}
 	}
 
@@ -72,21 +92,26 @@ func (r *Reconciler) resolveGatewayConnections(ctx context.Context, pod *corev1.
 	for _, gw := range gatewayMap {
 		conn, err := r.buildGatewayConnection(ctx, pod, gw)
 		if err != nil {
-			logf.FromContext(ctx).Error(err, "skipping gateway", "gateway", gw.Name)
+			logf.FromContext(ctx).Error(err, "skipping gateway", "gateway", gw.gw.Name)
 			continue
 		}
 		if conn != nil {
 			connections = append(connections, *conn)
 		}
 	}
+	// Sort connections by Gateway name: map iteration order is non-deterministic,
+	// and ordering differences would trigger unnecessary ENC updates.
+	slices.SortFunc(connections, func(a, b meridio2v1alpha1.GatewayConnection) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 
 	return connections, nil
 }
 
 // buildGatewayConnection builds a GatewayConnection for a single Gateway.
 // The pod's Multus network-status annotation is used to resolve interface hints.
-func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod, gw *gatewayv1.Gateway) (*meridio2v1alpha1.GatewayConnection, error) {
-	subnetToType, err := r.getNetworkContexts(ctx, gw)
+func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod, gw gatewayVipPair) (*meridio2v1alpha1.GatewayConnection, error) {
+	subnetToType, err := r.getNetworkContexts(ctx, gw.gw)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +119,10 @@ func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod
 		return nil, nil
 	}
 
-	ipv4VIPs, ipv6VIPs := extractVIPs(gw)
-	ipv4Hops, ipv6Hops, err := r.getSLLBRNextHops(ctx, gw, subnetToType)
+	ipv4VIPs, ipv6VIPs := extractVIPs(gw.vips)
+	slices.Sort(ipv4VIPs)
+	slices.Sort(ipv6VIPs)
+	ipv4Hops, ipv6Hops, err := r.getSLLBRNextHops(ctx, gw.gw, subnetToType)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +155,7 @@ func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod
 		}
 
 		domains = append(domains, meridio2v1alpha1.NetworkDomain{
-			Name:     fmt.Sprintf("%s-%s", gw.Name, ipFamily),
+			Name:     fmt.Sprintf("%s-%s", gw.gw.Name, ipFamily),
 			IPFamily: ipFamily,
 			Network: meridio2v1alpha1.NetworkIdentity{
 				Subnet:        subnet,
@@ -143,8 +170,13 @@ func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod
 		return nil, nil
 	}
 
+	// Sort domains by name: subnetToType map iteration order is non-deterministic.
+	slices.SortFunc(domains, func(a, b meridio2v1alpha1.NetworkDomain) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
 	return &meridio2v1alpha1.GatewayConnection{
-		Name:    gw.Name,
+		Name:    gw.gw.Name,
 		Domains: domains,
 	}, nil
 }
@@ -175,8 +207,8 @@ func (r *Reconciler) listMatchingDGs(ctx context.Context, pod *corev1.Pod) ([]me
 }
 
 // resolveGatewaysForDG returns accepted Gateways referenced by a DG (direct + indirect via L34Routes).
-func (r *Reconciler) resolveGatewaysForDG(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup) ([]gatewayv1.Gateway, error) {
-	gatewayMap := make(map[string]*gatewayv1.Gateway)
+func (r *Reconciler) resolveGatewaysForDG(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup) ([]gatewayVipPair, error) {
+	gatewayMap := make(map[string]gatewayVipPair)
 
 	// Direct: DG.spec.parentRefs → Gateway
 	for _, parentRef := range dg.Spec.ParentRefs {
@@ -185,7 +217,12 @@ func (r *Reconciler) resolveGatewaysForDG(ctx context.Context, dg *meridio2v1alp
 			return nil, err
 		}
 		if gw != nil {
-			gatewayMap[client.ObjectKeyFromObject(gw).String()] = gw
+			// Direct parentRef: expose all Gateway status addresses as VIPs.
+			vips := make([]string, 0, len(gw.Status.Addresses))
+			for _, addr := range gw.Status.Addresses {
+				vips = append(vips, addr.Value)
+			}
+			updateGwVipMap(gatewayMap, client.ObjectKeyFromObject(gw).String(), gatewayVipPair{gw: gw, vips: vips})
 		}
 	}
 
@@ -201,16 +238,17 @@ func (r *Reconciler) resolveGatewaysForDG(ctx context.Context, dg *meridio2v1alp
 				return nil, err
 			}
 			if gw != nil {
-				gatewayMap[client.ObjectKeyFromObject(gw).String()] = gw
+				key := client.ObjectKeyFromObject(gw).String()
+				updateGwVipMap(gatewayMap, key, gatewayVipPair{gw: gw, vips: route.Spec.DestinationCIDRs})
 			}
 		}
 	}
 
 	// Filter by Accepted condition
-	var accepted []gatewayv1.Gateway
-	for _, gw := range gatewayMap {
-		if r.isGatewayAccepted(gw) {
-			accepted = append(accepted, *gw)
+	var accepted []gatewayVipPair
+	for _, pair := range gatewayMap {
+		if r.isGatewayAccepted(pair.gw) {
+			accepted = append(accepted, pair)
 		}
 	}
 	return accepted, nil
@@ -236,6 +274,10 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 		if pod.Status.Phase != corev1.PodRunning {
 			continue
 		}
+		// Level 1: container readiness (all non-init containers must be Ready)
+		if !isLBPodReady(&pod) {
+			continue
+		}
 		for cidr, attachmentType := range subnetToType {
 			ip := scraper(&pod, cidr, attachmentType)
 			if ip == "" {
@@ -245,13 +287,22 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 			if parsed == nil {
 				continue
 			}
+			// Level 2: per-IP-family gate check
 			if parsed.To4() != nil {
-				ipv4 = append(ipv4, ip)
+				if hasConnectivityGate(&pod, constants.ReadinessGateIPv4) {
+					ipv4 = append(ipv4, ip)
+				}
 			} else {
-				ipv6 = append(ipv6, ip)
+				if hasConnectivityGate(&pod, constants.ReadinessGateIPv6) {
+					ipv6 = append(ipv6, ip)
+				}
 			}
 		}
 	}
+	// Sort for deterministic output: Pod list order from cache is not guaranteed,
+	// and non-deterministic ordering causes unnecessary ENC updates.
+	slices.Sort(ipv4)
+	slices.Sort(ipv6)
 	return ipv4, ipv6, nil
 }
 
@@ -285,11 +336,17 @@ func (r *Reconciler) getNetworkContexts(ctx context.Context, gw *gatewayv1.Gatew
 	return subnetToType, nil
 }
 
-// extractVIPs splits Gateway.status.addresses into IPv4 and IPv6 plain IP strings.
-func extractVIPs(gw *gatewayv1.Gateway) (ipv4, ipv6 []string) {
+// extractVIPs splits VIP strings into IPv4 and IPv6 plain IP strings.
+// Inputs can be plain IPs ("10.0.0.1") or CIDRs ("10.0.0.1/32").
+func extractVIPs(vips []string) (ipv4, ipv6 []string) {
 	seen := make(map[string]bool)
-	for _, addr := range gw.Status.Addresses {
-		ip := net.ParseIP(addr.Value)
+	for _, addr := range vips {
+		// Strip the CIDR prefix length if present (e.g. "10.0.0.1/32" → "10.0.0.1")
+		host := addr
+		if i := strings.IndexByte(addr, '/'); i >= 0 {
+			host = addr[:i]
+		}
+		ip := net.ParseIP(host)
 		if ip == nil {
 			continue
 		}
@@ -471,4 +528,44 @@ func scrapeInterfaceForSubnet(pod *corev1.Pod, cidr string) string {
 		}
 	}
 	return ""
+}
+
+// isLBPodReady(pod) bool - checks all non-init container statuses are Ready. Returns false if any container is not ready or if Pod is being deleted.
+func isLBPodReady(pod *corev1.Pod) bool {
+	if pod.DeletionTimestamp != nil {
+		return false
+	}
+	oneReady := false
+	for _, cs := range pod.Status.ContainerStatuses {
+		if !cs.Ready {
+			return false
+		} else { // At least one container is ready
+			oneReady = true
+		}
+	}
+	return oneReady
+}
+
+// hasConnectivityGate - Checks if a specific readiness gate condition is True on the Pod.
+func hasConnectivityGate(pod *corev1.Pod, conditionType string) bool {
+	// Check if the gate is declared in the Pod spec
+	gateDeclared := false
+	for _, gate := range pod.Spec.ReadinessGates {
+		if string(gate.ConditionType) == conditionType {
+			gateDeclared = true
+			break
+		}
+	}
+	// gate not applicable for this IP family: if gate not declared, include the Pod (skip filtering)
+	if !gateDeclared {
+		return true
+	}
+	// Check if the condition is True in the Pod status
+	for _, condition := range pod.Status.Conditions {
+		if string(condition.Type) == conditionType {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	// Gate declared but condition not found - treat as not ready
+	return false
 }

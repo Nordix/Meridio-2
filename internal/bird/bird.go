@@ -17,6 +17,7 @@ limitations under the License.
 package bird
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -172,13 +173,7 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 	}
 
 	slices.SortFunc(routers, func(a, b *meridio2v1alpha1.GatewayRouter) int {
-		if a.Name < b.Name {
-			return -1
-		}
-		if a.Name > b.Name {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	ifset := make(map[string]bool)

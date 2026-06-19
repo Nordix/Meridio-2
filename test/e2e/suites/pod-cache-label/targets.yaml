@@ -1,0 +1,124 @@
+---
+# Target WITH the cache label — should get an ENC
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: target-labeled
+  labels:
+    app: target-pcl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: target-pcl
+      variant: labeled
+  template:
+    metadata:
+      labels:
+        app: target-pcl
+        variant: labeled
+        meridio-2.nordix.org/managed: "true"
+      annotations:
+        k8s.v1.cni.cncf.io/networks: app-net
+    spec:
+      serviceAccountName: meridio-2-network-sidecar
+      containers:
+      - name: example-target
+        image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          screen -d -m bash -c "./ctraffic -server -address [::]:5000" ;
+          trap 'exit 0' TERM; sleep infinity & wait
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
+      - name: network-sidecar
+        image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --pod-name=$(POD_NAME)
+        - --pod-namespace=$(POD_NAMESPACE)
+        - --pod-uid=$(POD_UID)
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]
+---
+# Target WITHOUT the cache label — should NOT get an ENC
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: target-unlabeled
+  labels:
+    app: target-pcl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: target-pcl
+      variant: unlabeled
+  template:
+    metadata:
+      labels:
+        app: target-pcl
+        variant: unlabeled
+        # NOTE: intentionally missing meridio-2.nordix.org/managed label
+      annotations:
+        k8s.v1.cni.cncf.io/networks: app-net
+    spec:
+      serviceAccountName: meridio-2-network-sidecar
+      containers:
+      - name: example-target
+        image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
+        args:
+        - trap 'exit 0' TERM; sleep infinity & wait
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
+      - name: network-sidecar
+        image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --pod-name=$(POD_NAME)
+        - --pod-namespace=$(POD_NAMESPACE)
+        - --pod-uid=$(POD_UID)
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]

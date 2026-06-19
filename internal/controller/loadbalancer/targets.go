@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancer
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"slices"
@@ -56,13 +57,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	// preventing flapping during transients when the same identifier appears in multiple
 	// slices of the same IP family (e.g., Pod replacement with >100 endpoints).
 	slices.SortFunc(endpointSliceList.Items, func(a, b discoveryv1.EndpointSlice) int {
-		if a.Name < b.Name {
-			return -1
-		}
-		if a.Name > b.Name {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	// Get current targets

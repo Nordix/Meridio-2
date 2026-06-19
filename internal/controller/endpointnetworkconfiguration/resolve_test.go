@@ -18,7 +18,9 @@ package endpointnetworkconfiguration
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -177,7 +180,7 @@ func TestResolveGatewaysForDG_DirectParentRef(t *testing.T) {
 	result, err := r.resolveGatewaysForDG(context.Background(), dg)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
-	assert.Equal(t, "sllb-a", result[0].Name)
+	assert.Equal(t, "sllb-a", result[0].gw.Name)
 }
 
 func TestResolveGatewaysForDG_IndirectViaL34Route(t *testing.T) {
@@ -189,7 +192,7 @@ func TestResolveGatewaysForDG_IndirectViaL34Route(t *testing.T) {
 	result, err := r.resolveGatewaysForDG(context.Background(), dg)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
-	assert.Equal(t, "sllb-a", result[0].Name)
+	assert.Equal(t, "sllb-a", result[0].gw.Name)
 }
 
 func TestResolveGatewaysForDG_Deduplication(t *testing.T) {
@@ -220,38 +223,117 @@ func TestResolveGatewaysForDG_NotAccepted(t *testing.T) {
 // --- extractVIPs tests ---
 
 func TestExtractVIPs_DualStack(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "2001:db8::1")
-	ipv4, ipv6 := extractVIPs(gw)
+	ipv4, ipv6 := extractVIPs([]string{"20.0.0.1", "2001:db8::1"})
 	assert.Equal(t, []string{"20.0.0.1"}, ipv4)
 	assert.Equal(t, []string{"2001:db8::1"}, ipv6)
 }
 
 func TestExtractVIPs_IPv4Only(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "20.0.0.2")
-	ipv4, ipv6 := extractVIPs(gw)
+	ipv4, ipv6 := extractVIPs([]string{"20.0.0.1", "20.0.0.2"})
 	assert.Equal(t, []string{"20.0.0.1", "20.0.0.2"}, ipv4)
 	assert.Nil(t, ipv6)
 }
 
 func TestExtractVIPs_Empty(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName)
-	ipv4, ipv6 := extractVIPs(gw)
+	ipv4, ipv6 := extractVIPs([]string{})
 	assert.Nil(t, ipv4)
 	assert.Nil(t, ipv6)
 }
 
 func TestExtractVIPs_PlainIPNotCIDR(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1")
-	ipv4, _ := extractVIPs(gw)
+	ipv4, _ := extractVIPs([]string{"20.0.0.1"})
 	require.Len(t, ipv4, 1)
 	assert.Equal(t, "20.0.0.1", ipv4[0], "must be plain IP, not CIDR")
 	assert.NotContains(t, ipv4[0], "/")
 }
 
 func TestExtractVIPs_Deduplication(t *testing.T) {
-	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "20.0.0.1")
-	ipv4, _ := extractVIPs(gw)
+	ipv4, _ := extractVIPs([]string{"20.0.0.1", "20.0.0.1"})
 	assert.Len(t, ipv4, 1)
+}
+
+func TestExtractVIPs_CIDRs(t *testing.T) {
+	ipv4, ipv6 := extractVIPs([]string{"10.0.0.1/32", "192.168.1.0/24", "fd00::1/128"})
+	assert.Equal(t, []string{"10.0.0.1", "192.168.1.0"}, ipv4)
+	assert.Equal(t, []string{"fd00::1"}, ipv6)
+}
+
+func TestExtractVIPs_Garbage(t *testing.T) {
+	ipv4, ipv6 := extractVIPs([]string{"not-an-ip", "", "hello world", "999.999.999.999", "20.0.0.1"})
+	assert.Equal(t, []string{"20.0.0.1"}, ipv4)
+	assert.Nil(t, ipv6)
+}
+
+func TestBuildGatewayConnection_VIPsSorted(t *testing.T) {
+	gw := acceptedGateway("sllb-a", testControllerName)
+	gc := newGatewayConfig([]string{testSubnetV4, testSubnetV6})
+	sllbrPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sllb-sllb-a-abc",
+			Namespace: testNamespace,
+			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
+	targetPod.Annotations = map[string]string{
+		"k8s.v1.cni.cncf.io/network-status": `[
+			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
+			{"name":"net1","interface":"net1","ips":["169.111.100.10","fd00::100:a"]}
+		]`,
+	}
+
+	r, _ := setupReconciler(gw, gc, sllbrPod, targetPod)
+	r.IPScraper = func(pod *corev1.Pod, cidr, _ string) string {
+		if cidr == testSubnetV4 {
+			return testNextHopV4
+		}
+		if cidr == testSubnetV6 {
+			return testNextHopV6
+		}
+		return ""
+	}
+
+	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gatewayVipPair{
+		gw: gw,
+		vips: []string{
+			"192.168.1.1", "fd00::9", "10.0.0.5", "fd00::1", "172.16.0.1",
+			"10.0.0.2", "fd00::5", "10.0.0.1", "192.168.0.1", "172.16.0.2",
+			"fd00::3", "fd00::2",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	require.Len(t, conn.Domains, 2)
+
+	domainMap := make(map[string]meridio2v1alpha1.NetworkDomain)
+	for _, d := range conn.Domains {
+		domainMap[d.IPFamily] = d
+	}
+	assert.Equal(t, []string{"10.0.0.1", "10.0.0.2", "10.0.0.5", "172.16.0.1", "172.16.0.2", "192.168.0.1", "192.168.1.1"}, domainMap["IPv4"].VIPs)
+	assert.Equal(t, []string{"fd00::1", "fd00::2", "fd00::3", "fd00::5", "fd00::9"}, domainMap["IPv6"].VIPs)
+}
+
+// --- updateGwVipMap tests ---
+
+func TestUpdateGwVipMap_Insert(t *testing.T) {
+	m := make(map[string]gatewayVipPair)
+	gw := acceptedGateway("sllb-a", testControllerName)
+	updateGwVipMap(m, "key1", gatewayVipPair{gw: gw, vips: []string{"10.0.0.1"}})
+
+	assert.Len(t, m, 1)
+	assert.Equal(t, []string{"10.0.0.1"}, m["key1"].vips)
+}
+
+func TestUpdateGwVipMap_MergeVips(t *testing.T) {
+	m := make(map[string]gatewayVipPair)
+	gw := acceptedGateway("sllb-a", testControllerName)
+	original := []string{"10.0.0.1"}
+	updateGwVipMap(m, "key1", gatewayVipPair{gw: gw, vips: original})
+	updateGwVipMap(m, "key1", gatewayVipPair{gw: gw, vips: []string{"10.0.0.2", "10.0.0.3"}})
+
+	assert.Equal(t, []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}, m["key1"].vips)
+	assert.Equal(t, []string{"10.0.0.1"}, original, "original slice must not be mutated")
 }
 
 // --- getNetworkContexts tests ---
@@ -289,7 +371,7 @@ func TestGetSLLBRNextHops(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(gw, sllbrPod)
@@ -306,6 +388,58 @@ func TestGetSLLBRNextHops(t *testing.T) {
 	assert.Nil(t, ipv6)
 }
 
+func TestGetSLLBRNextHops_DeterministicOrdering(t *testing.T) {
+	gw := acceptedGateway("sllb-a", testControllerName)
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sllb-sllb-a-111", Namespace: testNamespace,
+			Labels: map[string]string{labelGatewayName: "sllb-a"},
+		},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
+		},
+	}
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sllb-sllb-a-222", Namespace: testNamespace,
+			Labels: map[string]string{labelGatewayName: "sllb-a"},
+		},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
+		},
+	}
+
+	scraper := func(pod *corev1.Pod, cidr, attachmentType string) string {
+		switch pod.Name {
+		case "sllb-sllb-a-111":
+			return "192.168.100.11"
+		case "sllb-sllb-a-222":
+			return "192.168.100.22"
+		}
+		return ""
+	}
+	subnetToType := map[string]string{testSubnetV4: "NAD"}
+
+	// pod1 before pod2
+	r1, _ := setupReconciler(gw, pod1, pod2)
+	r1.IPScraper = scraper
+	ipv4a, _, err := r1.getSLLBRNextHops(context.Background(), gw, subnetToType)
+	require.NoError(t, err)
+
+	// pod2 before pod1 (reversed insertion order)
+	r2, _ := setupReconciler(gw, pod2, pod1)
+	r2.IPScraper = scraper
+	ipv4b, _, err := r2.getSLLBRNextHops(context.Background(), gw, subnetToType)
+	require.NoError(t, err)
+
+	// Both must produce the same sorted result
+	expected := []string{"192.168.100.11", "192.168.100.22"}
+	assert.Equal(t, expected, ipv4a)
+	assert.Equal(t, expected, ipv4b)
+}
+
 // --- buildGatewayConnection tests ---
 
 func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
@@ -318,7 +452,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 	// Pod only has IPv4 address on net1 — no IPv6
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
@@ -340,7 +474,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 		return ""
 	}
 
-	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gw)
+	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gatewayVipPair{gw: gw, vips: []string{"20.0.0.1", "2001:db8::1"}})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
@@ -359,7 +493,7 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 	// Target pod with Multus network-status annotation
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
@@ -381,7 +515,7 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 		return ""
 	}
 
-	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gw)
+	conn, err := r.buildGatewayConnection(context.Background(), targetPod, gatewayVipPair{gw: gw, vips: []string{"20.0.0.1", "2001:db8::1"}})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
@@ -428,7 +562,7 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(pod, gw, gc, dg, sllbrPod)
@@ -450,6 +584,69 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 	assert.Equal(t, "net1", connections[0].Domains[0].Network.InterfaceHint)
 	assert.Equal(t, []string{"20.0.0.1"}, connections[0].Domains[0].VIPs)
 	assert.Equal(t, []string{testNextHopV4}, connections[0].Domains[0].NextHops)
+}
+
+func TestResolveGatewayConnections_DeterministicOrdering(t *testing.T) {
+	pod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
+	pod.Annotations = map[string]string{
+		"k8s.v1.cni.cncf.io/network-status": `[
+			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
+			{"name":"nad-1","interface":"net1","ips":["169.111.100.10","fd00::100:10"]}
+		]`,
+	}
+
+	names := []string{"gw-d", "gw-b", "gw-c", "gw-a"}
+	ipv4VIPs := []string{"40.0.0.1", "20.0.0.1", "30.0.0.1", "10.0.0.1"}
+	ipv6VIPs := []string{"2001:db8::4", "2001:db8::2", "2001:db8::3", "2001:db8::1"}
+
+	buildObjects := func(order []int) []client.Object {
+		var objs []client.Object
+		objs = append(objs, pod)
+		for _, i := range order {
+			gw := acceptedGateway(names[i], testControllerName, ipv4VIPs[i], ipv6VIPs[i])
+			gc := newGatewayConfig([]string{testSubnetV4, testSubnetV6})
+			gc.Name = names[i] + "-config"
+			dg := newDG("dg-"+names[i], map[string]string{"app": "web"}, names[i])
+			objs = append(objs, gw, gc, dg)
+		}
+		return objs
+	}
+
+	scraper := func(_ *corev1.Pod, cidr, _ string) string {
+		switch cidr {
+		case testSubnetV4:
+			return testNextHopV4
+		case testSubnetV6:
+			return testNextHopV6
+		}
+		return ""
+	}
+
+	// Two runs with different insertion orders
+	r1, _ := setupReconciler(buildObjects([]int{3, 2, 1, 0})...)
+	r1.IPScraper = scraper
+	conn1, err := r1.resolveGatewayConnections(context.Background(), pod)
+	require.NoError(t, err)
+
+	r2, _ := setupReconciler(buildObjects([]int{1, 3, 0, 2})...)
+	r2.IPScraper = scraper
+	conn2, err := r2.resolveGatewayConnections(context.Background(), pod)
+	require.NoError(t, err)
+
+	// Both must produce same sorted order
+	require.Len(t, conn1, 4)
+	require.Len(t, conn2, 4)
+	expectedGW := []string{"gw-a", "gw-b", "gw-c", "gw-d"}
+	for i, name := range expectedGW {
+		assert.Equal(t, name, conn1[i].Name, "conn1[%d]", i)
+		assert.Equal(t, name, conn2[i].Name, "conn2[%d]", i)
+		// Verify domain ordering (sorted by name within each connection)
+		require.Len(t, conn1[i].Domains, 2, "conn1[%d] domains", i)
+		require.Len(t, conn2[i].Domains, 2, "conn2[%d] domains", i)
+		assert.Equal(t, conn1[i].Domains[0].Name, conn2[i].Domains[0].Name)
+		assert.True(t, conn1[i].Domains[0].Name < conn1[i].Domains[1].Name,
+			"domains should be sorted: %s, %s", conn1[i].Domains[0].Name, conn1[i].Domains[1].Name)
+	}
 }
 
 // --- helper tests ---
@@ -533,7 +730,7 @@ func TestSidecarContract_DualStack(t *testing.T) {
 			Namespace: testNamespace,
 			Labels:    map[string]string{labelGatewayName: "sllb-a"},
 		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(pod, gw, gc, dg, sllbrPod)
@@ -610,4 +807,303 @@ func TestSidecarContract_DualStack(t *testing.T) {
 	assert.Equal(t, []string{testNextHopV6}, ipv6Domain.NextHops)
 	assert.Equal(t, testSubnetV6, ipv6Domain.Network.Subnet)
 	assert.Equal(t, "net1", ipv6Domain.Network.InterfaceHint)
+}
+
+func TestIsLBPodReady(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name: "all containers ready",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: true},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "one container not ready",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: false},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "pod being deleted",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "sllb-1",
+					DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "loadbalancer", Ready: true},
+						{Name: "router", Ready: true},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "no container statuses yet (startup)",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Status:     corev1.PodStatus{},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isLBPodReady(tt.pod)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestHasConnectivityGate(t *testing.T) {
+	tests := []struct {
+		name          string
+		pod           *corev1.Pod
+		conditionType string
+		expected      bool
+	}{
+		{
+			name: "condition True",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+		{
+			name: "condition False",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: corev1.ConditionFalse},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      false,
+		},
+		{
+			name: "gate not declared — not applicable, include Pod",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+		{
+			name: "gate declared but condition not yet set (readinessGate present, condition missing)",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      false,
+		},
+		{
+			name: "IPv6-only gateway — IPv4 gate not declared, include Pod",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ReadinessGates: []corev1.PodReadinessGate{
+						{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+					},
+				},
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: "meridio-2.nordix.org/ipv6-connectivity", Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "meridio-2.nordix.org/ipv4-connectivity",
+			expected:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasConnectivityGate(tt.pod, tt.conditionType)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
+	tests := []struct {
+		name     string
+		pods     []corev1.Pod
+		wantIPv4 []string
+		wantIPv6 []string
+	}{
+		{
+			name: "all pods healthy and connected — all included",
+			pods: []corev1.Pod{
+				makeLBPodWithGates("sllb-1", true, true, true),
+				makeLBPodWithGates("sllb-2", true, true, true),
+			},
+			wantIPv4: []string{"192.168.100.1", "192.168.100.2"},
+		},
+		{
+			name: "one pod container not ready — excluded from both families",
+			pods: []corev1.Pod{
+				makeLBPodWithGates("sllb-1", true, true, true),
+				makeLBPodWithGates("sllb-2", false, true, true), // container not ready
+			},
+			wantIPv4: []string{"192.168.100.1"},
+		},
+		{
+			name: "pod has IPv4 gate True but IPv6 gate False — only in IPv4 hops",
+			pods: []corev1.Pod{
+				makeLBPodWithGates("sllb-1", true, true, false),
+			},
+			wantIPv4: []string{"192.168.100.1"},
+			wantIPv6: nil,
+		},
+		{
+			name: "pod has no readiness gates — included (gate not applicable)",
+			pods: []corev1.Pod{
+				makeLBPodNoGates("sllb-1", true),
+			},
+			wantIPv4: []string{"192.168.100.1"},
+		},
+		{
+			name: "pod being deleted — excluded",
+			pods: []corev1.Pod{
+				makeLBPodDeleting("sllb-1"),
+			},
+			wantIPv4: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Reconciler{
+				IPScraper: func(pod *corev1.Pod, cidr, _ string) string {
+					// Return a deterministic IP based on pod name and CIDR family
+					idx := pod.Name[len(pod.Name)-1] - '0' // last char as index
+					if strings.Contains(cidr, ":") {
+						return fmt.Sprintf("2001:db8::%d", idx)
+					}
+					return fmt.Sprintf("192.168.100.%d", idx)
+				},
+			}
+
+			gw := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+			}
+
+			objects := make([]client.Object, 0, len(tt.pods))
+			for i := range tt.pods {
+				tt.pods[i].Namespace = "default"
+				tt.pods[i].Labels = map[string]string{labelGatewayName: "test-gw"}
+				objects = append(objects, &tt.pods[i])
+			}
+
+			fakeClient := fake.NewClientBuilder().WithObjects(objects...).Build()
+			r.Client = fakeClient
+
+			subnetToType := map[string]string{"192.168.100.0/24": "NAD"}
+			if tt.wantIPv6 != nil || tt.name == "pod has IPv4 gate True but IPv6 gate False — only in IPv4 hops" {
+				subnetToType["2001:db8::/64"] = "NAD"
+			}
+
+			ipv4, ipv6, err := r.getSLLBRNextHops(context.Background(), gw, subnetToType)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantIPv4, ipv4)
+			assert.Equal(t, tt.wantIPv6, ipv6)
+		})
+	}
+}
+
+// Helper functions for test Pod construction
+
+//nolint:unparam // test helper designed for varied usage
+func makeLBPodWithGates(name string, containersReady, ipv4GateTrue, ipv6GateTrue bool) corev1.Pod {
+	ipv4Status := corev1.ConditionFalse
+	if ipv4GateTrue {
+		ipv4Status = corev1.ConditionTrue
+	}
+	ipv6Status := corev1.ConditionFalse
+	if ipv6GateTrue {
+		ipv6Status = corev1.ConditionTrue
+	}
+	return corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: corev1.PodSpec{
+			ReadinessGates: []corev1.PodReadinessGate{
+				{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
+				{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "loadbalancer", Ready: containersReady},
+				{Name: "router", Ready: containersReady},
+			},
+			Conditions: []corev1.PodCondition{
+				{Type: "meridio-2.nordix.org/ipv4-connectivity", Status: ipv4Status},
+				{Type: "meridio-2.nordix.org/ipv6-connectivity", Status: ipv6Status},
+			},
+		},
+	}
+}
+
+func makeLBPodNoGates(name string, containersReady bool) corev1.Pod {
+	return corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "loadbalancer", Ready: containersReady},
+				{Name: "router", Ready: containersReady},
+			},
+		},
+	}
+}
+
+func makeLBPodDeleting(name string) corev1.Pod {
+	return corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Finalizers: []string{"test"}},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{},
+		},
+	}
 }
