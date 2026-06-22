@@ -92,8 +92,7 @@ spec:
   protocols:
   - SCTP
   byteMatches:
-  - "sctp[4:4] = 0"
-  - "sctp[12:1] = 1"
+  - "sctp[4:4]=0"
   priority: 30
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
@@ -166,8 +165,7 @@ spec:
   protocols:
   - SCTP
   byteMatches:
-  - "sctp[4:4] = 0"
-  - "sctp[12:1] = 1"
+  - "sctp[4:4]=0"
   priority: 30
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
