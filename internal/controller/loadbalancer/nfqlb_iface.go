@@ -34,6 +34,8 @@ type nfqlbInstance interface {
 	DeleteFlow(ctx context.Context, flow nfqlb.Flow) error
 	AddTarget(ctx context.Context, ips []string, identifier int) error
 	DeleteTarget(ctx context.Context, ips []string, identifier int) error
+	BrokenTargets() map[int]struct{}
+	Targets() map[int][]string
 }
 
 // NFQLBManagerAdapter wraps *nfqlb.NFQueueLoadBalancer to implement nfqlbManager.

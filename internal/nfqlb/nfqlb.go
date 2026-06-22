@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os/exec"
 	"strconv"
@@ -222,6 +223,7 @@ type Instance struct {
 	*nfqlbInstanceConfig
 	name                              string
 	targets                           map[int][]string // Key: identifier ; Value: IPs
+	broken                            map[int]struct{} // identifiers activated but with incomplete routes
 	offset                            int
 	mu                                sync.Mutex
 	updateNfQueueDestinationCIDRsFunc func(ctx context.Context) error
@@ -271,6 +273,7 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 		name:                              name,
 		nfqlbInstanceConfig:               config,
 		targets:                           map[int][]string{},
+		broken:                            map[int]struct{}{},
 		updateNfQueueDestinationCIDRsFunc: nfqlb.updateNfQueueDestinationCIDRs,
 		offset:                            offset,
 		nfqlbPath:                         nfqlb.nfqlbPath,
@@ -483,6 +486,11 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 					errFinal = errors.Join(errFinal, err)
 				}
 			}
+			if errFinal != nil {
+				s.broken[identifier] = struct{}{}
+			} else {
+				delete(s.broken, identifier)
+			}
 			return errFinal
 		}
 		// IPs changed — clean old neighbors, delete old routes, apply new ones
@@ -506,10 +514,30 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 				errFinal = errors.Join(errFinal, err)
 			}
 		}
+		if errFinal != nil {
+			s.broken[identifier] = struct{}{}
+		} else {
+			delete(s.broken, identifier)
+		}
 		return errFinal
 	}
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: add target", "instance", s.name, "ips", ips, "identifier", identifier)
+
+	fwmark := identifier + s.offset
+
+	// Create policy routes first — if this fails, no nfqlb slot is activated.
+	var errFinal error
+	for _, ip := range ips {
+		if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
+			errFinal = errors.Join(errFinal, err)
+		}
+	}
+	if errFinal != nil {
+		s.targets[identifier] = ips
+		s.broken[identifier] = struct{}{}
+		return errFinal
+	}
 
 	output, err := s.doExec(ctx, "activate",
 		fmt.Sprintf("--index=%d", identifier),
@@ -517,23 +545,16 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 		strconv.Itoa(identifier+s.offset),
 	)
 	if err != nil {
+		s.targets[identifier] = ips
+		s.broken[identifier] = struct{}{}
 		return fmt.Errorf("failed activating nfqlb target ; %w; %s", err, output)
 	}
 
 	s.targets[identifier] = ips
-
-	fwmark := identifier + s.offset
-
-	var errFinal error
-	for _, ip := range ips {
-		if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
-			errFinal = errors.Join(errFinal, err)
-		}
-	}
-
+	delete(s.broken, identifier)
 	ctrl.LoggerFrom(ctx).Info("nfqlb: target added", "instance", s.name, "ips", ips, "identifier", identifier)
 
-	return errFinal
+	return nil
 }
 
 // doCreatePolicyRoute uses the injected function or falls back to the package-level one.
@@ -574,8 +595,29 @@ func slicesEqual(a, b []string) bool {
 	return true
 }
 
-// DeleteTarget deletes a target identifier to the nfqlb instance
-// and deletes the policy route associated.
+// BrokenTargets returns identifiers that were activated but have incomplete routes.
+// The caller should call DeleteTarget for any broken identifier no longer in the desired set.
+func (s *Instance) BrokenTargets() map[int]struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make(map[int]struct{}, len(s.broken))
+	for id := range s.broken {
+		result[id] = struct{}{}
+	}
+	return result
+}
+
+// Targets returns a copy of the current targets map.
+func (s *Instance) Targets() map[int][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make(map[int][]string, len(s.targets))
+	maps.Copy(result, s.targets)
+	return result
+}
+
+// DeleteTarget deactivates a target identifier in the nfqlb instance
+// and deletes the associated policy routes.
 func (s *Instance) DeleteTarget(ctx context.Context, ips []string, identifier int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -596,17 +638,24 @@ func (s *Instance) deleteTargetNoLock(ctx context.Context, ips []string, identif
 		fmt.Sprintf("--shm=%s", s.name),
 	)
 	if err != nil {
+		s.broken[identifier] = struct{}{}
 		return fmt.Errorf("failed deactivating nfqlb target ; %w; %s", err, output)
 	}
 
-	// Remove from map only after successful deactivation.
-	// If deactivation fails, the identifier stays in s.targets so the next
-	// reconcile will retry DeleteTarget.
-	delete(s.targets, identifier)
-
+	var errFinal error
 	for _, ip := range ips {
-		_ = s.doDeletePolicyRoute(identifier+s.offset, ip)
+		if err := s.doDeletePolicyRoute(identifier+s.offset, ip); err != nil {
+			errFinal = errors.Join(errFinal, err)
+		}
 	}
+	if errFinal != nil {
+		s.broken[identifier] = struct{}{}
+		return errFinal
+	}
+
+	// Remove from maps only after all operations succeed.
+	delete(s.targets, identifier)
+	delete(s.broken, identifier)
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: target deleted", "instance", s.name, "ips", ips, "identifier", identifier)
 

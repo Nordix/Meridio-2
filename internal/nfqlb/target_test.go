@@ -49,11 +49,12 @@ func (m *mockRouting) delete(fwmark int, ip string) error {
 // mockExec records nfqlb CLI calls and returns success.
 type mockExec struct {
 	calls [][]string
+	err   error
 }
 
 func (m *mockExec) run(_ context.Context, args ...string) ([]byte, error) {
 	m.calls = append(m.calls, args)
-	return nil, nil
+	return nil, m.err
 }
 
 // newTestInstance creates an Instance with mock routing and exec for testing.
@@ -62,6 +63,7 @@ func newTestInstance(name string, offset, maxTargets int, routing *mockRouting, 
 		nfqlbInstanceConfig:               &nfqlbInstanceConfig{maxTargets: maxTargets},
 		name:                              name,
 		targets:                           map[int][]string{},
+		broken:                            map[int]struct{}{},
 		offset:                            offset,
 		nfqlbPath:                         "nfqlb",
 		updateNfQueueDestinationCIDRsFunc: func(_ context.Context) error { return nil },
@@ -240,5 +242,68 @@ var _ = Describe("Instance.AddTarget validation", func() {
 	It("should reject identifier >= maxTargets", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 32)
 		Expect(err).To(MatchError(ContainSubstring("out of range")))
+	})
+})
+
+var _ = Describe("Instance.BrokenTargets", func() {
+	var (
+		instance *Instance
+		routing  *mockRouting
+		executor *mockExec
+		ctx      context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		routing = &mockRouting{}
+		executor = &mockExec{}
+		instance = newTestInstance("test-instance", 5000, 32, routing, executor)
+	})
+
+	It("should mark target as broken when route creation fails", func() {
+		routing.createErr = fmt.Errorf("route failure")
+
+		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
+		Expect(err).To(HaveOccurred())
+
+		Expect(instance.BrokenTargets()).To(HaveKey(0))
+		// Target is still tracked (activate succeeded)
+		Expect(instance.targets).To(HaveKey(0))
+	})
+
+	It("should clear broken state on successful AddTarget", func() {
+		// First call fails routes
+		routing.createErr = fmt.Errorf("route failure")
+		_ = instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
+		Expect(instance.BrokenTargets()).To(HaveKey(0))
+
+		// Retry succeeds
+		routing.createErr = nil
+		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(instance.BrokenTargets()).To(BeEmpty())
+	})
+
+	It("should clear broken state on DeleteTarget", func() {
+		routing.createErr = fmt.Errorf("route failure")
+		_ = instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
+		Expect(instance.BrokenTargets()).To(HaveKey(0))
+
+		routing.createErr = nil
+		err := instance.DeleteTarget(ctx, []string{"10.0.0.1"}, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(instance.BrokenTargets()).To(BeEmpty())
+		Expect(instance.targets).ToNot(HaveKey(0))
+	})
+
+	It("should mark target as broken when activate fails (routes already created)", func() {
+		executor.err = fmt.Errorf("activate failure")
+
+		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
+		Expect(err).To(HaveOccurred())
+
+		// Routes succeeded but activate failed — target in targets and broken
+		Expect(instance.BrokenTargets()).To(HaveKey(0))
+		Expect(instance.targets).To(HaveKey(0))
 	})
 })

@@ -104,6 +104,17 @@ func (m *mockNFQLBInstance) DeleteTarget(_ context.Context, _ []string, identifi
 	return nil
 }
 
+func (m *mockNFQLBInstance) BrokenTargets() map[int]struct{} {
+	return map[int]struct{}{}
+}
+
+func (m *mockNFQLBInstance) Targets() map[int][]string {
+	if m.targets == nil {
+		return map[int][]string{}
+	}
+	return m.targets
+}
+
 var _ = Describe("LoadBalancer Controller", func() {
 	var (
 		scheme      *runtime.Scheme

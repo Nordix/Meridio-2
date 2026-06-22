@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strconv"
 
@@ -97,18 +98,37 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 
 	// Deactivate removed targets (nfqlb handles policy route cleanup internally)
 	var errFinal error
+	failedDeletes := make(map[int][]string)
 	for identifier, ips := range currentTargets {
 		if _, exists := newTargets[identifier]; !exists {
 			if err := service.DeleteTarget(ctx, ips, identifier); err != nil {
 				logr.Error(err, "Failed to deactivate target", "identifier", identifier)
 				errFinal = errors.Join(errFinal, err)
+				failedDeletes[identifier] = ips
 			} else {
 				logr.Info("Deactivated target", "distGroup", distGroup.Name, "identifier", identifier)
 			}
 		}
 	}
 
-	// Activate new/updated targets (nfqlb handles policy route creation internally)
+	// Clean up broken targets that are no longer desired.
+	for id := range service.BrokenTargets() {
+		if _, wanted := newTargets[id]; !wanted {
+			if _, alreadyHandled := failedDeletes[id]; alreadyHandled {
+				continue
+			}
+			logr.Info("Cleaning up broken target", "distGroup", distGroup.Name, "identifier", id)
+			if ips, inState := service.Targets()[id]; inState {
+				if err := service.DeleteTarget(ctx, ips, id); err != nil {
+					errFinal = errors.Join(errFinal, err)
+					failedDeletes[id] = ips
+				}
+			}
+		}
+	}
+
+	// Activate all desired targets unconditionally — nfqlb layer handles idempotency
+	// and drift recovery internally.
 	for identifier, ips := range newTargets {
 		// Sort IPs for deterministic comparison in AddTarget (avoids false
 		// "IPs changed" triggers when IPv4/IPv6 slices are processed in different order)
@@ -135,12 +155,17 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	}
 
 	if errFinal != nil {
-		// Don't commit c.targets — on requeue the diff against stale currentTargets
-		// will retry failed deletions. Successful adds are idempotent on retry.
+		// Commit c.targets = newTargets ∪ failed-delete IDs.
+		// This ensures next reconcile retries DeleteTarget for failed deletions
+		// and retries AddTarget for failed additions (idempotent).
+		committed := make(map[int][]string, len(newTargets)+len(failedDeletes))
+		maps.Copy(committed, newTargets)
+		maps.Copy(committed, failedDeletes)
+		c.targets[distGroup.Name] = committed
 		return errFinal
 	}
 
-	// Update tracked targets only on full success
+	// Update tracked targets on full success
 	c.targets[distGroup.Name] = newTargets
 
 	logr.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
