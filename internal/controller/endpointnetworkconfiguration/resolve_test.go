@@ -32,6 +32,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 )
 
 const (
@@ -271,7 +272,7 @@ func TestBuildGatewayConnection_VIPsSorted(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sllb-sllb-a-abc",
 			Namespace: testNamespace,
-			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}
@@ -369,7 +370,7 @@ func TestGetSLLBRNextHops(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
-			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
@@ -393,7 +394,7 @@ func TestGetSLLBRNextHops_DeterministicOrdering(t *testing.T) {
 	pod1 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "sllb-sllb-a-111", Namespace: testNamespace,
-			Labels: map[string]string{labelGatewayName: "sllb-a"},
+			Labels: map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{
 			Phase:             corev1.PodRunning,
@@ -403,7 +404,7 @@ func TestGetSLLBRNextHops_DeterministicOrdering(t *testing.T) {
 	pod2 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "sllb-sllb-a-222", Namespace: testNamespace,
-			Labels: map[string]string{labelGatewayName: "sllb-a"},
+			Labels: map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{
 			Phase:             corev1.PodRunning,
@@ -450,7 +451,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
-			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
@@ -491,7 +492,7 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
-			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
@@ -560,7 +561,7 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
-			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
@@ -728,7 +729,7 @@ func TestSidecarContract_DualStack(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sllbr-sllb-a-abc",
 			Namespace: testNamespace,
-			Labels:    map[string]string{labelGatewayName: "sllb-a"},
+			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
@@ -1031,7 +1032,7 @@ func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
 			objects := make([]client.Object, 0, len(tt.pods))
 			for i := range tt.pods {
 				tt.pods[i].Namespace = "default"
-				tt.pods[i].Labels = map[string]string{labelGatewayName: "test-gw"}
+				tt.pods[i].Labels = map[string]string{constants.LabelGatewayName: "test-gw"}
 				objects = append(objects, &tt.pods[i])
 			}
 
