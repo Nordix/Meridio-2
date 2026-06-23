@@ -6,4 +6,7 @@ const (
 	ReadinessGateIPv4 = "meridio-2.nordix.org/ipv4-connectivity"
 	// ReadinessGateIPv6 is the Pod readiness gate condition type for IPv6 external connectivity.
 	ReadinessGateIPv6 = "meridio-2.nordix.org/ipv6-connectivity"
+
+	// LabelGatewayName is the Gateway API standard label identifying which Gateway a resource belongs to.
+	LabelGatewayName = "gateway.networking.k8s.io/gateway-name"
 )

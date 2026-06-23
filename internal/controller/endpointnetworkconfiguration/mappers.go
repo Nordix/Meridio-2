@@ -20,6 +20,7 @@ import (
 	"context"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -112,7 +113,7 @@ func (r *Reconciler) mapSLLBRPodToPods(ctx context.Context, obj client.Object) [
 	if !ok {
 		return nil
 	}
-	gwName, exists := pod.Labels[labelGatewayName]
+	gwName, exists := pod.Labels[constants.LabelGatewayName]
 	if !exists {
 		return nil
 	}

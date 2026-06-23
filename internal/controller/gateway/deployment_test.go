@@ -51,7 +51,7 @@ func TestSetControllerLabels(t *testing.T) {
 		setControllerLabels(meta, "sllbr-test", "test-gw")
 
 		assert.Equal(t, "sllbr-test", meta.Labels["app"])
-		assert.Equal(t, "test-gw", meta.Labels[labelGatewayName])
+		assert.Equal(t, "test-gw", meta.Labels[constants.LabelGatewayName])
 		assert.Equal(t, managedByValue, meta.Labels[labelManagedBy])
 	})
 
@@ -254,7 +254,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, lbDeploymentPrefix+gw.Name, deployment.Name)
 		assert.Equal(t, "template-value", deployment.Labels["template-label"])
-		assert.Equal(t, gw.Name, deployment.Labels[labelGatewayName])
+		assert.Equal(t, gw.Name, deployment.Labels[constants.LabelGatewayName])
 	})
 
 	t.Run("UpdatesExistingDeployment", func(t *testing.T) {
@@ -271,9 +271,9 @@ func TestReconcileLBDeployment(t *testing.T) {
 				Name:      lbDeploymentPrefix + gw.Name,
 				Namespace: gw.Namespace,
 				Labels: map[string]string{
-					"template-label": "old-value",
-					labelGatewayName: gw.Name,
-					"external-label": "preserved",
+					"template-label":           "old-value",
+					constants.LabelGatewayName: gw.Name,
+					"external-label":           "preserved",
 				},
 				OwnerReferences: []metav1.OwnerReference{
 					{

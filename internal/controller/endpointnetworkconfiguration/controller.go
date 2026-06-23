@@ -22,6 +22,7 @@ import (
 	"hash/fnv"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -112,7 +113,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			// ENC reconciliation targets application Pods only; LB Pods are excluded.
-			_, isLBPod := obj.GetLabels()[labelGatewayName]
+			_, isLBPod := obj.GetLabels()[constants.LabelGatewayName]
 			return !isLBPod
 		}))).
 		Owns(&meridio2v1alpha1.EndpointNetworkConfiguration{}).
@@ -129,7 +130,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Pod{},
 			handler.EnqueueRequestsFromMapFunc(r.mapSLLBRPodToPods),
 			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
-				_, ok := obj.GetLabels()[labelGatewayName]
+				_, ok := obj.GetLabels()[constants.LabelGatewayName]
 				return ok
 			}))).
 		Named("endpointnetworkconfiguration").
