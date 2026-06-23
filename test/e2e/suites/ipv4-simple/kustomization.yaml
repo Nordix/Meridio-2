@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: controller-manager
-  newName: localhost:5001/controller-manager
+  newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
   newTag: latest
 
 nameSuffix: -ipv4-simple

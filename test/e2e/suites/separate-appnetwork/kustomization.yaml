@@ -15,7 +15,7 @@ nameSuffix: -separate-appnet
 
 labels:
 - pairs:
-    e2e-suite: separate-appnetwork
+    e2e-suite: separate-appnet
 
 patches:
 - patch: |-
@@ -29,7 +29,7 @@ patches:
     - name: vl34route-v1alpha1.kb.io
       namespaceSelector:
         matchLabels:
-          e2e-suite: separate-appnetwork
+          e2e-suite: separate-appnet
       clientConfig:
         service:
           name: meridio-2-webhook-service-separate-appnet

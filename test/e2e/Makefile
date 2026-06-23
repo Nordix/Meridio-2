@@ -217,7 +217,7 @@ test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
 .PHONY: undeploy-separate-appnetwork
 undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 	@NS=e2e-separate-appnetwork; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnetwork --ignore-not-found=true; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ##############################################################################
@@ -238,7 +238,7 @@ test-shared-appnetwork: ## Run e2e tests for shared-appnetwork suite.
 .PHONY: undeploy-shared-appnetwork
 undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
 	@NS=e2e-shared-appnetwork; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnetwork --ignore-not-found=true; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnet --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 #################################################################################
