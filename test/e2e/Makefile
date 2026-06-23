@@ -159,6 +159,11 @@ define deploy-suite
 		sleep 1; elapsed=$$((elapsed + 1)); \
 		if [ $$elapsed -ge $$timeout ]; then echo "Timeout waiting for webhook endpoint"; exit 1; fi; \
 	done; \
+	timeout=30; elapsed=0; \
+	until $(KUBECTL) apply --dry-run=server -n $$NS -f - >/dev/null 2>&1 <<< '{"apiVersion":"meridio-2.nordix.org/v1alpha1","kind":"L34Route","metadata":{"name":"webhook-probe"},"spec":{"parentRefs":[{"name":"probe"}],"destinationCIDRs":["0.0.0.0/32"],"protocols":["TCP"],"destinationPorts":["1"],"priority":1}}'; do \
+		sleep 1; elapsed=$$((elapsed + 1)); \
+		if [ $$elapsed -ge $$timeout ]; then echo "Timeout waiting for webhook to be ready"; exit 1; fi; \
+	done; \
 	$(KUBECTL) apply -f $$SUITE_DIR/rbac.yaml; \
 	$(KUBECTL) apply -f $$SUITE_DIR/nad.yaml -n $$NS; \
 	$(KUBECTL) apply -f $$SUITE_DIR/gateway.yaml -n $$NS; \
