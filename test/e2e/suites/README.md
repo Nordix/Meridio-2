@@ -14,21 +14,21 @@ Each test suite deploys in its own namespace and uses:
 ```
                     ┌────────────────────────────┐
                     │       VPN Gateway          │
-                    │   (Docker container)        │
-                    │   ASN 4200000000            │
+                    │   (Docker container)       │
+                    │   ASN 4200000000           │
                     └─────────┬──────────────────┘
                               │  VLAN (external network)
                               │  BGP peering
                     ┌─────────┴──────────────────┐
-                    │       LB Pods (SLLBR)       │
-                    │   vlan-XXX: 169.254.X.Y     │
-                    │   net-YYY:  169.111.Y.Z     │
+                    │       LB Pods (SLLBR)      │
+                    │   vlan-XXX: 169.254.X.Y    │
+                    │   net-YYY:  169.111.Y.Z    │
                     └─────────┬──────────────────┘
                               │  Internal (app network)
                               │  Maglev hashing
                     ┌─────────┴──────────────────┐
-                    │       Target Pods           │
-                    │   net1: 169.111.Y.Z + VIP   │
+                    │       Target Pods          │
+                    │   net1: 169.111.Y.Z + VIP  │
                     └────────────────────────────┘
 ```
 
