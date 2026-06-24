@@ -2,24 +2,28 @@
 
 ## Create the Cluster
 
-\```bash
-kind create cluster --config test/e2e/kind-cluster/kind-basic.yaml
-\```
+```bash
+kind create cluster --config test/e2e/kind-cluster/kind.yaml
+```
 
-This creates a cluster with:
+This creates a dual-stack cluster with:
 - 1 control-plane + 4 worker nodes (needed for pod anti-affinity across LB replicas)
 - `InPlacePodVerticalScaling` feature gate enabled
 - IPVS kube-proxy mode
+- Dual-stack pod/service networking
 - Kubernetes v1.31.0
+
+A single dual-stack cluster supports all test suites (IPv4-only, dual-stack, and IPv6-only)
+since traffic flows over secondary Multus interfaces independent of the cluster's primary CNI.
 
 ## Next Steps
 
 Install cluster dependencies and deploy test suites:
 
-\```bash
+```bash
 make -C test/e2e cluster
 make -C test/e2e deploy-common-appnetwork
-\```
+```
 
 ## Note: inotify limits
 
@@ -29,10 +33,10 @@ Whereabouts pods will crash with `error creating configuration watcher: too many
 
 This only needs to be done once per machine:
 
-\```bash
+```bash
 cat <<SYSCTL | sudo tee /etc/sysctl.d/99-kind-inotify.conf
 fs.inotify.max_user_instances = 1024
 fs.inotify.max_user_watches = 524288
 SYSCTL
 sudo sysctl --system
-\```
+```

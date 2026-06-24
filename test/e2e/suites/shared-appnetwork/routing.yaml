@@ -1,16 +1,16 @@
 ---
-# gw-a1 router (VLAN 100, ASN 64512)
+# gw-b1 router (VLAN 300, ASN 64514)
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
-  name: gw-a1-router-v4
+  name: gw-b1-router-v4
 spec:
   gatewayRef:
-    name: gw-a1
-  interface: "vlan-100"
-  address: "169.254.10.150"
+    name: gw-b1
+  interface: "vlan-300"
+  address: "169.254.20.150"
   bgp:
-    localASN: 64512
+    localASN: 64514
     remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179
@@ -24,16 +24,16 @@ spec:
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
 metadata:
-  name: route-a1
+  name: route-b1
 spec:
   parentRefs:
-  - name: gw-a1
+  - name: gw-b1
   backendRefs:
   - group: meridio-2.nordix.org
     kind: DistributionGroup
-    name: dg-a1
+    name: dg-b1
   destinationCIDRs:
-  - "10.0.0.1/32"
+  - "20.0.0.1/32"
   protocols:
   - TCP
   - UDP
@@ -41,18 +41,18 @@ spec:
   - "5000-5001"
   priority: 100
 ---
-# gw-a2 router (VLAN 200, ASN 64513)
+# gw-b2 router (VLAN 400, ASN 64515)
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
-  name: gw-a2-router-v4
+  name: gw-b2-router-v4
 spec:
   gatewayRef:
-    name: gw-a2
-  interface: "vlan-200"
-  address: "169.254.11.150"
+    name: gw-b2
+  interface: "vlan-400"
+  address: "169.254.21.150"
   bgp:
-    localASN: 64513
+    localASN: 64515
     remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179
@@ -66,16 +66,16 @@ spec:
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
 metadata:
-  name: route-a2
+  name: route-b2
 spec:
   parentRefs:
-  - name: gw-a2
+  - name: gw-b2
   backendRefs:
   - group: meridio-2.nordix.org
     kind: DistributionGroup
-    name: dg-a2
+    name: dg-b2
   destinationCIDRs:
-  - "10.0.0.2/32"
+  - "20.0.0.2/32"
   protocols:
   - TCP
   - UDP

@@ -1,16 +1,16 @@
 ---
-# gw-b1 router (VLAN 300, ASN 64514)
+# IPv4 router (VLAN 100, ASN 64512) - reuses separate-appnetwork gw-a1 slot
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
-  name: gw-b1-router-v4
+  name: gw-ds-router-v4
 spec:
   gatewayRef:
-    name: gw-b1
-  interface: "vlan-300"
-  address: "169.254.101.150"
+    name: gw-ds
+  interface: "vlan-100"
+  address: "169.254.10.150"
   bgp:
-    localASN: 64514
+    localASN: 64512
     remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179
@@ -21,38 +21,18 @@ spec:
       minRx: 300ms
       multiplier: 3
 ---
-apiVersion: meridio-2.nordix.org/v1alpha1
-kind: L34Route
-metadata:
-  name: route-b1
-spec:
-  parentRefs:
-  - name: gw-b1
-  backendRefs:
-  - group: meridio-2.nordix.org
-    kind: DistributionGroup
-    name: dg-b1
-  destinationCIDRs:
-  - "30.0.0.1/32"
-  protocols:
-  - TCP
-  - UDP
-  destinationPorts:
-  - "5000-5001"
-  priority: 100
----
-# gw-b2 router (VLAN 400, ASN 64515)
+# IPv6 router (VLAN 100, ASN 64512) - reuses separate-appnetwork gw-a1 slot
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
-  name: gw-b2-router-v4
+  name: gw-ds-router-v6
 spec:
   gatewayRef:
-    name: gw-b2
-  interface: "vlan-400"
-  address: "169.254.201.150"
+    name: gw-ds
+  interface: "vlan-100"
+  address: "fd00:cafe:10::150"
   bgp:
-    localASN: 64515
+    localASN: 64512
     remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179
@@ -63,19 +43,21 @@ spec:
       minRx: 300ms
       multiplier: 3
 ---
+# L34Route with both IPv4 and IPv6 VIPs
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
 metadata:
-  name: route-b2
+  name: route-ds
 spec:
   parentRefs:
-  - name: gw-b2
+  - name: gw-ds
   backendRefs:
   - group: meridio-2.nordix.org
     kind: DistributionGroup
-    name: dg-b2
+    name: dg-ds
   destinationCIDRs:
-  - "30.0.0.2/32"
+  - "10.0.0.1/32"
+  - "fd00:cafe:1::1/128"
   protocols:
   - TCP
   - UDP

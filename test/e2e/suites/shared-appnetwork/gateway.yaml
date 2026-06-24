@@ -25,21 +25,21 @@ spec:
   - type: NAD
     nad:
       name: sysctl-tuning
-      namespace: e2e-common-appnet
+      namespace: e2e-shared-appnetwork
       interface: dummy
   - type: NAD
     nad:
       name: vlan-300
-      namespace: e2e-common-appnet
+      namespace: e2e-shared-appnetwork
       interface: vlan-300
   - type: NAD
     nad:
       name: app-net-b
-      namespace: e2e-common-appnet
+      namespace: e2e-shared-appnetwork
       interface: net-b
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.100.0/24"
+    cidr: "169.111.20.0/24"
   horizontalScaling:
     replicas: 2
 ---
@@ -69,20 +69,20 @@ spec:
   - type: NAD
     nad:
       name: sysctl-tuning
-      namespace: e2e-common-appnet
+      namespace: e2e-shared-appnetwork
       interface: dummy
   - type: NAD
     nad:
       name: vlan-400
-      namespace: e2e-common-appnet
+      namespace: e2e-shared-appnetwork
       interface: vlan-400
   - type: NAD
     nad:
       name: app-net-b
-      namespace: e2e-common-appnet
+      namespace: e2e-shared-appnetwork
       interface: net-b
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.100.0/24"
+    cidr: "169.111.20.0/24"
   horizontalScaling:
     replicas: 2

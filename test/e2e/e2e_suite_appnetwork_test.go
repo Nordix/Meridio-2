@@ -37,37 +37,37 @@ type suiteTestCase struct {
 
 var testCases = []suiteTestCase{
 	{
-		name:           "Common App Network",
-		namespace:      "e2e-common-appnet",
-		targetApp:      "target-b",
-		targetReplicas: 2,
-		gateways: []gwTestCase{
-			{name: "gw-b1", vip: "30.0.0.1", targets: 2, dgName: "dg-b1"},
-			{name: "gw-b2", vip: "30.0.0.2", targets: 2, dgName: "dg-b2"},
-		},
-	},
-	{
 		name:           "Separate App Network",
-		namespace:      "e2e-separate-appnet",
+		namespace:      "e2e-separate-appnetwork",
 		targetApp:      "target-a",
 		targetReplicas: 2,
 		gateways: []gwTestCase{
-			{name: "gw-a1", vip: "20.0.0.1", targets: 2, dgName: "dg-a1"},
-			{name: "gw-a2", vip: "20.0.0.2", targets: 2, dgName: "dg-a2"},
+			{name: "gw-a1", vip: "10.0.0.1", targets: 2, dgName: "dg-a1"},
+			{name: "gw-a2", vip: "10.0.0.2", targets: 2, dgName: "dg-a2"},
+		},
+	},
+	{
+		name:           "Shared App Network",
+		namespace:      "e2e-shared-appnetwork",
+		targetApp:      "target-b",
+		targetReplicas: 2,
+		gateways: []gwTestCase{
+			{name: "gw-b1", vip: "20.0.0.1", targets: 2, dgName: "dg-b1"},
+			{name: "gw-b2", vip: "20.0.0.2", targets: 2, dgName: "dg-b2"},
 		},
 	},
 }
 
 var lowMTUTestCase = suiteTestCase{
 	name:      "Low MTU",
-	namespace: "e2e-low-mtu",
+	namespace: "e2e-ipv4-simple",
 	targetApp: "target-m",
 	gateways: []gwTestCase{
 		{name: "gw-m1", vip: "40.0.0.1", targets: 2},
 	},
 }
 
-var _ = Describe("E2E Test Suites", func() {
+var _ = Describe("E2E Test Suites", Label("ipv4"), func() {
 	SetDefaultEventuallyTimeout(5 * time.Minute)
 	SetDefaultEventuallyPollingInterval(2 * time.Second)
 
@@ -343,8 +343,8 @@ var _ = Describe("E2E Test Suites", func() {
 						// Derive suite directory from suite name
 						var suiteDir string
 						switch suite.name {
-						case "Common App Network":
-							suiteDir = "common-appnetwork"
+						case "Shared App Network":
+							suiteDir = "shared-appnetwork"
 						case "Separate App Network":
 							suiteDir = "separate-appnetwork"
 						default:

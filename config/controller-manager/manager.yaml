@@ -66,6 +66,7 @@ spec:
           - --controller-name=meridio-2.nordix.org/gateway-controller
           - --health-probe-bind-address=:8081
         image: controller-manager:latest
+        imagePullPolicy: IfNotPresent
         name: manager
         ports: []
         securityContext:

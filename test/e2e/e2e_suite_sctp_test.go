@@ -36,13 +36,13 @@ var sctpTestCases = []sctpSuiteTestCase{
 		targetApp:      "sctp-target",
 		targetReplicas: 1,
 		gateways: []sctpGwTestCase{
-			{name: "sctp-gw1", vip: "50.0.0.1", dgName: "sctp-dg1"},
-			{name: "sctp-gw2", vip: "50.0.0.2", dgName: "sctp-dg2"},
+			{name: "sctp-gw1", vip: "30.0.0.1", dgName: "sctp-dg1"},
+			{name: "sctp-gw2", vip: "30.0.0.2", dgName: "sctp-dg2"},
 		},
 	},
 }
 
-var _ = Describe("E2E SCTP Multihoming Suites", func() {
+var _ = Describe("E2E SCTP Multihoming Suites", Label("ipv4"), func() {
 	SetDefaultEventuallyTimeout(5 * time.Minute)
 	SetDefaultEventuallyPollingInterval(2 * time.Second)
 

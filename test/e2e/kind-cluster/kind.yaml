@@ -30,10 +30,6 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             container-log-max-size: "100Mi"
-      - |
-        kind: JoinConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
             feature-gates: "InPlacePodVerticalScaling=true"
   - role: worker
     image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
@@ -43,10 +39,6 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             container-log-max-size: "100Mi"
-      - |
-        kind: JoinConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
             feature-gates: "InPlacePodVerticalScaling=true"
   - role: worker
     image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
@@ -56,10 +48,6 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             container-log-max-size: "100Mi"
-      - |
-        kind: JoinConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
             feature-gates: "InPlacePodVerticalScaling=true"
   - role: worker
     image: kindest/node:v1.31.0@sha256:53df588e04085fd41ae12de0c3fe4c72f7013bba32a20e7325357a1ac94ba865
@@ -69,12 +57,11 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             container-log-max-size: "100Mi"
-      - |
-        kind: JoinConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
             feature-gates: "InPlacePodVerticalScaling=true"
 networking:
-  kubeProxyMode: "ipvs" # Enable IPVS mode for kube-proxy
+  ipFamily: dual
+  podSubnet: "10.244.0.0/16,fd00:10:244::/56"
+  serviceSubnet: "10.96.0.0/16,fd00:10:96::/112"
+  kubeProxyMode: "ipvs"
   apiServerAddress: "127.0.0.1"
   apiServerPort: 6443

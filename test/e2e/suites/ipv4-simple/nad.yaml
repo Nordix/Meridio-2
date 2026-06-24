@@ -27,65 +27,46 @@ spec:
       ]
   }'
 ---
-# VLAN 300 NAD for gw-b1 BGP peering
+# VLAN 700 NAD for gw-m1 BGP peering
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-300
+  name: vlan-700
 spec:
   config: |
     {
       "cniVersion": "0.3.1",
       "type": "vlan",
       "master": "eth0",
-      "vlanId": 300,
+      "vlanId": 700,
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
-          { "range": "169.254.101.0/24", "exclude": ["169.254.101.150/32"] }
+          { "range": "169.254.40.0/24", "exclude": ["169.254.40.150/32"] }
         ]
       }
     }
 ---
-# VLAN 400 NAD for gw-b2 BGP peering
+# App network with 1200 MTU (triggers PMTU discovery for packets > 1200)
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-400
-spec:
-  config: |
-    {
-      "cniVersion": "0.3.1",
-      "type": "vlan",
-      "master": "eth0",
-      "vlanId": 400,
-      "ipam": {
-        "type": "whereabouts",
-        "ipRanges": [
-          { "range": "169.254.201.0/24", "exclude": ["169.254.201.150/32"] }
-        ]
-      }
-    }
----
-# Shared app network for both gw-b1 and gw-b2
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: app-net-b
+  name: app-net-mtu1200
 spec:
   config: |
     {
       "cniVersion": "1.0.0",
-      "name": "app-net-b",
+      "name": "app-net-mtu1200",
       "plugins": [
         {
           "type": "macvlan",
           "master": "eth0",
           "mode": "bridge",
+          "mtu": 1200,
           "ipam": {
             "type": "whereabouts",
             "ipRanges": [
-              { "range": "169.111.100.0/24" }
+              { "range": "169.111.40.0/24" }
             ]
           }
         }

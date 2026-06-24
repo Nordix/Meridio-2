@@ -31,6 +31,7 @@ spec:
       containers:
       - name: loadbalancer
         image: registry.nordix.org/cloud-native/meridio-2/stateless-load-balancer:latest
+        imagePullPolicy: IfNotPresent
         args:
           - run
         env:
@@ -65,6 +66,7 @@ spec:
             memory: 512Mi
       - name: router
         image: registry.nordix.org/cloud-native/meridio-2/router:latest
+        imagePullPolicy: IfNotPresent
         args:
           - run
         env:
