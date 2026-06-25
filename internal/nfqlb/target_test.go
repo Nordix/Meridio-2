@@ -104,8 +104,9 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		// No exec calls (no re-activation), but routes are re-applied for drift recovery
-		Expect(executor.calls).To(BeEmpty())
+		// Re-applies routes and re-activates (idempotent) to recover from broken state
+		Expect(executor.calls).To(HaveLen(1))
+		Expect(executor.calls[0]).To(ContainElements("activate", "--index=0", "--shm=test-instance", "5000"))
 		Expect(routing.created).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
 		Expect(routing.deleted).To(BeEmpty())
 	})
@@ -116,8 +117,9 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.2"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Should NOT re-activate in nfqlb (fwmark unchanged)
-		Expect(executor.calls).To(BeEmpty())
+		// Re-activates (idempotent) to recover from potential broken state
+		Expect(executor.calls).To(HaveLen(1))
+		Expect(executor.calls[0]).To(ContainElements("activate", "--index=0", "--shm=test-instance", "5000"))
 		// Should delete old route and create new route
 		Expect(routing.deleted).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
 		Expect(routing.created).To(ConsistOf(routeCall{5000, "10.0.0.2"}))
@@ -162,7 +164,8 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"192.168.100.10", "2001:db8:100::10"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(executor.calls).To(BeEmpty())
+		Expect(executor.calls).To(HaveLen(1))
+		Expect(executor.calls[0]).To(ContainElements("activate", "--index=0", "--shm=test-instance", "5000"))
 		Expect(routing.created).To(ConsistOf(
 			routeCall{5000, "192.168.100.10"},
 			routeCall{5000, "2001:db8:100::10"},

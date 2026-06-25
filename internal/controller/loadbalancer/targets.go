@@ -111,24 +111,9 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}
 	}
 
-	// Clean up broken targets that are no longer desired.
-	for id := range service.BrokenTargets() {
-		if _, wanted := newTargets[id]; !wanted {
-			if _, alreadyHandled := failedDeletes[id]; alreadyHandled {
-				continue
-			}
-			logr.Info("Cleaning up broken target", "distGroup", distGroup.Name, "identifier", id)
-			if ips, inState := service.Targets()[id]; inState {
-				if err := service.DeleteTarget(ctx, ips, id); err != nil {
-					errFinal = errors.Join(errFinal, err)
-					failedDeletes[id] = ips
-				}
-			}
-		}
-	}
-
 	// Activate all desired targets unconditionally — nfqlb layer handles idempotency
 	// and drift recovery internally.
+	var anyTargetReady bool
 	for identifier, ips := range newTargets {
 		// Sort IPs for deterministic comparison in AddTarget (avoids false
 		// "IPs changed" triggers when IPv4/IPv6 slices are processed in different order)
@@ -137,14 +122,14 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
 			errFinal = errors.Join(errFinal, err)
 		} else {
+			anyTargetReady = true
 			logr.Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
 		}
 	}
 
-	// Manage readiness file based on desired endpoint count (before error check,
-	// so VIP advertisement reflects actual target availability regardless of
-	// partial deletion failures)
-	if len(newTargets) > 0 {
+	// Manage readiness file: advertise VIPs only when at least one target is
+	// successfully activated (avoids blackhole when all AddTarget calls fail).
+	if anyTargetReady {
 		if err := c.Readiness.Set(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to create readiness file", "distGroup", distGroup.Name)
 		}
