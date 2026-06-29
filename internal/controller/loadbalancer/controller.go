@@ -71,7 +71,7 @@ type Controller struct {
 	mu          sync.Mutex
 	instances   map[string]nfqlbInstance                         // key: DistributionGroup name
 	nftManager  nftablesManager                                  // Shared nftables manager for all DGs
-	targets     map[string]map[int][]string                      // key: DistributionGroup name -> identifier -> IPs
+	targets     map[string]map[int]struct{}                      // key: DistributionGroup name -> active identifiers
 	flows       map[string]map[string]*meridio2v1alpha1.L34Route // key: DistributionGroup name -> L34Route name
 	currentVIPs []string                                         // Currently configured VIPs (to avoid redundant updates)
 }

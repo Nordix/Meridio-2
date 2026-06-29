@@ -99,20 +99,9 @@ func (m *mockNFQLBInstance) AddTarget(_ context.Context, ips []string, identifie
 	return nil
 }
 
-func (m *mockNFQLBInstance) DeleteTarget(_ context.Context, _ []string, identifier int) error {
+func (m *mockNFQLBInstance) DeleteTarget(_ context.Context, identifier int) error {
 	delete(m.targets, identifier)
 	return nil
-}
-
-func (m *mockNFQLBInstance) BrokenTargets() map[int]struct{} {
-	return map[int]struct{}{}
-}
-
-func (m *mockNFQLBInstance) Targets() map[int][]string {
-	if m.targets == nil {
-		return map[int][]string{}
-	}
-	return m.targets
 }
 
 var _ = Describe("LoadBalancer Controller", func() {
@@ -616,9 +605,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should deactivate removed targets with correct index", func() {
 			// Setup: activate a target first (identifier=0)
-			controller.targets = map[string]map[int][]string{
+			controller.targets = map[string]map[int]struct{}{
 				distGroup.Name: {
-					0: {"10.0.0.1"},
+					0: {},
 				},
 			}
 
@@ -1423,13 +1412,13 @@ var _ = Describe("LoadBalancer Controller", func() {
 				controller.flows = make(map[string]map[string]*meridio2v1alpha1.L34Route)
 			}
 			if controller.targets == nil {
-				controller.targets = make(map[string]map[int][]string)
+				controller.targets = make(map[string]map[int]struct{})
 			}
 
 			controller.instances[distGroup.Name] = mockInstance
 			controller.nftManager = mockNftMgr // Use shared manager
 			controller.flows[distGroup.Name] = make(map[string]*meridio2v1alpha1.L34Route)
-			controller.targets[distGroup.Name] = make(map[int][]string)
+			controller.targets[distGroup.Name] = make(map[int]struct{})
 
 			// Simulate DistributionGroup deletion by returning NotFound
 			fakeClient = fake.NewClientBuilder().

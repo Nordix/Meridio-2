@@ -104,9 +104,8 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Re-applies routes and re-activates (idempotent) to recover from broken state
-		Expect(executor.calls).To(HaveLen(1))
-		Expect(executor.calls[0]).To(ContainElements("activate", "--index=0", "--shm=test-instance", "5000"))
+		// No activate call (target exists and not broken — skipActivate)
+		Expect(executor.calls).To(BeEmpty())
 		Expect(routing.created).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
 		Expect(routing.deleted).To(BeEmpty())
 	})
@@ -117,10 +116,9 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.2"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Re-activates (idempotent) to recover from potential broken state
-		Expect(executor.calls).To(HaveLen(1))
-		Expect(executor.calls[0]).To(ContainElements("activate", "--index=0", "--shm=test-instance", "5000"))
-		// Should delete old route and create new route
+		// No activate call (target exists and not broken — skipActivate)
+		Expect(executor.calls).To(BeEmpty())
+		// Should delete only removed IPs and create new ones
 		Expect(routing.deleted).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
 		Expect(routing.created).To(ConsistOf(routeCall{5000, "10.0.0.2"}))
 		// Should update tracked IPs
@@ -133,9 +131,8 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.1", "10.0.0.3"}, 1)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Delete all old routes, create all new routes
+		// Only delete routes for removed IPs (10.0.0.2), create all new IPs
 		Expect(routing.deleted).To(ConsistOf(
-			routeCall{5001, "10.0.0.1"},
 			routeCall{5001, "10.0.0.2"},
 		))
 		Expect(routing.created).To(ConsistOf(
@@ -164,8 +161,8 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"192.168.100.10", "2001:db8:100::10"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(executor.calls).To(HaveLen(1))
-		Expect(executor.calls[0]).To(ContainElements("activate", "--index=0", "--shm=test-instance", "5000"))
+		// No activate call (exists and not broken)
+		Expect(executor.calls).To(BeEmpty())
 		Expect(routing.created).To(ConsistOf(
 			routeCall{5000, "192.168.100.10"},
 			routeCall{5000, "2001:db8:100::10"},
@@ -269,8 +266,8 @@ var _ = Describe("Instance.BrokenTargets", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
 		Expect(err).To(HaveOccurred())
 
-		Expect(instance.BrokenTargets()).To(HaveKey(0))
-		// Target is still tracked (activate succeeded)
+		Expect(instance.broken).To(HaveKey(0))
+		// Target is still tracked
 		Expect(instance.targets).To(HaveKey(0))
 	})
 
@@ -278,24 +275,24 @@ var _ = Describe("Instance.BrokenTargets", func() {
 		// First call fails routes
 		routing.createErr = fmt.Errorf("route failure")
 		_ = instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
-		Expect(instance.BrokenTargets()).To(HaveKey(0))
+		Expect(instance.broken).To(HaveKey(0))
 
 		// Retry succeeds
 		routing.createErr = nil
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(instance.BrokenTargets()).To(BeEmpty())
+		Expect(instance.broken).To(BeEmpty())
 	})
 
 	It("should clear broken state on DeleteTarget", func() {
 		routing.createErr = fmt.Errorf("route failure")
 		_ = instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
-		Expect(instance.BrokenTargets()).To(HaveKey(0))
+		Expect(instance.broken).To(HaveKey(0))
 
 		routing.createErr = nil
-		err := instance.DeleteTarget(ctx, []string{"10.0.0.1"}, 0)
+		err := instance.DeleteTarget(ctx, 0)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(instance.BrokenTargets()).To(BeEmpty())
+		Expect(instance.broken).To(BeEmpty())
 		Expect(instance.targets).ToNot(HaveKey(0))
 	})
 
@@ -306,7 +303,7 @@ var _ = Describe("Instance.BrokenTargets", func() {
 		Expect(err).To(HaveOccurred())
 
 		// Routes succeeded but activate failed — target in targets and broken
-		Expect(instance.BrokenTargets()).To(HaveKey(0))
+		Expect(instance.broken).To(HaveKey(0))
 		Expect(instance.targets).To(HaveKey(0))
 	})
 })

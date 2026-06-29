@@ -35,7 +35,7 @@ func (c *Controller) reconcileNFQLBInstance(ctx context.Context, distGroup *meri
 		c.instances = make(map[string]nfqlbInstance)
 	}
 	if c.targets == nil {
-		c.targets = make(map[string]map[int][]string)
+		c.targets = make(map[string]map[int]struct{})
 	}
 
 	// Check if service already exists
@@ -58,7 +58,7 @@ func (c *Controller) reconcileNFQLBInstance(ctx context.Context, distGroup *meri
 	}
 
 	c.instances[distGroup.Name] = service
-	c.targets[distGroup.Name] = make(map[int][]string)
+	c.targets[distGroup.Name] = make(map[int]struct{})
 
 	logr.Info("Created NFQLB service", "distGroup", distGroup.Name, "maxTargets", n)
 

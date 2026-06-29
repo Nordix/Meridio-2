@@ -17,9 +17,7 @@ This order is preferred because an active slot with missing routes would cause t
 
 ### 2. No context timeouts on nfqlb CLI calls
 
-The `doExec` calls to `nfqlb activate`/`deactivate` use the reconcile context without additional timeouts. This guarantees an unambiguous outcome: the call either succeeds or fails, never times out mid-operation. Adding a custom timeout would break the recovery model — a timed-out activate might have succeeded in NFQLB's shared memory, but the caller wouldn't know whether to retry or clean up.
-
-**Constraint**: Do not wrap nfqlb CLI calls in shortened-timeout contexts.
+The `doExec` calls to `nfqlb activate`/`deactivate` use the reconcile context without additional timeouts. This guarantees an unambiguous outcome: the call either succeeds or fails, never times out mid-operation. A timed-out activate might have succeeded in NFQLB's shared memory, but the caller wouldn't know whether to retry or clean up. With broken-state tracking, a timeout would be handled as a broken state (mark broken, retry on next reconcile), so custom timeouts would not break recovery — but they add complexity without clear benefit.
 
 ### 3. Orphaned routes are harmless
 

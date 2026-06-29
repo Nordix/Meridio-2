@@ -20,7 +20,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"maps"
 	"slices"
 	"strconv"
 
@@ -64,7 +63,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	// Get current targets
 	currentTargets := c.targets[distGroup.Name]
 	if currentTargets == nil {
-		currentTargets = make(map[int][]string)
+		currentTargets = make(map[int]struct{})
 		c.targets[distGroup.Name] = currentTargets
 	}
 
@@ -98,13 +97,13 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 
 	// Deactivate removed targets (nfqlb handles policy route cleanup internally)
 	var errFinal error
-	failedDeletes := make(map[int][]string)
-	for identifier, ips := range currentTargets {
+	failedDeletes := make(map[int]struct{})
+	for identifier := range currentTargets {
 		if _, exists := newTargets[identifier]; !exists {
-			if err := service.DeleteTarget(ctx, ips, identifier); err != nil {
+			if err := service.DeleteTarget(ctx, identifier); err != nil {
 				logr.Error(err, "Failed to deactivate target", "identifier", identifier)
 				errFinal = errors.Join(errFinal, err)
-				failedDeletes[identifier] = ips
+				failedDeletes[identifier] = struct{}{}
 			} else {
 				logr.Info("Deactivated target", "distGroup", distGroup.Name, "identifier", identifier)
 			}
@@ -139,19 +138,21 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}
 	}
 
+	// Commit c.targets: identifiers from newTargets ∪ failed-delete IDs.
+	// This ensures next reconcile retries DeleteTarget for failed deletions
+	// and retries AddTarget for failed additions (idempotent).
+	committed := make(map[int]struct{}, len(newTargets)+len(failedDeletes))
+	for id := range newTargets {
+		committed[id] = struct{}{}
+	}
+	for id := range failedDeletes {
+		committed[id] = struct{}{}
+	}
+	c.targets[distGroup.Name] = committed
+
 	if errFinal != nil {
-		// Commit c.targets = newTargets ∪ failed-delete IDs.
-		// This ensures next reconcile retries DeleteTarget for failed deletions
-		// and retries AddTarget for failed additions (idempotent).
-		committed := make(map[int][]string, len(newTargets)+len(failedDeletes))
-		maps.Copy(committed, newTargets)
-		maps.Copy(committed, failedDeletes)
-		c.targets[distGroup.Name] = committed
 		return errFinal
 	}
-
-	// Update tracked targets on full success
-	c.targets[distGroup.Name] = newTargets
 
 	logr.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
 	return nil
