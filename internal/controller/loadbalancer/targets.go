@@ -63,7 +63,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	// Get current targets
 	currentTargets := c.targets[distGroup.Name]
 	if currentTargets == nil {
-		currentTargets = make(map[int][]string)
+		currentTargets = make(map[int]struct{})
 		c.targets[distGroup.Name] = currentTargets
 	}
 
@@ -97,18 +97,22 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 
 	// Deactivate removed targets (nfqlb handles policy route cleanup internally)
 	var errFinal error
-	for identifier, ips := range currentTargets {
+	failedDeletes := make(map[int]struct{})
+	for identifier := range currentTargets {
 		if _, exists := newTargets[identifier]; !exists {
-			if err := service.DeleteTarget(ctx, ips, identifier); err != nil {
+			if err := service.DeleteTarget(ctx, identifier); err != nil {
 				logr.Error(err, "Failed to deactivate target", "identifier", identifier)
 				errFinal = errors.Join(errFinal, err)
+				failedDeletes[identifier] = struct{}{}
 			} else {
 				logr.Info("Deactivated target", "distGroup", distGroup.Name, "identifier", identifier)
 			}
 		}
 	}
 
-	// Activate new/updated targets (nfqlb handles policy route creation internally)
+	// Activate all desired targets unconditionally — nfqlb layer handles idempotency
+	// and drift recovery internally.
+	var anyTargetReady bool
 	for identifier, ips := range newTargets {
 		// Sort IPs for deterministic comparison in AddTarget (avoids false
 		// "IPs changed" triggers when IPv4/IPv6 slices are processed in different order)
@@ -117,15 +121,14 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
 			errFinal = errors.Join(errFinal, err)
 		} else {
+			anyTargetReady = true
 			logr.Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
 		}
 	}
 
-	// Update tracked targets
-	c.targets[distGroup.Name] = newTargets
-
-	// Manage readiness file based on endpoint count
-	if len(newTargets) > 0 {
+	// Manage readiness file: advertise VIPs only when at least one target is
+	// successfully activated (avoids blackhole when all AddTarget calls fail).
+	if anyTargetReady {
 		if err := c.Readiness.Set(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to create readiness file", "distGroup", distGroup.Name)
 		}
@@ -135,6 +138,22 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}
 	}
 
+	// Commit c.targets: identifiers from newTargets ∪ failed-delete IDs.
+	// This ensures next reconcile retries DeleteTarget for failed deletions
+	// and retries AddTarget for failed additions (idempotent).
+	committed := make(map[int]struct{}, len(newTargets)+len(failedDeletes))
+	for id := range newTargets {
+		committed[id] = struct{}{}
+	}
+	for id := range failedDeletes {
+		committed[id] = struct{}{}
+	}
+	c.targets[distGroup.Name] = committed
+
+	if errFinal != nil {
+		return errFinal
+	}
+
 	logr.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
-	return errFinal
+	return nil
 }

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -222,6 +223,7 @@ type Instance struct {
 	*nfqlbInstanceConfig
 	name                              string
 	targets                           map[int][]string // Key: identifier ; Value: IPs
+	broken                            map[int]struct{} // identifiers in inconsistent state (partial route or activate failure)
 	offset                            int
 	mu                                sync.Mutex
 	updateNfQueueDestinationCIDRsFunc func(ctx context.Context) error
@@ -271,6 +273,7 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 		name:                              name,
 		nfqlbInstanceConfig:               config,
 		targets:                           map[int][]string{},
+		broken:                            map[int]struct{}{},
 		updateNfQueueDestinationCIDRsFunc: nfqlb.updateNfQueueDestinationCIDRs,
 		offset:                            offset,
 		nfqlbPath:                         nfqlb.nfqlbPath,
@@ -336,8 +339,8 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 
 	var errs []error
 
-	for targetIdentifier, targetIPs := range nfqlbInstance.targets {
-		if err := nfqlbInstance.deleteTargetNoLock(ctx, targetIPs, targetIdentifier); err != nil {
+	for targetIdentifier := range nfqlbInstance.targets {
+		if err := nfqlbInstance.deleteTargetNoLock(ctx, targetIdentifier); err != nil {
 			errs = append(errs, fmt.Errorf("delete target %d: %w", targetIdentifier, err))
 		}
 	}
@@ -450,12 +453,10 @@ func (s *Instance) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
 	return nil
 }
 
-// AddTarget adds a target identifier to the nfqlb instance
-// and configures the policy route associated.
-// If the identifier already exists with the same IPs, this is a no-op.
-// If the identifier exists with different IPs, policy routes are updated
-// without re-activating in nfqlb (the fwmark is unchanged).
-func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) error {
+// AddTarget creates policy routes and activates the nfqlb slot for the given identifier.
+// If the target already exists with the same IPs and is not broken, only routes are re-applied
+// (drift recovery) without re-activating in nfqlb (the fwmark is unchanged).
+func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) (err error) {
 	if len(ips) == 0 {
 		return fmt.Errorf("target IPs must not be empty")
 	}
@@ -471,69 +472,63 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existingIPs, exists := s.targets[identifier]
-	if exists {
-		if slicesEqual(existingIPs, ips) {
-			// IPs unchanged — re-apply routes to recover from potential kernel drift.
-			// RouteReplace and ensureRule are idempotent — no traffic disruption.
-			fwmark := identifier + s.offset
-			var errFinal error
-			for _, ip := range ips {
-				if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
-					errFinal = errors.Join(errFinal, err)
-				}
-			}
-			return errFinal
+	defer func() {
+		if err != nil {
+			s.broken[identifier] = struct{}{}
+		} else {
+			delete(s.broken, identifier)
 		}
-		// IPs changed — clean old neighbors, delete old routes, apply new ones
+	}()
+
+	existingIPs, exists := s.targets[identifier]
+	_, broken := s.broken[identifier]
+	skipActivate := exists && !broken
+
+	// Handle existing target: clean up stale state for changed IPs
+	if exists && !slicesEqual(existingIPs, ips) {
 		ctrl.LoggerFrom(ctx).Info("nfqlb: target IPs changed, updating routes",
 			"instance", s.name, "identifier", identifier, "oldIPs", existingIPs, "newIPs", ips)
 		fwmark := identifier + s.offset
 		for _, ip := range existingIPs {
-			if err := cleanNeighbor(net.ParseIP(ip)); err != nil {
-				ctrl.LoggerFrom(ctx).V(1).Info("failed to clean neighbor (may not exist)",
-					"ip", ip, "error", err)
-			}
-			if err := s.doDeletePolicyRoute(fwmark, ip); err != nil {
-				ctrl.LoggerFrom(ctx).V(1).Info("failed to delete old route (may not exist)",
-					"ip", ip, "error", err)
+			// IP change may imply Pod replacement (new MAC for all IPs)
+			_ = cleanNeighbor(net.ParseIP(ip))
+			if !slices.Contains(ips, ip) {
+				_ = s.doDeletePolicyRoute(fwmark, ip)
 			}
 		}
-		s.targets[identifier] = ips
-		var errFinal error
-		for _, ip := range ips {
-			if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
-				errFinal = errors.Join(errFinal, err)
-			}
-		}
-		return errFinal
+	} else if !exists {
+		ctrl.LoggerFrom(ctx).Info("nfqlb: add target", "instance", s.name, "ips", ips, "identifier", identifier)
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: add target", "instance", s.name, "ips", ips, "identifier", identifier)
+	// Update stored IPs and create routes
+	s.targets[identifier] = ips
+	fwmark := identifier + s.offset
 
-	output, err := s.doExec(ctx, "activate",
+	for _, ip := range ips {
+		if e := s.doCreatePolicyRoute(fwmark, ip); e != nil {
+			err = errors.Join(err, e)
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	// Activate only for new targets or recovery from broken state
+	if skipActivate {
+		return err
+	}
+
+	var output []byte
+	output, err = s.doExec(ctx, "activate",
 		fmt.Sprintf("--index=%d", identifier),
 		fmt.Sprintf("--shm=%s", s.name),
 		strconv.Itoa(identifier+s.offset),
 	)
 	if err != nil {
-		return fmt.Errorf("failed activating nfqlb target ; %w; %s", err, output)
+		err = fmt.Errorf("failed activating nfqlb target ; %w; %s", err, output)
 	}
 
-	s.targets[identifier] = ips
-
-	fwmark := identifier + s.offset
-
-	var errFinal error
-	for _, ip := range ips {
-		if err := s.doCreatePolicyRoute(fwmark, ip); err != nil {
-			errFinal = errors.Join(errFinal, err)
-		}
-	}
-
-	ctrl.LoggerFrom(ctx).Info("nfqlb: target added", "instance", s.name, "ips", ips, "identifier", identifier)
-
-	return errFinal
+	return err
 }
 
 // doCreatePolicyRoute uses the injected function or falls back to the package-level one.
@@ -574,38 +569,47 @@ func slicesEqual(a, b []string) bool {
 	return true
 }
 
-// DeleteTarget deletes a target identifier to the nfqlb instance
-// and deletes the policy route associated.
-func (s *Instance) DeleteTarget(ctx context.Context, ips []string, identifier int) error {
+// DeleteTarget deactivates a target identifier in the nfqlb instance
+// and deletes the associated policy routes.
+func (s *Instance) DeleteTarget(ctx context.Context, identifier int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.deleteTargetNoLock(ctx, ips, identifier)
+	return s.deleteTargetNoLock(ctx, identifier)
 }
 
-func (s *Instance) deleteTargetNoLock(ctx context.Context, ips []string, identifier int) error {
-	_, exists := s.targets[identifier]
+func (s *Instance) deleteTargetNoLock(ctx context.Context, identifier int) (err error) {
+	storedIPs, exists := s.targets[identifier]
 	if !exists {
 		return nil
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: delete target", "instance", s.name, "ips", ips, "identifier", identifier)
+	ctrl.LoggerFrom(ctx).Info("nfqlb: delete target", "instance", s.name, "ips", storedIPs, "identifier", identifier)
 
-	delete(s.targets, identifier)
+	defer func() {
+		if err != nil {
+			s.broken[identifier] = struct{}{}
+		} else {
+			delete(s.targets, identifier)
+			delete(s.broken, identifier)
+		}
+	}()
 
-	output, err := s.doExec(ctx, "deactivate",
+	var output []byte
+	output, err = s.doExec(ctx, "deactivate",
 		fmt.Sprintf("--index=%d", identifier),
 		fmt.Sprintf("--shm=%s", s.name),
 	)
 	if err != nil {
-		return fmt.Errorf("failed deactivating nfqlb target ; %w; %s", err, output)
+		err = fmt.Errorf("failed deactivating nfqlb target ; %w; %s", err, output)
+		return err
 	}
 
-	for _, ip := range ips {
-		_ = s.doDeletePolicyRoute(identifier+s.offset, ip)
+	for _, ip := range storedIPs {
+		if e := s.doDeletePolicyRoute(identifier+s.offset, ip); e != nil {
+			err = errors.Join(err, e)
+		}
 	}
 
-	ctrl.LoggerFrom(ctx).Info("nfqlb: target deleted", "instance", s.name, "ips", ips, "identifier", identifier)
-
-	return nil
+	return err
 }
