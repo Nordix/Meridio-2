@@ -453,10 +453,6 @@ func (s *Instance) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
 	return nil
 }
 
-// AddTarget adds a target identifier to the nfqlb instance
-// and configures the policy route associated.
-// If the identifier already exists with the same IPs, this is a no-op.
-// If the identifier exists with different IPs, policy routes are updated
 // AddTarget creates policy routes and activates the nfqlb slot for the given identifier.
 // If the target already exists with the same IPs and is not broken, only routes are re-applied
 // (drift recovery) without re-activating in nfqlb (the fwmark is unchanged).
