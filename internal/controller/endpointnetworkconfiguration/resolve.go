@@ -40,7 +40,6 @@ const (
 	kindGateway              = "Gateway"
 	kindGatewayConfiguration = "GatewayConfiguration"
 	kindDistributionGroup    = "DistributionGroup"
-	labelGatewayName         = "gateway.networking.k8s.io/gateway-name"
 	attachmentTypeNAD        = "NAD"
 )
 
@@ -260,7 +259,7 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 	var podList corev1.PodList
 	if err := r.List(ctx, &podList,
 		client.InNamespace(gw.Namespace),
-		client.MatchingLabels{labelGatewayName: gw.Name},
+		client.MatchingLabels{constants.LabelGatewayName: gw.Name},
 	); err != nil {
 		return nil, nil, err
 	}

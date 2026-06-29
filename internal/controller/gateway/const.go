@@ -39,7 +39,6 @@ const (
 	LBDeploymentTemplateFile = "lb-deployment.yaml"
 
 	// Labels
-	labelGatewayName = "gateway.networking.k8s.io/gateway-name"
-	labelManagedBy   = "app.kubernetes.io/managed-by"
-	managedByValue   = "gateway-controller.meridio-2.nordix.org"
+	labelManagedBy = "app.kubernetes.io/managed-by"
+	managedByValue = "gateway-controller.meridio-2.nordix.org"
 )

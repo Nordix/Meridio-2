@@ -210,7 +210,7 @@ func setControllerLabels(meta *metav1.ObjectMeta, deploymentName, gatewayName st
 		meta.Labels = make(map[string]string)
 	}
 	meta.Labels["app"] = deploymentName
-	meta.Labels[labelGatewayName] = gatewayName
+	meta.Labels[constants.LabelGatewayName] = gatewayName
 	meta.Labels[labelManagedBy] = managedByValue
 }
 
