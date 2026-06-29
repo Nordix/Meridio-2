@@ -48,6 +48,10 @@ Resource changes in `GatewayConfiguration.spec.verticalScaling` trigger Pod recr
 
 The LB controller assigns fwmarks and routing table IDs dynamically per DistributionGroup. Each DG gets a contiguous range of size `maxEndpoints` (from the DG's Maglev configuration, default 100). Ranges are allocated sequentially starting at offset 5000 and packed without gaps — the allocator finds the first non-overlapping range based on actual `maxEndpoints` values of existing instances. The formula is `offset + endpoint_identifier`, where `fwmark == tableID`. This range must not overlap with other fwmark or routing table usage in the LB Pod's network namespace. At startup, the LB cleans up all stale rules with `mark >= 5000` from a previous instance. DG offset assignment is in-memory — different LB Pods may assign different offsets to the same DistributionGroup. This is acceptable as routing tables are local to each Pod.
 
+**10. ~~DistributionGroups with only direct parentRefs not processed by LB~~ (Resolved)**
+
+Fixed in PR #110. The `belongsToGateway` check now also inspects `DistributionGroup.spec.parentRefs` in addition to L34Route references.
+
 ## Router Controller
 
 **10. ~~VIPs advertised regardless of LB distribution readiness~~ (Resolved)**
@@ -60,15 +64,15 @@ The router now gates VIP advertisement on LB readiness. The collocated LB contro
 
 The full three-step solution is now implemented: the gateway controller declares readiness gates (PR #125), the router sets gate conditions based on BGP state with damped transitions (PR #142), and the ENC controller filters next-hops using two-level checks — container readiness plus per-IP-family gate conditions (PR #155).
 
-**12. BIRD error propagation missing**
+**12. ~~BIRD error propagation missing~~ (Resolved)**
 
-If BIRD crashes, the router controller continues running with healthy probes while doing nothing. BIRD failure is not propagated to the process lifecycle.
+The router controller uses an errgroup to run BIRD and the monitor goroutine. If either fails, the errgroup cancels the context and the router process exits, triggering Kubernetes CrashLoopBackOff restart.
 
-**13. BGP-learned routes may be delayed up to 60 seconds in kernel routing table**
+**13. ~~BGP-learned routes may be delayed up to 60 seconds in kernel routing table~~ (Resolved)**
 
-The `kernel` protocol blocks in the generated bird.conf do not set `scan time`. BIRD 3.x's default is 60 seconds, which can delay BGP-learned routes from appearing in the kernel routing table by 30-50 seconds. Meridio v1 fixed this with `scan time 10`.
+The BIRD configuration now includes `scan time` (default 10 seconds, configurable via `--bird-kernel-scan-time` / `MERIDIO_BIRD_KERNEL_SCAN_TIME`) in both IPv4 and IPv6 kernel protocol blocks.
 
-**15. ~~PMTU handling not implemented in LB Pods~~ (Resolved)**
+**14. ~~PMTU handling not implemented in LB Pods~~ (Resolved)**
 
 PMTU handling is implemented: the LB controller creates a nftables PMTU SNAT chain at startup that rewrites ICMP Frag Needed / Packet Too Big source addresses to the VIP. Requires `fwmark_reflect` sysctls — see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods).
 
@@ -80,9 +84,9 @@ The GatewayRouter CRD has no field for BGP MD5 or TCP-AO authentication. Meridio
 
 Only BGP-based GatewayRouter configuration is implemented. Static routing with BFD (as an alternative to BGP for simpler deployments) is not supported.
 
-**17. BFD not fully restricted**
+**17. ~~BFD not fully restricted~~ (Resolved)**
 
-BFD source ports comply with the IANA-approved range (49152–65535) per RFC 5881 only when `net.ipv4.ip_local_port_range` is set to `49152 65535` in the LB Pod's network namespace. This can be achieved via a tuning NAD (e.g., the `sysctl-tuning` NAD example in [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods)) attached to the LB Pods through GatewayConfiguration. Without it, BIRD uses the kernel default range which violates the RFC. BFD is not restricted to single-hop mode port (3784), and BFD sessions are not restricted by configuration to the external interface(s) only.
+BFD source ports comply with RFC 5881 (range 49152–65535) when `net.ipv4.ip_local_port_range` is set to `49152 65535` in the LB Pod's network namespace via sysctl configuration. One way to achieve this is through a tuning NAD (see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods)). BFD sessions are restricted to directly connected peers (`accept direct`), which enforces single-hop BFD mode — the multi-hop BFD port (4784) is not opened. Sessions are further restricted to the configured external interface(s) per GatewayRouter.
 
 ## Sidecar Controller
 
@@ -104,9 +108,9 @@ The network sidecar allocates kernel routing table IDs from the range 50000–55
 
 The CRD-level default for `maxEndpoints` has been removed. When the `maglev` block is specified, `maxEndpoints` must be set explicitly — the API server rejects `maglev: {}` without it. When the entire `maglev` block is omitted (DG defaults to type Maglev), the controller applies the built-in default of 102 (defined by `DefaultMaglevMaxEndpoints` in the API package).
 
-**22. Node failure detection not implemented**
+**22. Node failure detection relies on Kubernetes Pod eviction** *(architectural constraint)*
 
-When a Node becomes NotReady, the controller does not immediately reconcile affected DistributionGroups to remove endpoints on that Node. Endpoint removal is delayed until the Pod deletion propagates, or Pod readiness changes.
+When a Node becomes unreachable, the DG controller does not independently detect this. Endpoint removal (and Maglev ID reallocation) is deferred until Kubernetes evicts and deletes the Pod. With default tolerations this takes ~5m40s. Applications can control this via Pod `tolerationSeconds` for `node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable` taints (e.g., 30s for faster eviction). This is intentional: relying on Kubernetes Pod lifecycle prevents premature Maglev ID reallocation that could occur if the node is temporarily unreachable rather than permanently failed.
 
 ## Deployment / Operations
 
@@ -114,7 +118,7 @@ When a Node becomes NotReady, the controller does not immediately reconcile affe
 
 Log level is set at startup via `--log-level` / `MERIDIO_LOG_LEVEL` and cannot be changed without restarting the process. All four controllers (controller-manager, router, loadbalancer, sidecar) share this limitation.
 
-**24. ~~No cert-wait-timeout~~** *(resolved)*
+**24. ~~No cert-wait-timeout~~ (Resolved)**
 
 The controller-manager now waits for TLS certificates before starting (default: 10s, maximum: 1m, configurable via `--cert-wait-timeout`). This avoids unnecessary restart cycles when deployed simultaneously with cert-manager.
 
@@ -130,6 +134,6 @@ No upgrade path has been tested or documented. In-place upgrades of the controll
 
 Basic functionality has been tested with a small number of Gateways, DistributionGroups, and application Pods. Behavior at scale (many Gateways, large numbers of endpoints per DG, high Pod churn) has not been systematically verified. Dynamic scaling of LB Deployment replicas (via `GatewayConfiguration.spec.horizontalScaling` or HPA) has also not been extensively tested. Scaling may work but is best-effort for the MVP.
 
-**28. Controller-manager multi-replica deployment not verified**
+**28. ~~Controller-manager multi-replica deployment not verified~~ (Resolved)**
 
-The controller-manager enables leader election by default in the deployment manifest (`--leader-elect`, using controller-runtime's lease-based leader election with ID `e9d059a3.nordix.org`), but running multiple replicas for high availability has not been tested.
+Leader election is enabled by default in the deployment manifest (`--leader-elect`). Leader election tuning parameters are exposed (`--leader-elect-lease-duration`, `--leader-elect-renew-deadline`, `--leader-elect-retry-period`, `--leader-elect-release-on-cancel`). Pod tolerations for `node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable` are set to 30 seconds (reduced from default 300s) for faster failover on node failure. Multi-replica deployment with leader election has been verified.
