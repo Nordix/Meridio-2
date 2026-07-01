@@ -57,6 +57,15 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 		Expect(lbPods).To(HaveLen(2), "Expected 2 LB Pods")
 	})
 
+	AfterAll(func() {
+		// Unconditionally re-enable BGP protocols to leave a clean state
+		// even if a mid-sequence failure left them disabled.
+		if len(lbPods) > 0 {
+			rgBirdctl(lbPods[0], "enable", rgProtocolV4)
+			rgBirdctl(lbPods[0], "enable", rgProtocolV6)
+		}
+	})
+
 	It("LB Pods should have both readiness gates declared and conditions True", func() {
 		for _, pod := range lbPods {
 			cmd := exec.Command("kubectl", "get", "pod", pod, "-n", rgNamespace, "-o", "json")
