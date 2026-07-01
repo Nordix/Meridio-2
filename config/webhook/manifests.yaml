@@ -10,6 +10,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-meridio-2-nordix-org-v1alpha1-gatewayrouter
+  failurePolicy: Fail
+  name: vgatewayrouter-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - meridio-2.nordix.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - gatewayrouters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-meridio-2-nordix-org-v1alpha1-l34route
   failurePolicy: Fail
   name: vl34route-v1alpha1.kb.io

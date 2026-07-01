@@ -81,8 +81,9 @@ func TestGenerateConfig(t *testing.T) {
 		router := &meridio2v1alpha1.GatewayRouter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-router"},
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
-				Address: "192.168.1.1",
-				BGP:     testBGPSpec,
+				Address:  "192.168.1.1",
+				Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+				BGP:      testBGPSpec,
 			},
 		}
 		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router})
@@ -97,6 +98,103 @@ func TestGenerateConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("duplicate interface dedup", func(t *testing.T) {
+		routers := []*meridio2v1alpha1.GatewayRouter{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "net1", Address: "192.168.1.1",
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      testBGPSpec,
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "net1", Address: "fd00::1",
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      testBGPSpec,
+				},
+			},
+		}
+
+		conf, err := b.generateConfig([]string{}, routers)
+		if err != nil {
+			t.Fatalf("generateConfig() error = %v", err)
+		}
+
+		count := strings.Count(conf, `interface "net1" {}`)
+		if count != 1 {
+			t.Errorf("expected 1 BFD interface entry, got %d\n%s", count, conf)
+		}
+	})
+
+	t.Run("sorted by name with 4 routers", func(t *testing.T) {
+		routers := []*meridio2v1alpha1.GatewayRouter{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "D"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "if_D", Address: "192.168.4.1",
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      testBGPSpec,
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "B"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "if_B", Address: "192.168.2.1",
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      testBGPSpec,
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "C"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "if_C", Address: "192.168.3.1",
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      testBGPSpec,
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "A"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "if_A", Address: "192.168.1.1",
+					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
+					BGP:      testBGPSpec,
+				},
+			},
+		}
+
+		conf, err := b.generateConfig([]string{}, routers)
+		if err != nil {
+			t.Fatalf("generateConfig() error = %v", err)
+		}
+
+		// Verify BFD interface ordering is sorted alphabetically
+		wantIfOrder := []string{`interface "if_A"`, `interface "if_B"`, `interface "if_C"`, `interface "if_D"`}
+		prev := 0
+		for _, s := range wantIfOrder {
+			idx := strings.Index(conf[prev:], s)
+			if idx < 0 {
+				t.Fatalf("BFD interface %q not found after position %d", s, prev)
+			}
+			prev += idx + len(s)
+		}
+
+		// Verify BGP protocol ordering is sorted by router name
+		wantBGPOrder := []string{"NBR-A", "NBR-B", "NBR-C", "NBR-D"}
+		prev = 0
+		for _, s := range wantBGPOrder {
+			idx := strings.Index(conf[prev:], s)
+			if idx < 0 {
+				t.Fatalf("BGP protocol %q not found after position %d", s, prev)
+			}
+			prev += idx + len(s)
+		}
+	})
+}
+
+func TestGenerateConfig_MatchesReference(t *testing.T) {
 	t.Run("matches reference config", func(t *testing.T) {
 		logConfig := testConfig
 		logConfig.LogParams = BirdLogParams{
@@ -112,6 +210,7 @@ func TestGenerateConfig(t *testing.T) {
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "vlan-100",
 				Address:   "169.254.100.150",
+				Protocol:  meridio2v1alpha1.RoutingProtocolBGP,
 				BGP: meridio2v1alpha1.BgpSpec{
 					RemoteASN:  4200000000,
 					LocalASN:   64512,
@@ -139,6 +238,12 @@ log stderr { info, warning, error, fatal };
 log "/var/log/bird.log" 1048576 "/var/log/bird.log.1" all;
 
 protocol device {}
+
+filter default_rt {
+	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
+	if ( net ~ [ 0::/0 ] ) then accept;
+	else reject;
+}
 
 filter gateway_routes {
 	if ( net ~ [ 0.0.0.0/0 ] ) then accept;
@@ -222,93 +327,91 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 			t.Errorf("config mismatch\nGot:\n%s\n\nWant:\n%s", got, want)
 		}
 	})
+}
 
-	t.Run("duplicate interface dedup", func(t *testing.T) {
+func TestGenerateConfig_StaticBFD(t *testing.T) {
+
+	b, err := New(testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("static with bfd", func(t *testing.T) {
 		routers := []*meridio2v1alpha1.GatewayRouter{
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
+				ObjectMeta: metav1.ObjectMeta{Name: "gateway-a1"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
-					Interface: "net1", Address: "192.168.1.1",
-					BGP: testBGPSpec,
+					Interface: "eth0.100",
+					Address:   "169.254.100.150",
+					Protocol:  meridio2v1alpha1.RoutingProtocolStatic,
+					Static: &meridio2v1alpha1.StaticSpec{
+						BFD: &meridio2v1alpha1.BfdSpec{
+							Switch:     boolPtr(true),
+							MinRx:      "300ms",
+							MinTx:      "300ms",
+							Multiplier: uint16Ptr(3),
+						},
+					},
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
+				ObjectMeta: metav1.ObjectMeta{Name: "gateway-a2"},
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
-					Interface: "net1", Address: "fd00::1",
-					BGP: testBGPSpec,
+					Interface: "eth0.100",
+					Address:   "100:100::150",
+					Protocol:  meridio2v1alpha1.RoutingProtocolStatic,
+					Static: &meridio2v1alpha1.StaticSpec{
+						BFD: &meridio2v1alpha1.BfdSpec{
+							Switch:     boolPtr(true),
+							MinRx:      "300ms",
+							MinTx:      "300ms",
+							Multiplier: uint16Ptr(3),
+						},
+					},
 				},
 			},
 		}
+		vips := []string{"20.0.0.1/32", "10.0.0.1/32", "2000::1/128"}
 
-		conf, err := b.generateConfig([]string{}, routers)
+		conf, err := b.generateConfig(vips, routers)
 		if err != nil {
 			t.Fatalf("generateConfig() error = %v", err)
 		}
 
-		count := strings.Count(conf, `interface "net1" {}`)
-		if count != 1 {
-			t.Errorf("expected 1 BFD interface entry, got %d\n%s", count, conf)
+		// Verify static protocol blocks
+		if !strings.Contains(conf, "protocol static 'NBR-gateway-a1'") {
+			t.Error("missing static protocol for gateway-a1")
 		}
-	})
-
-	t.Run("sorted by name with 4 routers", func(t *testing.T) {
-		routers := []*meridio2v1alpha1.GatewayRouter{
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "D"},
-				Spec: meridio2v1alpha1.GatewayRouterSpec{
-					Interface: "if_D", Address: "192.168.4.1",
-					BGP: testBGPSpec,
-				},
-			},
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "B"},
-				Spec: meridio2v1alpha1.GatewayRouterSpec{
-					Interface: "if_B", Address: "192.168.2.1",
-					BGP: testBGPSpec,
-				},
-			},
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "C"},
-				Spec: meridio2v1alpha1.GatewayRouterSpec{
-					Interface: "if_C", Address: "192.168.3.1",
-					BGP: testBGPSpec,
-				},
-			},
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "A"},
-				Spec: meridio2v1alpha1.GatewayRouterSpec{
-					Interface: "if_A", Address: "192.168.1.1",
-					BGP: testBGPSpec,
-				},
-			},
+		if !strings.Contains(conf, "protocol static 'NBR-gateway-a2'") {
+			t.Error("missing static protocol for gateway-a2")
 		}
-
-		conf, err := b.generateConfig([]string{}, routers)
-		if err != nil {
-			t.Fatalf("generateConfig() error = %v", err)
+		// Verify default routes with bfd
+		if !strings.Contains(conf, "route 0.0.0.0/0 via 169.254.100.150%'eth0.100' bfd;") {
+			t.Error("missing IPv4 static route with bfd")
 		}
-
-		// Verify BFD interface ordering is sorted alphabetically
-		wantIfOrder := []string{`interface "if_A"`, `interface "if_B"`, `interface "if_C"`, `interface "if_D"`}
-		prev := 0
-		for _, s := range wantIfOrder {
-			idx := strings.Index(conf[prev:], s)
-			if idx < 0 {
-				t.Fatalf("BFD interface %q not found after position %d", s, prev)
-			}
-			prev += idx + len(s)
+		if !strings.Contains(conf, "route 0::/0 via 100:100::150%'eth0.100' bfd;") {
+			t.Error("missing IPv6 static route with bfd")
 		}
-
-		// Verify BGP protocol ordering is sorted by router name
-		wantBGPOrder := []string{"NBR-A", "NBR-B", "NBR-C", "NBR-D"}
-		prev = 0
-		for _, s := range wantBGPOrder {
-			idx := strings.Index(conf[prev:], s)
-			if idx < 0 {
-				t.Fatalf("BGP protocol %q not found after position %d", s, prev)
-			}
-			prev += idx + len(s)
+		// Verify BFD interface block has timers
+		if !strings.Contains(conf, `interface "eth0.100" {`) {
+			t.Error("missing BFD interface block with timers")
+		}
+		if !strings.Contains(conf, "min rx interval 300ms;") {
+			t.Error("missing BFD min rx interval")
+		}
+		if !strings.Contains(conf, "min tx interval 300ms;") {
+			t.Error("missing BFD min tx interval")
+		}
+		if !strings.Contains(conf, "multiplier 3;") {
+			t.Error("missing BFD multiplier")
+		}
+		// Verify no BGP protocol blocks
+		if strings.Contains(conf, "protocol bgp") {
+			t.Error("unexpected BGP protocol block for static routers")
+		}
+		// Verify import filter is default_rt
+		if !strings.Contains(conf, "import filter default_rt;") {
+			t.Error("missing default_rt filter in static protocol")
 		}
 	})
 }
