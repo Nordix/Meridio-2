@@ -20,7 +20,6 @@ limitations under the License.
 package e2e
 
 import (
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -303,7 +302,7 @@ func rgGetSinglePodIP(pod, iface string, ipv6 bool) string {
 		Interface string   `json:"interface"`
 		IPs       []string `json:"ips"`
 	}
-	if err := json.Unmarshal([]byte(out), &networks); err != nil {
+	if err := utils.ParseJSON(out, &networks); err != nil {
 		return ""
 	}
 	for _, net := range networks {
