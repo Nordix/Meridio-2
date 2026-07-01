@@ -233,7 +233,10 @@ func rgBirdctl(pod, action, protocol string) {
 func rgGetGateCondition(pod, condType string) string {
 	cmd := exec.Command("kubectl", "get", "pod", pod, "-n", rgNamespace,
 		"-o", fmt.Sprintf("jsonpath={.status.conditions[?(@.type=='%s')].status}", condType))
-	out, _ := utils.Run(cmd)
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return fmt.Sprintf("ERROR: %v", err)
+	}
 	return out
 }
 
@@ -288,7 +291,10 @@ func rgGetSinglePodIP(pod, iface string, ipv6 bool) string {
 func rgGetTargetPod() string {
 	cmd := exec.Command("kubectl", "get", "pods", "-n", rgNamespace,
 		"-l", rgTargetLabel, "-o", "jsonpath={.items[0].metadata.name}")
-	out, _ := utils.Run(cmd)
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return fmt.Sprintf("ERROR: %v", err)
+	}
 	return strings.TrimSpace(out)
 }
 
