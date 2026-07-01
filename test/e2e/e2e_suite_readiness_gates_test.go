@@ -118,6 +118,7 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 	It("should set ipv4 gate False and exclude Pod from IPv4 next-hops when IPv4 BGP drops", func() {
 		disruptedPod := lbPods[0]
+		healthyPod := lbPods[1]
 		podIPv4 := rgGetSinglePodIP(disruptedPod, rgInterface, false)
 		podIPv6 := rgGetSinglePodIP(disruptedPod, rgInterface, true)
 		Expect(podIPv4).NotTo(BeEmpty())
@@ -132,6 +133,10 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 		Expect(rgGetGateCondition(disruptedPod, rgGateIPv6)).To(Equal("True"))
 
+		// Healthy Pod unaffected — blast radius limited to disrupted Pod
+		Expect(rgGetGateCondition(healthyPod, rgGateIPv4)).To(Equal("True"))
+		Expect(rgGetGateCondition(healthyPod, rgGateIPv6)).To(Equal("True"))
+
 		targetPod := rgGetTargetPod()
 		Eventually(func() []string {
 			return rgGetENCNextHops(targetPod)
@@ -140,6 +145,12 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 		hops := rgGetENCNextHops(targetPod)
 		Expect(hops).To(ContainElement(podIPv6))
+
+		// Healthy Pod IPs remain in next-hops
+		healthyIPv4 := rgGetSinglePodIP(healthyPod, rgInterface, false)
+		healthyIPv6 := rgGetSinglePodIP(healthyPod, rgInterface, true)
+		Expect(hops).To(ContainElement(healthyIPv4))
+		Expect(hops).To(ContainElement(healthyIPv6))
 	})
 
 	It("link flap should not change ipv4 gate status", func() {
@@ -157,6 +168,7 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 	It("should set ipv6 gate False when IPv6 BGP drops", func() {
 		disruptedPod := lbPods[0]
+		healthyPod := lbPods[1]
 		podIPv6 := rgGetSinglePodIP(disruptedPod, rgInterface, true)
 
 		rgBirdctl(disruptedPod, "disable", rgProtocolV6)
@@ -168,11 +180,22 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 		Expect(rgGetGateCondition(disruptedPod, rgGateIPv4)).To(Equal("False"))
 
+		// Healthy Pod unaffected
+		Expect(rgGetGateCondition(healthyPod, rgGateIPv4)).To(Equal("True"))
+		Expect(rgGetGateCondition(healthyPod, rgGateIPv6)).To(Equal("True"))
+
 		targetPod := rgGetTargetPod()
 		Eventually(func() []string {
 			return rgGetENCNextHops(targetPod)
 		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
 			ShouldNot(ContainElement(podIPv6))
+
+		// Healthy Pod IPs remain in next-hops
+		hops := rgGetENCNextHops(targetPod)
+		healthyIPv4 := rgGetSinglePodIP(healthyPod, rgInterface, false)
+		healthyIPv6 := rgGetSinglePodIP(healthyPod, rgInterface, true)
+		Expect(hops).To(ContainElement(healthyIPv4))
+		Expect(hops).To(ContainElement(healthyIPv6))
 	})
 
 	It("link flap should not change ipv6 gate status", func() {
