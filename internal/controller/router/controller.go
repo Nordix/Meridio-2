@@ -20,16 +20,19 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	bldr "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
@@ -87,6 +90,12 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, fmt.Errorf("failed to get gateway routers: %w", err)
 	}
 
+	passwords, ok := r.resolvePasswords(ctx, gatewayRouters)
+	if !ok {
+		log.Info("TCP-AO secret resolution incomplete, retaining current BIRD config")
+		return ctrl.Result{}, nil
+	}
+
 	// Gateway API uses plain IPs; BIRD's vipsToCidr converts to CIDR notation
 	vips := getVIPs(gateway)
 
@@ -98,7 +107,7 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	log.Info("Reconciling router", "vips", vips, "gatewayRouters", len(gatewayRouters))
 
-	if err := r.Bird.Configure(ctx, vips, gatewayRouters); err != nil {
+	if err := r.Bird.Configure(ctx, vips, gatewayRouters, passwords); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to configure BIRD: %w", err)
 	}
 
@@ -109,7 +118,9 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 func (r *RouterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&gatewayapiv1.Gateway{}).
-		Watches(&meridio2v1alpha1.GatewayRouter{}, handler.EnqueueRequestsFromMapFunc(r.gatewayRouterEnqueue))
+		Watches(&meridio2v1alpha1.GatewayRouter{}, handler.EnqueueRequestsFromMapFunc(r.gatewayRouterEnqueue)).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.secretEnqueue),
+			bldr.WithPredicates(r.secretReferencedPredicate()))
 
 	if r.Readiness.Enabled() {
 		ch := make(chan event.GenericEvent, 1)
@@ -186,6 +197,49 @@ func (r *RouterReconciler) gatewayRouterEnqueue(_ context.Context, obj client.Ob
 	return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: r.GatewayName, Namespace: r.GatewayNamespace}}}
 }
 
+// secretReferencedPredicate filters Secret events to only those referenced by
+// a GatewayRouter's keychain that belongs to this controller's gateway.
+// This prevents listing GatewayRouters on every unrelated Secret event.
+func (r *RouterReconciler) secretReferencedPredicate() predicate.Funcs {
+	matches := func(obj client.Object) bool {
+		list := &meridio2v1alpha1.GatewayRouterList{}
+		if err := r.List(context.Background(), list, client.InNamespace(obj.GetNamespace())); err != nil {
+			return true
+		}
+		for i := range list.Items {
+			gwr := &list.Items[i]
+			if gwr.Spec.BGP.Authentication == nil {
+				continue
+			}
+			for _, key := range gwr.Spec.BGP.Authentication.Keychain {
+				if key.SecretName == obj.GetName() {
+					ref := gwr.Spec.GatewayRef
+					ns := gwr.Namespace
+					if ref.Namespace != nil {
+						ns = string(*ref.Namespace)
+					}
+					if string(ref.Name) == r.GatewayName && ns == r.GatewayNamespace {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	return predicate.Funcs{
+		CreateFunc:  func(e event.CreateEvent) bool { return matches(e.Object) },
+		UpdateFunc:  func(e event.UpdateEvent) bool { return matches(e.ObjectNew) },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return matches(e.Object) },
+		GenericFunc: func(e event.GenericEvent) bool { return matches(e.Object) },
+	}
+}
+
+func (r *RouterReconciler) secretEnqueue(_ context.Context, _ client.Object) []ctrl.Request {
+	// The predicate already confirmed this secret is referenced by a GatewayRouter
+	// belonging to our gateway — just trigger reconciliation.
+	return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: r.GatewayName, Namespace: r.GatewayNamespace}}}
+}
+
 // watchLBReadinessDir watches the LB readiness directory and sends a GenericEvent
 // when the readiness state transitions.
 func (r *RouterReconciler) watchLBReadinessDir(ctx context.Context, ch chan<- event.GenericEvent) error {
@@ -214,4 +268,48 @@ func (r *RouterReconciler) watchLBReadinessDir(ctx context.Context, ch chan<- ev
 	}
 
 	return nil
+}
+
+func (r *RouterReconciler) getTcpAoSecret(ctx context.Context, namespace, name, key string) (string, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, secret)
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret %s/%s: %w", namespace, name, err)
+	}
+
+	value, ok := secret.Data[key]
+	if !ok {
+		return "", fmt.Errorf("key %s not found in secret %s/%s", key, namespace, name)
+	}
+
+	return string(value), nil
+}
+
+func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meridio2v1alpha1.GatewayRouter) (map[string]map[uint8]string, bool) {
+	result := make(map[string]map[uint8]string)
+	allResolved := true
+	for _, router := range routers {
+		if router.Spec.BGP.Authentication == nil {
+			continue
+		}
+		passwords := make(map[uint8]string)
+		failed := false
+		for _, key := range router.Spec.BGP.Authentication.Keychain {
+			password, err := r.getTcpAoSecret(ctx, router.Namespace, key.SecretName, key.SecretKey)
+			if err != nil {
+				logf.FromContext(ctx).Error(err, "Failed to fetch TCP-AO secret, skipping router",
+					"router", router.Name, "secretName", key.SecretName, "secretKey", key.SecretKey)
+				failed = true
+				break
+			}
+			passwords[key.SendId] = password
+		}
+		if failed {
+			allResolved = false
+		} else {
+			result[router.Name] = passwords
+		}
+	}
+
+	return result, allResolved
 }

@@ -51,6 +51,62 @@ spec:
                   If the Protocol is bgp, the minimal parameters to be defined in bgp properties
                   are RemoteASN and LocalASN
                 properties:
+                  authentication:
+                    description: BGP authentication with TCP Authentication Option
+                      (RFC5925).
+                    properties:
+                      currentKeyId:
+                        description: |-
+                          CurrentKeyId specifies the active key ID for sending (only this key gets preferred; in BIRD).
+                          If unset, all keys are explicitly marked preferred to avoid relying on implicit BIRD selection order.
+                        type: integer
+                      keychain:
+                        description: |-
+                          KeyChain defines the list of TCP-AO keys for authentication and rotation.
+                          At least one key must be provided.
+                        items:
+                          description: TcpAoKeyChain defines a single TCP-AO key configuration.
+                          properties:
+                            algorithm:
+                              description: |-
+                                Algorithm specifies the MAC algorithm for this key.
+                                Supported BIRD values include: "hmac-sha-1", "hmac-sha-256", "hmac-sha-512",
+                                "cmac-aes-128", "cmac-aes-256", "umac-64", "umac-128".
+                                Unknown values are passed through and rejected by BIRD at config load.
+                              minLength: 1
+                              type: string
+                            recvId:
+                              description: RecvId is the Recv_ID for this key (0-255).
+                              type: integer
+                            secretKey:
+                              description: SecretKey is the key in the Secret's data
+                                section containing the master key value.
+                              minLength: 1
+                              type: string
+                            secretName:
+                              description: SecretName is the name of the Kubernetes
+                                Secret containing the master key.
+                              minLength: 1
+                              type: string
+                            sendId:
+                              description: SendId is the Send_ID for this key (0-255).
+                              type: integer
+                          required:
+                          - algorithm
+                          - recvId
+                          - secretKey
+                          - secretName
+                          - sendId
+                          type: object
+                        minItems: 1
+                        type: array
+                      nextKeyId:
+                        description: NextKeyId specifies the key ID the peer should
+                          transition to (maps to BIRD's rnext id).
+                        type: integer
+                    required:
+                    - keychain
+                    type: object
                   bfd:
                     description: BFD monitoring of BGP session.
                     properties:

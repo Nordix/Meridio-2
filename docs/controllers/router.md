@@ -109,6 +109,70 @@ Blackhole routes (`0.0.0.0/0` and `::/0`) in table 4097 prevent traffic leaking 
 
 Rules are reconciled idempotently: stale rules removed, missing rules added. Errors are accumulated best-effort (partial progress over rollback); the next reconcile retries any failed operations.
 
+### BGP Authentication (TCP-AO)
+
+The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support.
+
+**Configuration**: Authentication is configured per GatewayRouter via `spec.bgp.authentication`:
+
+```yaml
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: router-a
+spec:
+  gatewayRef:
+    name: sllb-a
+  interface: "vlan-100"
+  address: "169.254.100.150"
+  bgp:
+    localASN: 64512
+    remoteASN: 4200000000
+    authentication:
+      keychain:
+        - keyId: 1
+          rNextKeyId: 1
+          algorithm: hmac-sha-256
+          secretName: bgp-tcp-ao-keys
+          secretKey: key1
+        - keyId: 2
+          rNextKeyId: 2
+          algorithm: hmac-sha-256
+          secretName: bgp-tcp-ao-keys
+          secretKey: key2
+      currentKeyId: 1
+      nextKeyId: 2
+```
+
+**Secret management**: Master keys are stored in Kubernetes Secrets. Each keychain entry references a Secret by name and key:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bgp-tcp-ao-keys
+type: Opaque
+stringData:
+  key1: "my-secret-password-1"
+  key2: "my-secret-password-2"
+```
+
+**Supported algorithms**:
+- `hmac-md5` — HMAC-MD5
+- `hmac-sha-1` — HMAC-SHA1
+- `hmac-sha-224` — HMAC-SHA224
+- `hmac-sha-256` — HMAC-SHA256
+- `hmac-sha-384` — HMAC-SHA384
+- `hmac-sha-512` — HMAC-SHA512
+- `cmac-aes-128` — CMAC-AES128
+- `cmac-aes-256` — CMAC-AES256
+- `umac-64` — UMAC-64
+- `umac-128` — UMAC-128
+
+**Key rotation**: Multiple keys can be configured in the keychain. The `currentKeyId` and `nextKeyId` fields control which key is active for sending and which is advertised for rotation. Both peers must share the same key material for the corresponding key IDs.
+
+**BIRD config output**: The controller generates BIRD `authentication ao` blocks with key entries for each keychain item whose Secret is successfully resolved. If any Secret referenced by a GatewayRouter's keychain is missing or unreadable, the reconciler retains the current BIRD configuration unchanged (the failure is logged) and waits for the next reconcile trigger. This ensures authentication is never applied with incomplete keys.
+
 ### BGP Monitoring
 
 A separate goroutine polls `birdc show protocols all "NBR-*"` at 1-second intervals:
@@ -195,7 +259,8 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 |---|---|---|---|
 | BGP config generation | ✅ | ✅ | Dual-stack, BFD, custom ports |
 | Static routing protocol | ✅ | ❌ | CRD only has BGP (by design) |
-| BGP authentication | ✅ | ❌ | Out of MVP scope |
+| BGP authentication (TCP-MD5) | ✅ | ❌ | (RFC 2385) Out of MVP scope |
+| BGP authentication (TCP-AO) | ❌ | ✅ | RFC 5925, key rotation via Secrets |
 | BIRD process lifecycle | ✅ | ✅ | Graceful shutdown via SIGTERM, file-based logging |
 | BIRD startup readiness | ✅ | ❌ | Meridio-1 polls `birdc show status`; this controller relies on retry |
 | BGP monitoring | ✅ (rich) | ✅ (basic) | Meridio-1: per-gateway per-IP-family tracking; here: simple up-count |

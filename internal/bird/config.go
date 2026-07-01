@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"text/template"
 	"time"
 
@@ -47,6 +48,7 @@ type routerData struct {
 	BFD        string
 	HoldTime   string
 	IPFamily   string
+	TcpAo      string
 }
 
 //nolint:lll
@@ -75,7 +77,6 @@ template bgp BGP_TEMPLATE {
 	direct;
 	bfd off;
 	graceful restart off;
-	setkey off;
 	ipv4 {
 		import none;
 		export none;
@@ -148,11 +149,12 @@ protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 		import filter gateway_routes;
 		export filter announced_routes;
 	};
+	{{.TcpAo}}
 }
 {{- end}}
 `))
 
-func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
+func toRouterData(router *meridio2v1alpha1.GatewayRouter, passwords map[uint8]string) (routerData, error) {
 	if router.Spec.BGP.LocalPort == nil {
 		return routerData{}, fmt.Errorf("router %q: LocalPort is required", router.Name)
 	}
@@ -191,6 +193,7 @@ func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
 	if isIPv6(router.Spec.Address) {
 		ipFamily = "ipv6"
 	}
+	tcpAo := tcpAoConfig(router.Spec.BGP.Authentication, passwords)
 
 	return routerData{
 		Name:       router.Name,
@@ -203,7 +206,108 @@ func toRouterData(router *meridio2v1alpha1.GatewayRouter) (routerData, error) {
 		BFD:        bfd,
 		HoldTime:   holdTime,
 		IPFamily:   ipFamily,
+		TcpAo:      tcpAo,
 	}, nil
+}
+
+type tcpAoData struct {
+	Keys      []tcpAoKeyData
+	NextKeyId *uint8
+}
+
+type tcpAoKeyData struct {
+	SendId    uint8
+	RecvId    uint8
+	Secret    string
+	Algorithm string
+	Preferred bool
+}
+
+var tcpAoTmpl = template.Must(template.New("tcpao").Funcs(template.FuncMap{
+	"deref": func(p *uint8) uint8 { return *p },
+}).Parse(`authentication ao;
+	keys {
+{{- range .Keys}}
+		key {
+			send id {{.SendId}};
+			recv id {{.RecvId}};
+			secret "{{.Secret}}";
+			algorithm {{.Algorithm}};
+{{- if .Preferred}}
+			preferred;
+{{- end}}
+		};
+{{- end}}
+	};
+{{- if .NextKeyId}}
+	rnext id {{deref .NextKeyId}};
+{{- end}}`))
+
+func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]string) string {
+	if tcpAo == nil || len(tcpAo.Keychain) == 0 {
+		return ""
+	}
+
+	keys := make([]tcpAoKeyData, 0, len(tcpAo.Keychain))
+	for _, key := range tcpAo.Keychain {
+		password, ok := passwords[key.SendId]
+		if !ok {
+			continue
+		}
+		keys = append(keys, tcpAoKeyData{
+			SendId:    key.SendId,
+			RecvId:    key.RecvId,
+			Secret:    escapeBirdString(password),
+			Algorithm: convertAlgorithm(key.Algorithm),
+			Preferred: tcpAo.CurrentKeyId == nil || *tcpAo.CurrentKeyId == key.SendId,
+		})
+	}
+
+	if len(keys) == 0 {
+		return ""
+	}
+
+	var buf strings.Builder
+	if err := tcpAoTmpl.Execute(&buf, tcpAoData{Keys: keys, NextKeyId: tcpAo.NextKeyId}); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+func escapeBirdString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	return s
+}
+
+func convertAlgorithm(algo string) string {
+	// Convert from CRD format to BIRD format
+	switch algo {
+	case "hmac-md5":
+		return "hmac md5"
+	case "hmac-sha-1":
+		return "hmac sha1"
+	case "hmac-sha-224":
+		return "hmac sha224"
+	case "hmac-sha-256":
+		return "hmac sha256"
+	case "hmac-sha-384":
+		return "hmac sha384"
+	case "hmac-sha-512":
+		return "hmac sha512"
+	case "cmac-aes-128":
+		return "cmac aes128"
+	case "cmac-aes-256":
+		return "cmac aes256"
+	case "umac-64":
+		return "umac64"
+	case "umac-128":
+		return "umac128"
+	default:
+		return algo
+	}
 }
 
 func isIPv6(ipOrCIDR string) bool {

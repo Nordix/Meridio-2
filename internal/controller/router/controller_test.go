@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,7 +55,7 @@ func (m *mockingBird) Run(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockingBird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter) error {
+func (m *mockingBird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
 	m.configureVIPs = vips
 	m.configureRouters = routers
 	return m.configureErr
@@ -68,6 +69,7 @@ func (m *mockingBird) Monitor(ctx context.Context, interval time.Duration) (<-ch
 
 func newScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
 	_ = gatewayapiv1.Install(scheme)
 	_ = meridio2v1alpha1.AddToScheme(scheme)
 	return scheme
@@ -477,4 +479,130 @@ func TestWatchLBReadinessDir_ChannelDrop_SelfHeals(t *testing.T) {
 done:
 	// At least 1 event was delivered (the first one); dropped events don't crash
 	assert.GreaterOrEqual(t, drained, 1)
+}
+
+func TestGetTcpAoSecret(t *testing.T) {
+	t.Run("SecretNotFound", func(t *testing.T) {
+		reconciler, _ := setupReconciler()
+		_, err := reconciler.getTcpAoSecret(context.Background(), testNamespace, "nonexistent", "password")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get secret")
+	})
+
+	t.Run("SecretKeyNotFound", func(t *testing.T) {
+		secret := newSecret("my-secret", map[string][]byte{
+			"other-key": []byte("value"),
+		})
+		reconciler, _ := setupReconciler(secret)
+		_, err := reconciler.getTcpAoSecret(context.Background(), testNamespace, "my-secret", "password")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "key password not found in secret")
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		secret := newSecret("my-secret", map[string][]byte{
+			"password": []byte("s3cr3t"),
+		})
+		reconciler, _ := setupReconciler(secret)
+		value, err := reconciler.getTcpAoSecret(context.Background(), testNamespace, "my-secret", "password")
+
+		assert.NoError(t, err)
+		assert.Equal(t, "s3cr3t", value)
+	})
+}
+
+func TestResolvePasswords(t *testing.T) {
+	gwRef := gatewayapiv1.ParentReference{
+		Name:      gatewayapiv1.ObjectName(testGatewayName),
+		Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+	}
+
+	t.Run("SecretNotFound_SkipsRouter", func(t *testing.T) {
+		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac-sha-256", SecretName: "missing-secret", SecretKey: "pw"},
+		})
+		reconciler, _ := setupReconciler(router)
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router1")
+	})
+
+	t.Run("SecretKeyNotFound_SkipsRouter", func(t *testing.T) {
+		secret := newSecret("my-secret", map[string][]byte{
+			"other-key": []byte("value"),
+		})
+		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac-sha-256", SecretName: "my-secret", SecretKey: "password"},
+		})
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router1")
+	})
+
+	t.Run("MultipleRouters_DifferentSecrets", func(t *testing.T) {
+		secret1 := newSecret("secret-a", map[string][]byte{
+			"pw": []byte("password-a"),
+		})
+		secret2 := newSecret("secret-b", map[string][]byte{
+			"pw": []byte("password-b"),
+		})
+		router1 := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac-sha-256", SecretName: "secret-a", SecretKey: "pw"},
+		})
+		router2 := newGatewayRouterWithAuth("router2", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 2, Algorithm: "cmac-aes-128", SecretName: "secret-b", SecretKey: "pw"},
+		})
+		reconciler, _ := setupReconciler(secret1, secret2, router1, router2)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router1, router2})
+		assert.True(t, ok)
+		assert.Equal(t, "password-a", result["router1"][1])
+		assert.Equal(t, "password-b", result["router2"][2])
+	})
+
+	t.Run("RouterWithoutAuth_Skipped", func(t *testing.T) {
+		router := newGatewayRouter("router-no-auth", gwRef)
+		reconciler, _ := setupReconciler(router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.True(t, ok)
+		assert.NotContains(t, result, "router-no-auth")
+	})
+
+	t.Run("MultipleKeys_PartialFailure_SkipsRouter", func(t *testing.T) {
+		secret := newSecret("my-secret", map[string][]byte{
+			"key1": []byte("password-1"),
+		})
+		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac-sha-256", SecretName: "my-secret", SecretKey: "key1"},
+			{SendId: 2, Algorithm: "hmac-sha-256", SecretName: "my-secret", SecretKey: "key2-missing"},
+		})
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router1")
+	})
+}
+
+func newSecret(name string, data map[string][]byte) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: testNamespace,
+		},
+		Data: data,
+	}
+}
+
+func newGatewayRouterWithAuth(name string, gatewayRef gatewayapiv1.ParentReference, keychain []meridio2v1alpha1.TcpAoKeyChain) *meridio2v1alpha1.GatewayRouter {
+	router := newGatewayRouter(name, gatewayRef)
+	router.Spec.BGP.Authentication = &meridio2v1alpha1.BgpTcpAoSpec{
+		Keychain: keychain,
+	}
+	return router
 }
