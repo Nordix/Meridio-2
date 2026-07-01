@@ -10,6 +10,7 @@ spec:
     name: sllb-a
   interface: "vlan-100"
   address: "169.254.100.150"
+  protocol: "BGP"
   bgp:
     localASN: 64512
     remoteASN: 4200000000

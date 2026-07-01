@@ -177,15 +177,37 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 	})
 
 	ifset := make(map[string]bool)
+	bfdParams := make(map[string]*meridio2v1alpha1.BfdSpec)
 	for _, r := range routers {
-		rd, err := toRouterData(r)
-		if err != nil {
-			return "", err
-		}
-		data.Routers = append(data.Routers, rd)
 		ifset[r.Spec.Interface] = true
+
+		switch r.Spec.Protocol {
+		case meridio2v1alpha1.RoutingProtocolStatic:
+			data.StaticRouters = append(data.StaticRouters, toStaticRouterData(r))
+			if _, exists := bfdParams[r.Spec.Interface]; !exists && isStaticBFDOn(r) {
+				bfdParams[r.Spec.Interface] = r.Spec.Static.BFD
+			}
+		case meridio2v1alpha1.RoutingProtocolBGP, "":
+			rd, err := toBGPRouterData(r)
+			if err != nil {
+				return "", err
+			}
+			data.BGPRouters = append(data.BGPRouters, rd)
+		default:
+			log.Info("unknown gateway protocol, skipping", "router", r.Name, "protocol", r.Spec.Protocol)
+			continue
+		}
 	}
-	data.BGPInterfaces = slices.Sorted(maps.Keys(ifset))
+	for _, iface := range slices.Sorted(maps.Keys(ifset)) {
+		fmtParams := ""
+		if spec, ok := bfdParams[iface]; ok {
+			fmtParams = formatBFDInterfaceParams(*spec)
+		}
+		data.BFDInterfaces = append(data.BFDInterfaces, bfdInterfaceData{
+			Name:   iface,
+			Params: fmtParams,
+		})
+	}
 
 	var buf strings.Builder
 	if err := birdConfigTmpl.Execute(&buf, data); err != nil {
