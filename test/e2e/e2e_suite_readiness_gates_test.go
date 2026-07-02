@@ -113,9 +113,14 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 		Expect(ipv6IPs).To(HaveLen(2), "Expected 2 LB IPv6 IPs")
 
 		targetPod := rgGetTargetPod()
-		hops := rgGetENCNextHops(targetPod)
-		Expect(hops).To(ContainElements(ipv4IPs))
-		Expect(hops).To(ContainElements(ipv6IPs))
+		Eventually(func() []string {
+			return rgGetENCNextHops(targetPod)
+		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+			Should(ContainElements(ipv4IPs))
+		Eventually(func() []string {
+			return rgGetENCNextHops(targetPod)
+		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+			Should(ContainElements(ipv6IPs))
 	})
 
 	It("should set ipv4 gate False and exclude Pod from IPv4 next-hops when IPv4 BGP drops", func() {
@@ -360,9 +365,7 @@ func rgGetTargetPod() string {
 	cmd := exec.Command("kubectl", "get", "pods", "-n", rgNamespace,
 		"-l", rgTargetLabel, "-o", "jsonpath={.items[0].metadata.name}")
 	out, err := utils.Run(cmd)
-	if err != nil {
-		return fmt.Sprintf("ERROR: %v", err)
-	}
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to get target pod: %s", out)
 	return strings.TrimSpace(out)
 }
 
