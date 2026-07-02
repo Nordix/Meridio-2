@@ -343,6 +343,23 @@ undeploy-dual-stack-simple: ## Undeploy dual-stack topology.
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
+################################################################################
+##@ Suite: readiness-gates
+################################################################################
+
+.PHONY: readiness-gates
+readiness-gates: deploy-readiness-gates test-readiness-gates ## Deploy and test readiness-gates suite.
+
+.PHONY: deploy-readiness-gates
+deploy-readiness-gates: deploy-dual-stack-simple ## Deploy readiness-gates topology (reuses dual-stack-simple).
+
+.PHONY: test-readiness-gates
+test-readiness-gates: ## Run e2e readiness gates tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Readiness Gates" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-readiness-gates
+undeploy-readiness-gates: undeploy-dual-stack-simple ## Undeploy readiness-gates topology (same as dual-stack-simple).
+
 ###############################################################################
 ##@ All ipv4 suites
 ################################################################################
