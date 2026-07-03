@@ -29,6 +29,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/constants"
 )
 
 func mapperScheme() *runtime.Scheme {
@@ -211,7 +212,7 @@ func TestMapSLLBRPodToPods(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sllbr-pod-1",
 			Namespace: "default",
-			Labels:    map[string]string{labelGatewayName: "gw-1"},
+			Labels:    map[string]string{constants.LabelGatewayName: "gw-1"},
 		},
 	}
 
