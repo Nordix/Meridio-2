@@ -83,7 +83,6 @@ spec:
                         Currently only NAD (NetworkAttachmentDefinition) is supported.
                       enum:
                       - NAD
-                      - DRA
                       type: string
                     cidr:
                       description: |-
@@ -118,10 +117,6 @@ spec:
                       description: description is a human-readable description of
                         this network attachment.
                       type: string
-                    dra:
-                      description: dra specifies Dynamic Resource Allocation parameters.
-                        Not yet implemented.
-                      type: object
                     nad:
                       description: |-
                         nad specifies the NetworkAttachmentDefinition reference and interface name.
@@ -151,16 +146,13 @@ spec:
                         only NAD is supported.
                       enum:
                       - NAD
-                      - DRA
                       type: string
                   required:
                   - type
                   type: object
                   x-kubernetes-validations:
-                  - message: If type is NAD, field NAD must not be null, otherwise
-                      DRA must not be null
-                    rule: self.type == "NAD" && self.nad != null || self.type == "DRA"
-                      && self.dra != null
+                  - message: NAD field must not be null when type is NAD
+                    rule: self.type == "NAD" && self.nad != null
                 maxItems: 10
                 type: array
               verticalScaling:

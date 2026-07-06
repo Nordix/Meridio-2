@@ -28,7 +28,7 @@ limitations under the License.
 //   - Enforce capacity limits and report status conditions
 //
 // Network context is derived from Gateway→GatewayConfiguration references, which
-// specify the subnet CIDRs and attachment types (NAD/DRA) for secondary networks.
+// specify the subnet CIDRs and attachment types (currently only NAD) for secondary networks.
 //
 // See docs/controllers/distributiongroup.md for detailed architecture and design decisions.
 package distributiongroup
