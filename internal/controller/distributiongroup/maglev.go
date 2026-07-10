@@ -17,11 +17,8 @@ limitations under the License.
 package distributiongroup
 
 import (
-	"strconv"
-	"strings"
-
+	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 )
 
 // assignMaglevIDs assigns stable Maglev IDs to Pods.
@@ -66,21 +63,15 @@ func assignMaglevIDs(pods []corev1.Pod, existingAssignments map[string]int32, ma
 	return podToID
 }
 
-// extractMaglevAssignments extracts Pod UID → Maglev ID mappings from EndpointSlices
-func extractMaglevAssignments(slices []discoveryv1.EndpointSlice) map[string]int32 {
+// extractMaglevAssignments extracts Pod UID → Maglev ID mappings from LoadBalancerEndpointSlices
+func extractMaglevAssignments(slices []meridio2v1alpha1.LoadBalancerEndpointSlice) map[string]int32 {
 	assignments := make(map[string]int32)
 	for _, slice := range slices {
-		for _, endpoint := range slice.Endpoints {
-			if endpoint.TargetRef == nil || endpoint.TargetRef.Kind != kindPod {
+		for _, endpoint := range slice.Spec.Endpoints {
+			if endpoint.Identifier == nil {
 				continue
 			}
-			if endpoint.Zone == nil || !strings.HasPrefix(*endpoint.Zone, maglevIDPrefix) {
-				continue
-			}
-			idStr := strings.TrimPrefix(*endpoint.Zone, maglevIDPrefix)
-			if id, err := strconv.ParseInt(idStr, 10, 32); err == nil {
-				assignments[string(endpoint.TargetRef.UID)] = int32(id)
-			}
+			assignments[endpoint.Target.UID] = *endpoint.Identifier
 		}
 	}
 	return assignments

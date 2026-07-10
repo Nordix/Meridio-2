@@ -244,10 +244,11 @@ func runManager(cfg *config.ManagerConfig) error {
 	}
 
 	if err = (&distributiongroup.DistributionGroupReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		ControllerName: cfg.ControllerName,
-		Namespace:      cfg.Namespace,
+		Client:               mgr.GetClient(),
+		Scheme:               mgr.GetScheme(),
+		ControllerName:       cfg.ControllerName,
+		Namespace:            cfg.Namespace,
+		MaxEndpointsPerSlice: cfg.MaxEndpointsPerSlice,
 	}).SetupWithManager(mgr, cfg.EnableTopologyHints); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DistributionGroup")
 		return err

@@ -16,14 +16,14 @@ limitations under the License.
 
 // Package distributiongroup implements the DistributionGroup controller.
 //
-// The controller manages EndpointSlices for secondary network endpoints, enabling
-// L3/L4 load balancing across multi-network Pods. It supports multiple distribution
-// strategies (currently Maglev consistent hashing).
+// The controller manages LoadBalancerEndpointSlices for endpoints on secondary
+// networks, enabling L3/L4 load balancing across multi-network Pods. It supports
+// multiple distribution strategies (currently Maglev consistent hashing).
 //
 // Key responsibilities:
 //   - Watch DistributionGroups, Pods, Gateways, L34Routes, and GatewayConfigurations
 //   - Extract secondary network IPs from Pods (currently only via Multus annotations)
-//   - Create/update EndpointSlices with network-specific endpoints
+//   - Create/update LoadBalancerEndpointSlices with per-Gateway endpoint sets
 //   - Assign stable Maglev IDs for consistent hashing (when Type=Maglev)
 //   - Enforce capacity limits and report status conditions
 //
@@ -38,7 +38,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,6 +56,10 @@ type DistributionGroupReconciler struct {
 	ControllerName string
 	Namespace      string // Namespace to watch (empty = all namespaces)
 
+	// MaxEndpointsPerSlice is the maximum number of endpoints per LoadBalancerEndpointSlice.
+	// Defaults to 200 if not set (enforced at startup via flag default).
+	MaxEndpointsPerSlice int
+
 	// IPScraper extracts secondary IP from Pod for a given network context
 	// Defaults to defaultIPScraper if nil (for testing injection)
 	IPScraper func(pod *corev1.Pod, cidr, attachmentType string) string
@@ -74,7 +77,7 @@ type DistributionGroupReconciler struct {
 
 // RBAC: See config/rbac/manager-role.yaml and manager-clusterrole.yaml for required permissions.
 
-// Reconcile manages EndpointSlices for a DistributionGroup
+// Reconcile manages LoadBalancerEndpointSlices for a DistributionGroup
 func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.Info("reconciling DistributionGroup", "name", req.Name, "namespace", req.Namespace)
@@ -156,17 +159,17 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	log.Info("extracted network contexts", "gatewayCount", len(gwContexts))
 
-	// 9. List existing EndpointSlices owned by this DG
+	// 9. List existing LoadBalancerEndpointSlices owned by this DG
 	existingSlices, err := r.listOwnedSlices(ctx, &dg)
 	if err != nil {
 		log.Error(err, "failed to list owned endpointslices")
 		return ctrl.Result{}, err
 	}
 
-	// 10. Calculate desired EndpointSlices
+	// 10. Calculate desired LoadBalancerEndpointSlices
 	desiredSlices, capacityInfo := r.calculateDesiredSlices(ctx, &dg, pods, gwContexts, existingSlices)
 
-	// 11. Reconcile EndpointSlices (create/update/delete)
+	// 11. Reconcile LoadBalancerEndpointSlices (create/update/delete)
 	if err := r.reconcileSlices(ctx, &dg, desiredSlices, existingSlices); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true}, nil
@@ -205,7 +208,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *DistributionGroupReconciler) SetupWithManager(mgr ctrl.Manager, enableTopology bool) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.DistributionGroup{}).
-		Owns(&discoveryv1.EndpointSlice{}).
+		Owns(&meridio2v1alpha1.LoadBalancerEndpointSlice{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.mapPodToDistributionGroup)).
 		Watches(&gatewayv1.Gateway{}, handler.EnqueueRequestsFromMapFunc(r.mapGatewayToDistributionGroup)).
 		Watches(&meridio2v1alpha1.L34Route{}, handler.EnqueueRequestsFromMapFunc(r.mapL34RouteToDistributionGroup)).

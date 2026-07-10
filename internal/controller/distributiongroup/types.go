@@ -17,14 +17,15 @@ limitations under the License.
 package distributiongroup
 
 import (
+	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// podWithNetworkIP pairs a Pod with its scraped secondary IP for a specific network context
-type podWithNetworkIP struct {
-	pod corev1.Pod
-	ip  string
+// podWithAddresses pairs a Pod with all its scraped secondary IPs across a Gateway's networks
+type podWithAddresses struct {
+	pod       corev1.Pod
+	addresses []meridio2v1alpha1.EndpointAddress
 }
 
 // gatewayNetworkContext groups network contexts for a single Gateway.
@@ -36,10 +37,8 @@ type gatewayNetworkContext struct {
 	networks map[string]string
 }
 
-// maglevCapacityInfo tracks Maglev capacity issues per network
+// maglevCapacityInfo tracks Maglev capacity issues
 type maglevCapacityInfo struct {
-	networkIssues map[string]struct {
-		excluded int32 // Pods that couldn't get IDs
-		total    int32 // Total Pods that tried to join
-	}
+	excluded int32 // Pods that couldn't get IDs (capacity exceeded)
+	total    int32 // Total Pods that tried to join
 }

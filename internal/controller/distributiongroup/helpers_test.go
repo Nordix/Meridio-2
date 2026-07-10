@@ -21,62 +21,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-func TestEncodeCIDRForLabel(t *testing.T) {
-	tests := []struct {
-		cidr     string
-		expected string
-	}{
-		{"192.168.100.0/24", "192.168.100.0-24"},
-		{"2001:db8::/32", "2001_db8__-32"},
-		{"10.0.0.1/32", "10.0.0.1-32"},
-		{"2001:db8::1/128", "2001_db8__1-128"},
-	}
-
-	for _, tt := range tests {
-		result := encodeCIDRForLabel(tt.cidr)
-		if result != tt.expected {
-			t.Errorf("encodeCIDRForLabel(%q) = %q, want %q", tt.cidr, result, tt.expected)
-		}
-	}
-}
-
-func TestDecodeCIDRFromLabel(t *testing.T) {
-	tests := []struct {
-		encoded  string
-		expected string
-	}{
-		{"192.168.100.0-24", "192.168.100.0/24"},
-		{"2001_db8__-32", "2001:db8::/32"},
-		{"2001_db8_1_2__-64", "2001:db8:1:2::/64"},
-		{"invalid", "invalid"},
-	}
-
-	for _, tt := range tests {
-		result := decodeCIDRFromLabel(tt.encoded)
-		if result != tt.expected {
-			t.Errorf("decodeCIDRFromLabel(%q) = %q, want %q", tt.encoded, result, tt.expected)
-		}
-	}
-}
-
-func TestEncodeDecode_RoundTrip(t *testing.T) {
-	cidrs := []string{
-		"192.168.1.0/24",
-		"10.0.0.0/8",
-		"2001:db8::/32",
-		"2001:db8:1:2::/64",
-	}
-
-	for _, cidr := range cidrs {
-		encoded := encodeCIDRForLabel(cidr)
-		decoded := decodeCIDRFromLabel(encoded)
-		if decoded != cidr {
-			t.Errorf("Round-trip failed: %q → %q → %q", cidr, encoded, decoded)
-		}
-	}
-}
 
 func TestNormalizeCIDR(t *testing.T) {
 	tests := []struct {
@@ -112,63 +58,6 @@ func TestNormalizeCIDR(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestHashCIDR_Deterministic(t *testing.T) {
-	cidr := "192.168.1.0/24"
-	hash1 := hashCIDR(cidr)
-	hash2 := hashCIDR(cidr)
-
-	if hash1 != hash2 {
-		t.Errorf("hashCIDR not deterministic: %q vs %q", hash1, hash2)
-	}
-	if len(hash1) == 0 {
-		t.Error("hashCIDR returned empty string")
-	}
-}
-
-func TestHashCIDR_Uniqueness(t *testing.T) {
-	cidrs := []string{
-		"192.168.1.0/24",
-		"192.168.2.0/24",
-		"10.0.0.0/8",
-		"2001:db8::/32",
-	}
-
-	hashes := make(map[string]string)
-	for _, cidr := range cidrs {
-		hash := hashCIDR(cidr)
-		if existing, exists := hashes[hash]; exists {
-			t.Errorf("Hash collision: %q and %q both hash to %q", cidr, existing, hash)
-		}
-		hashes[hash] = cidr
-	}
-}
-
-func TestPtr(t *testing.T) {
-	t.Run("int", func(t *testing.T) {
-		val := 42
-		p := ptr(val)
-		if p == nil || *p != val {
-			t.Errorf("ptr(42) failed")
-		}
-	})
-
-	t.Run("string", func(t *testing.T) {
-		val := "test"
-		p := ptr(val)
-		if p == nil || *p != val {
-			t.Errorf("ptr(\"test\") failed")
-		}
-	})
-
-	t.Run("bool", func(t *testing.T) {
-		val := true
-		p := ptr(val)
-		if p == nil || *p != val {
-			t.Errorf("ptr(true) failed")
-		}
-	})
 }
 
 func TestSortPodsByCreationTime(t *testing.T) {
@@ -208,5 +97,97 @@ func TestSortPodsByCreationTime_Tiebreak(t *testing.T) {
 	}
 	if pods[2].Namespace+"/"+pods[2].Name != "ns-b/pod-z" {
 		t.Errorf("Third pod should be ns-b/pod-z, got %s/%s", pods[2].Namespace, pods[2].Name)
+	}
+}
+
+func TestSliceBaseName_Short(t *testing.T) {
+	gw := client.ObjectKey{Name: "my-gateway", Namespace: "meridio-2"}
+	name := sliceBaseName("test-dg", gw)
+
+	// Should be "test-dg-<16 hex chars>"
+	if len(name) != len("test-dg-")+16 {
+		t.Errorf("Expected 'test-dg-' + 16 hex chars, got %q (len=%d)", name, len(name))
+	}
+	if name[:8] != "test-dg-" {
+		t.Errorf("Expected prefix 'test-dg-', got %q", name[:8])
+	}
+}
+
+func TestSliceBaseName_Deterministic(t *testing.T) {
+	gw := client.ObjectKey{Name: "my-gateway", Namespace: "meridio-2"}
+	name1 := sliceBaseName("test-dg", gw)
+	name2 := sliceBaseName("test-dg", gw)
+	if name1 != name2 {
+		t.Errorf("sliceBaseName should be deterministic: %q != %q", name1, name2)
+	}
+}
+
+func TestSliceBaseName_LongNameTruncatedWithHash(t *testing.T) {
+	// Create a DG name that exceeds 240 chars when combined with hash
+	longDG := make([]byte, 250)
+	for i := range longDG {
+		longDG[i] = byte('a' + i%26)
+	}
+	gw := client.ObjectKey{Name: "my-gateway", Namespace: "some-namespace"}
+	name := sliceBaseName(string(longDG), gw)
+
+	if len(name) > 240 {
+		t.Errorf("Expected name <= 240 chars, got %d", len(name))
+	}
+	// Should end with a 16-char hex hash
+	suffix := name[len(name)-16:]
+	for _, c := range suffix {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			t.Errorf("Expected hex suffix, got %q", suffix)
+			break
+		}
+	}
+	// Truncated prefix should match the beginning of longDG
+	// Name format: <truncated-dg>-<hash>, so prefix = name[:len(name)-17]
+	prefix := name[:len(name)-17] // strip "-" + 16-char hash
+	if prefix != string(longDG[:len(prefix)]) {
+		t.Errorf("Truncated prefix should match start of DG name.\nGot:      %q\nExpected: %q", prefix, string(longDG[:len(prefix)]))
+	}
+}
+
+func TestSliceBaseName_DifferentGatewaysDifferentNames(t *testing.T) {
+	gw1 := client.ObjectKey{Name: "gateway-a", Namespace: "ns-1"}
+	gw2 := client.ObjectKey{Name: "gateway-b", Namespace: "ns-1"}
+	gw3 := client.ObjectKey{Name: "gateway-a", Namespace: "ns-2"}
+
+	name1 := sliceBaseName("dg", gw1)
+	name2 := sliceBaseName("dg", gw2)
+	name3 := sliceBaseName("dg", gw3)
+
+	if name1 == name2 {
+		t.Error("Different gateway names should produce different slice base names")
+	}
+	if name1 == name3 {
+		t.Error("Different gateway namespaces should produce different slice base names")
+	}
+}
+
+func TestTruncateLabelValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"short", "test-dg", "test-dg"},
+		{"exactly 63", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{"over 63", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateLabelValue(tt.input)
+			if result != tt.expected {
+				t.Errorf("truncateLabelValue(%q) = %q (len=%d), want %q (len=%d)",
+					tt.input, result, len(result), tt.expected, len(tt.expected))
+			}
+			if len(result) > 63 {
+				t.Errorf("result exceeds 63 chars: len=%d", len(result))
+			}
+		})
 	}
 }
