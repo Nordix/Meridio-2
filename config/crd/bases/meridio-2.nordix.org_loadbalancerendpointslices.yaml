@@ -1,0 +1,169 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: loadbalancerendpointslices.meridio-2.nordix.org
+spec:
+  group: meridio-2.nordix.org
+  names:
+    categories:
+    - meridio
+    - all
+    kind: LoadBalancerEndpointSlice
+    listKind: LoadBalancerEndpointSliceList
+    plural: loadbalancerendpointslices
+    shortNames:
+    - lbeslice
+    singular: loadbalancerendpointslice
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.distributionGroupName
+      name: Distribution-Group
+      type: string
+    - jsonPath: .spec.gatewayRef.name
+      name: Gateway
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LoadBalancerEndpointSlice defines a set of endpoints for a DistributionGroup
+          scoped to a specific Gateway. It is the contract between the DG controller
+          (producer) and the LB controller (consumer) for endpoint discovery.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the endpoints and their distribution metadata.
+            properties:
+              distributionGroupName:
+                description: |-
+                  distributionGroupName is the name of the DistributionGroup that owns this slice.
+                  Same-namespace relationship is enforced by ownerReference.
+                minLength: 1
+                type: string
+              endpoints:
+                description: |-
+                  endpoints is the list of endpoints in this slice.
+                  A Pod's addresses always reside in the same slice object (no cross-object correlation).
+                items:
+                  description: |-
+                    LoadBalancerEndpoint represents a single endpoint with its dual-stack addresses
+                    and distribution algorithm metadata.
+                  properties:
+                    addresses:
+                      description: |-
+                        addresses is the list of IP addresses for this endpoint.
+                        Dual-stack endpoints have both IPv4 and IPv6 entries in this single list.
+                        Exactly one address per IP family: each endpoint occupies a single slot in
+                        the distribution algorithm, so multiple IPs of the same family on the same
+                        Pod would not increase weight or resilience (same slot, same failure domain).
+                      items:
+                        description: EndpointAddress represents a single IP address
+                          with its family.
+                        properties:
+                          family:
+                            description: family is the IP address family.
+                            enum:
+                            - IPv4
+                            - IPv6
+                            type: string
+                          ip:
+                            description: ip is the IP address of the endpoint.
+                            maxLength: 45
+                            minLength: 1
+                            type: string
+                        required:
+                        - family
+                        - ip
+                        type: object
+                      maxItems: 2
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - family
+                      x-kubernetes-list-type: map
+                    identifier:
+                      description: |-
+                        identifier is the distribution-algorithm-assigned slot index.
+                        Present when the distribution type uses numeric IDs (e.g., Maglev).
+                        Absent for distribution types that do not assign per-endpoint IDs.
+                      format: int32
+                      type: integer
+                    ready:
+                      description: |-
+                        ready indicates whether this endpoint is ready to receive traffic.
+                        The DG controller mirrors Pod readiness; the LB controller decides
+                        activation policy based on this field.
+                      type: boolean
+                    target:
+                      description: target identifies the Pod backing this endpoint.
+                      properties:
+                        name:
+                          description: name is the Pod name.
+                          minLength: 1
+                          type: string
+                        uid:
+                          description: uid is the Pod UID for correlation and staleness
+                            detection.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      - uid
+                      type: object
+                  required:
+                  - addresses
+                  - ready
+                  - target
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
+              gatewayRef:
+                description: |-
+                  gatewayRef identifies the Gateway this slice is scoped to.
+                  Enables per-Gateway endpoint discovery by the LB controller.
+                properties:
+                  name:
+                    description: name is the name of the Gateway.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: namespace is the namespace of the Gateway.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+            required:
+            - distributionGroupName
+            - gatewayRef
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}
