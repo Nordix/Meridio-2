@@ -17,24 +17,16 @@ limitations under the License.
 package distributiongroup
 
 const (
-	// EndpointSlice label keys
-	labelManagedBy         = "endpointslice.kubernetes.io/managed-by"
-	labelDistributionGroup = "meridio-2.nordix.org/distribution-group"
-	labelNetworkSubnet     = "meridio-2.nordix.org/network-subnet"
-
-	// managedByValue identifies EndpointSlices managed by this controller
+	// labelManagedBy identifies LoadBalancerEndpointSlices managed by this controller.
+	labelManagedBy = "app.kubernetes.io/managed-by"
 	managedByValue = "distributiongroup-controller.meridio-2.nordix.org"
 
-	// maxEndpointsPerSlice is the maximum number of endpoints per EndpointSlice
-	// Matches Kubernetes default (100 endpoints per slice)
-	maxEndpointsPerSlice = 100
-
-	// maglevIDPrefix is the prefix for Maglev IDs stored in EndpointSlice zone field
-	// Example: "maglev:5" means Maglev ID 5
-	maglevIDPrefix = "maglev:"
+	// labelDistributionGroup is a convenience label for kubectl filtering.
+	// It MUST NOT be used for controller logic (use ownerReferences instead).
+	// Value is the DG name, truncated to 63 chars if necessary (Kubernetes label value limit).
+	labelDistributionGroup = "meridio-2.nordix.org/distribution-group"
 
 	// Kubernetes resource kinds
-	kindPod                  = "Pod"
 	kindGateway              = "Gateway"
 	kindGatewayConfiguration = "GatewayConfiguration"
 	kindService              = "Service"

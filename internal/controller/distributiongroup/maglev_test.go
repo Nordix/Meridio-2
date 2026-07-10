@@ -20,11 +20,13 @@ import (
 	"strconv"
 	"testing"
 
+	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+func int32Ptr(v int32) *int32 { return &v }
 
 func TestAssignMaglevIDs_NewPods(t *testing.T) {
 	pods := []corev1.Pod{
@@ -80,16 +82,18 @@ func TestAssignMaglevIDs_CapacityLimit(t *testing.T) {
 }
 
 func TestExtractMaglevAssignments(t *testing.T) {
-	slices := []discoveryv1.EndpointSlice{
+	slices := []meridio2v1alpha1.LoadBalancerEndpointSlice{
 		{
-			Endpoints: []discoveryv1.Endpoint{
-				{
-					TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: types.UID("pod-1")},
-					Zone:      ptr(maglevIDPrefix + "5"),
-				},
-				{
-					TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: types.UID("pod-2")},
-					Zone:      ptr(maglevIDPrefix + "10"),
+			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+				Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
+					{
+						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+						Identifier: int32Ptr(5),
+					},
+					{
+						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
+						Identifier: int32Ptr(10),
+					},
 				},
 			},
 		},
@@ -100,20 +104,25 @@ func TestExtractMaglevAssignments(t *testing.T) {
 	if len(result) != 2 {
 		t.Errorf("Expected 2 assignments, got %d", len(result))
 	}
-	if result["pod-1"] != 5 || result["pod-2"] != 10 {
+	if result["uid-1"] != 5 || result["uid-2"] != 10 {
 		t.Errorf("Incorrect assignments: %v", result)
 	}
 }
 
-func TestExtractMaglevAssignments_SkipInvalid(t *testing.T) {
-	slices := []discoveryv1.EndpointSlice{
+func TestExtractMaglevAssignments_SkipNilIdentifier(t *testing.T) {
+	slices := []meridio2v1alpha1.LoadBalancerEndpointSlice{
 		{
-			Endpoints: []discoveryv1.Endpoint{
-				{TargetRef: nil, Zone: ptr(maglevIDPrefix + "5")},
-				{TargetRef: &corev1.ObjectReference{Kind: "Service", UID: "svc-1"}, Zone: ptr(maglevIDPrefix + "10")},
-				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-1"}, Zone: ptr("invalid")},
-				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-2"}, Zone: ptr(maglevIDPrefix + "abc")},
-				{TargetRef: &corev1.ObjectReference{Kind: kindPod, UID: "pod-3"}, Zone: ptr(maglevIDPrefix + "15")},
+			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+				Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
+					{
+						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+						Identifier: nil, // no ID assigned
+					},
+					{
+						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
+						Identifier: int32Ptr(15),
+					},
+				},
 			},
 		},
 	}
@@ -123,8 +132,8 @@ func TestExtractMaglevAssignments_SkipInvalid(t *testing.T) {
 	if len(result) != 1 {
 		t.Errorf("Expected 1 valid assignment, got %d: %v", len(result), result)
 	}
-	if result["pod-3"] != 15 {
-		t.Errorf("Expected pod-3=15, got %v", result)
+	if result["uid-2"] != 15 {
+		t.Errorf("Expected uid-2=15, got %v", result)
 	}
 }
 

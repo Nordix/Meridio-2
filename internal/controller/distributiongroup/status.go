@@ -19,7 +19,6 @@ package distributiongroup
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -35,8 +34,8 @@ func (r *DistributionGroupReconciler) updateStatus(ctx context.Context, dg *meri
 	changed = meta.SetStatusCondition(&dg.Status.Conditions, readyCondition) || changed
 
 	// Handle CapacityExceeded condition (Maglev only)
-	if capacityInfo != nil && len(capacityInfo.networkIssues) > 0 {
-		capacityCondition := buildCapacityCondition(capacityInfo.networkIssues, dg.Generation)
+	if capacityInfo != nil && capacityInfo.excluded > 0 {
+		capacityCondition := buildCapacityCondition(capacityInfo, dg.Generation)
 		changed = meta.SetStatusCondition(&dg.Status.Conditions, capacityCondition) || changed
 	} else {
 		changed = meta.RemoveStatusCondition(&dg.Status.Conditions, conditionTypeCapacityExceeded) || changed
@@ -77,35 +76,13 @@ func buildReadyCondition(hasEndpoints bool, generation int64, message string) me
 }
 
 // buildCapacityCondition creates the CapacityExceeded condition
-func buildCapacityCondition(issues map[string]struct{ excluded, total int32 }, generation int64) metav1.Condition {
+func buildCapacityCondition(info *maglevCapacityInfo, generation int64) metav1.Condition {
+	capacity := info.total - info.excluded
 	return metav1.Condition{
 		Type:               conditionTypeCapacityExceeded,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: generation,
 		Reason:             reasonMaglevCapacityExceeded,
-		Message:            buildCapacityMessage(issues),
+		Message:            fmt.Sprintf("%d/%d pods excluded (%d capacity)", info.excluded, info.total, capacity),
 	}
-}
-
-// buildCapacityMessage creates a human-readable message for capacity issues
-func buildCapacityMessage(issues map[string]struct{ excluded, total int32 }) string {
-	if len(issues) == 0 {
-		return ""
-	}
-
-	parts := make([]string, 0, len(issues))
-	for cidr, info := range issues {
-		capacity := info.total - info.excluded
-		parts = append(parts, fmt.Sprintf("%s: %d/%d pods excluded (%d capacity)",
-			cidr, info.excluded, info.total, capacity))
-	}
-
-	msg := "Networks with capacity issues: " + strings.Join(parts, ", ")
-
-	// Truncate if too long (keep under 250 chars for readability)
-	if len(msg) > 250 {
-		msg = msg[:247] + "..."
-	}
-
-	return msg
 }
