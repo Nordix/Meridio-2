@@ -341,10 +341,11 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 	}
 
 	if err := (&distributiongroup.DistributionGroupReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		ControllerName: cfg.ControllerName,
-		Namespace:      cfg.Namespace,
+		Client:               mgr.GetClient(),
+		Scheme:               mgr.GetScheme(),
+		ControllerName:       cfg.ControllerName,
+		Namespace:            cfg.Namespace,
+		MaxEndpointsPerSlice: cfg.MaxEndpointsPerSlice,
 	}).SetupWithManager(mgr, cfg.EnableTopologyHints); err != nil {
 		return fmt.Errorf("controller DistributionGroup: %w", err)
 	}

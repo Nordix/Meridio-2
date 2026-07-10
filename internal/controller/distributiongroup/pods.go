@@ -121,27 +121,3 @@ func (r *DistributionGroupReconciler) listMatchingPods(ctx context.Context, dg *
 
 	return pods, nil
 }
-
-// filterPodsWithNetworkContextIP filters Pods that have a secondary IP for the given network
-func (r *DistributionGroupReconciler) filterPodsWithNetworkContextIP(pods []corev1.Pod, cidr, attachmentType string) []podWithNetworkIP {
-	scraper := r.IPScraper
-	if scraper == nil {
-		scraper = defaultIPScraper
-	}
-
-	var filtered []podWithNetworkIP
-	for _, pod := range pods {
-		// Require primary PodIP (matches K8s EndpointSlice controller behavior)
-		// TODO: Remove?
-		if pod.Status.PodIP == "" {
-			continue
-		}
-
-		// Scrape secondary IP based on attachment type
-		ip := scraper(&pod, cidr, attachmentType)
-		if ip != "" {
-			filtered = append(filtered, podWithNetworkIP{pod: pod, ip: ip})
-		}
-	}
-	return filtered
-}

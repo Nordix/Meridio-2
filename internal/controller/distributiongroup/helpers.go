@@ -17,14 +17,13 @@ limitations under the License.
 package distributiongroup
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"fmt"
+	"hash/fnv"
 	"net"
 	"sort"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // sortPodsByCreationTime sorts Pods by CreationTimestamp, tiebreak by namespace/name
@@ -35,38 +34,6 @@ func sortPodsByCreationTime(pods []corev1.Pod) {
 		}
 		return pods[i].CreationTimestamp.Before(&pods[j].CreationTimestamp)
 	})
-}
-
-// encodeCIDRForLabel converts CIDR to valid Kubernetes label value
-// IPv4: "192.168.100.0/24" → "192.168.100.0-24"
-// IPv6: "2001:db8:100::/64" → "2001_db8_100__-64"
-func encodeCIDRForLabel(cidr string) string {
-	encoded := strings.ReplaceAll(cidr, ":", "_")
-	encoded = strings.ReplaceAll(encoded, "/", "-")
-	return encoded
-}
-
-// decodeCIDRFromLabel converts label value back to CIDR
-// IPv4: "192.168.100.0-24" → "192.168.100.0/24"
-// IPv6: "2001_db8_100__-64" → "2001:db8:100::/64"
-func decodeCIDRFromLabel(encoded string) string {
-	// Find last dash and replace with /
-	lastDash := strings.LastIndex(encoded, "-")
-	if lastDash == -1 {
-		return encoded
-	}
-	decoded := encoded[:lastDash] + "/" + encoded[lastDash+1:]
-	// Restore colons for IPv6
-	decoded = strings.ReplaceAll(decoded, "_", ":")
-	return decoded
-}
-
-// hashCIDR creates a short hash suffix for CIDR to use in EndpointSlice names
-// Uses K8s SafeEncodeString to avoid bad words and ensure consistency
-// Examples: "192.168.1.0/24" → "x8f2a", "2001:db8::/32" → "k9b3c"
-func hashCIDR(cidr string) string {
-	h := sha256.Sum256([]byte(cidr))
-	return rand.SafeEncodeString(hex.EncodeToString(h[:])[:8])
 }
 
 // normalizeCIDR returns the canonical form of a CIDR (network address with prefix)
@@ -80,7 +47,32 @@ func normalizeCIDR(cidr string) (string, error) {
 	return ipnet.String(), nil
 }
 
-// ptr returns a pointer to the given value
-func ptr[T any](v T) *T {
-	return &v
+// truncateLabelValue truncates a string to the Kubernetes label value limit (63 chars).
+func truncateLabelValue(value string) string {
+	if len(value) <= 63 {
+		return value
+	}
+	return value[:63]
+}
+
+// sliceBaseName returns a deterministic base name for LoadBalancerEndpointSlices.
+// Format: "<dg-name>-<hash>" where hash is an FNV-64a digest of the full DG+Gateway identity.
+// If the combined name exceeds 240 chars, the DG name is truncated to fit.
+// The DG name is included in the hash input (alongside Gateway namespace/name) to avoid
+// truncation-induced collisions: two DGs whose names share a long prefix (e.g., "my-app-dg"
+// and "my-app-dg-extended") targeting the same Gateway would otherwise produce identical
+// truncated prefixes and thus colliding slice names.
+func sliceBaseName(dgName string, gateway client.ObjectKey) string {
+	hasher := fnv.New64a()
+	hasher.Write([]byte(dgName + "/" + gateway.Namespace + "/" + gateway.Name))
+	hash := fmt.Sprintf("%016x", hasher.Sum64())
+
+	// base = "<dg-name>-<hash>" (dg + "-" + 16 hex chars = dg + 17)
+	base := dgName + "-" + hash
+	const maxBaseLen = 240 // leave room for "-" + index (up to 4 digits) within 253 limit
+	if len(base) <= maxBaseLen {
+		return base
+	}
+	// Truncate DG name to fit
+	return dgName[:maxBaseLen-17] + "-" + hash
 }

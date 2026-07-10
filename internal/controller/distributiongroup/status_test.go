@@ -87,11 +87,9 @@ func TestBuildReadyCondition_MultipleGateways(t *testing.T) {
 }
 
 func TestBuildCapacityCondition(t *testing.T) {
-	issues := map[string]struct{ excluded, total int32 }{
-		"192.168.1.0/24": {excluded: 5, total: 37},
-	}
+	info := &maglevCapacityInfo{excluded: 5, total: 37}
 
-	cond := buildCapacityCondition(issues, 10)
+	cond := buildCapacityCondition(info, 10)
 
 	if cond.Type != conditionTypeCapacityExceeded {
 		t.Errorf("Expected type %q, got %q", conditionTypeCapacityExceeded, cond.Type)
@@ -105,64 +103,10 @@ func TestBuildCapacityCondition(t *testing.T) {
 	if cond.ObservedGeneration != 10 {
 		t.Errorf("Expected generation 10, got %d", cond.ObservedGeneration)
 	}
-	if !strings.Contains(cond.Message, "192.168.1.0/24") {
-		t.Errorf("Message should contain CIDR, got: %q", cond.Message)
+	if !strings.Contains(cond.Message, "5/37 pods excluded") {
+		t.Errorf("Message should contain pod counts, got: %q", cond.Message)
 	}
-}
-
-func TestBuildCapacityMessage_SingleNetwork(t *testing.T) {
-	issues := map[string]struct{ excluded, total int32 }{
-		"192.168.1.0/24": {excluded: 5, total: 37},
-	}
-
-	msg := buildCapacityMessage(issues)
-
-	if !strings.Contains(msg, "192.168.1.0/24") {
-		t.Errorf("Message should contain CIDR")
-	}
-	if !strings.Contains(msg, "5/37 pods excluded") {
-		t.Errorf("Message should contain pod counts, got: %q", msg)
-	}
-	if !strings.Contains(msg, "(32 capacity)") {
-		t.Errorf("Message should contain capacity info, got: %q", msg)
-	}
-}
-
-func TestBuildCapacityMessage_MultipleNetworks(t *testing.T) {
-	issues := map[string]struct{ excluded, total int32 }{
-		"192.168.1.0/24": {excluded: 5, total: 37},
-		"10.0.0.0/8":     {excluded: 2, total: 34},
-	}
-
-	msg := buildCapacityMessage(issues)
-
-	if !strings.Contains(msg, "192.168.1.0/24") || !strings.Contains(msg, "10.0.0.0/8") {
-		t.Errorf("Message should contain both CIDRs")
-	}
-}
-
-func TestBuildCapacityMessage_Empty(t *testing.T) {
-	msg := buildCapacityMessage(map[string]struct{ excluded, total int32 }{})
-
-	if msg != "" {
-		t.Errorf("Expected empty string for no issues, got %q", msg)
-	}
-}
-
-func TestBuildCapacityMessage_Truncation(t *testing.T) {
-	// Create many networks to exceed 250 char limit
-	issues := make(map[string]struct{ excluded, total int32 })
-	for i := range 20 {
-		cidr := "192.168." + string(rune(i)) + ".0/24"
-		issues[cidr] = struct{ excluded, total int32 }{excluded: 5, total: 37}
-	}
-
-	msg := buildCapacityMessage(issues)
-
-	if len(msg) > 250 {
-		t.Errorf("Message should be truncated to 250 chars, got %d", len(msg))
-	}
-	if !strings.HasSuffix(msg, "...") {
-		t.Errorf("Truncated message should end with '...', got: %q", msg[len(msg)-10:])
+	if !strings.Contains(cond.Message, "32 capacity") {
+		t.Errorf("Message should contain capacity, got: %q", cond.Message)
 	}
 }
