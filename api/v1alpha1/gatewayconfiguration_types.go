@@ -62,7 +62,7 @@ type InternalSubnet struct {
 	// attachmentType specifies how the network is attached to Pods.
 	// Currently only NAD (NetworkAttachmentDefinition) is supported.
 	// +kubebuilder:default=NAD
-	// +kubebuilder:validation:Enum=NAD;DRA
+	// +kubebuilder:validation:Enum=NAD
 	AttachmentType string `json:"attachmentType"`
 
 	// cidr is the subnet CIDR for this network segment (e.g. "192.168.100.0/24").
@@ -74,7 +74,7 @@ type InternalSubnet struct {
 }
 
 // NetworkAttachment defines a secondary network interface for the LB Deployment Pods.
-// +kubebuilder:validation:XValidation:rule=self.type == "NAD" && self.nad != null || self.type == "DRA" && self.dra != null,message="If type is NAD, field NAD must not be null, otherwise DRA must not be null"
+// +kubebuilder:validation:XValidation:rule=self.type == "NAD" && self.nad != null,message="NAD field must not be null when type is NAD"
 type NetworkAttachment struct {
 
 	// description is a human-readable description of this network attachment.
@@ -83,17 +83,13 @@ type NetworkAttachment struct {
 
 	// type specifies the attachment mechanism. Currently only NAD is supported.
 	// +kubebuilder:default=NAD
-	// +kubebuilder:validation:Enum=NAD;DRA
+	// +kubebuilder:validation:Enum=NAD
 	Type string `json:"type"`
 
 	// nad specifies the NetworkAttachmentDefinition reference and interface name.
 	// Required when type is NAD.
 	// +optional
 	NAD *NAD `json:"nad,omitempty"`
-
-	// dra specifies Dynamic Resource Allocation parameters. Not yet implemented.
-	// +optional
-	DRA *DRA `json:"dra,omitempty"`
 }
 
 // NAD references a Multus NetworkAttachmentDefinition and the interface name
@@ -106,11 +102,6 @@ type NAD struct {
 	// namespace is the namespace of the NetworkAttachmentDefinition resource.
 	// Defaults to the GatewayConfiguration's namespace if empty.
 	Namespace string `json:"namespace"`
-}
-
-// DRA specifies Dynamic Resource Allocation parameters.
-// TODO: implement DRA support.
-type DRA struct { /* ... */
 }
 
 // HorizontalScaling controls the replica count of the LB Deployment.

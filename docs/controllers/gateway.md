@@ -95,7 +95,7 @@ LB Deployment (owned by Gateway)
 - parametersRef is required
 - GatewayConfiguration must exist
 - At least one networkSubnet required
-- Only NAD attachment type supported (DRA not yet implemented)
+- Only NAD attachment type is supported
 - CIDRs must be valid and not 0.0.0.0/0 or ::/0
 - CIDRs must not overlap (across all networkSubnet entries)
 - IPv6 link-local addresses (fe80::/10) not allowed
@@ -404,7 +404,6 @@ networkAttachments:
 - Semantic (order-independent) comparison to avoid unnecessary rolling updates from NAD reordering
 - Duplicate detection: `namespace/name:interface` (all 3 fields must match)
 - Same NAD with different interfaces allowed (not duplicate)
-- DRA attachments skipped (not yet implemented)
 
 **Note:** NAD annotation handling differs from general label/annotation merging. NADs use template + GatewayConfiguration as authoritative sources (not existing Deployment), enabling proper replacement when GatewayConfiguration changes.
 

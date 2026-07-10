@@ -585,15 +585,6 @@ func TestApplyNetworkAttachments(t *testing.T) {
 		assert.NotContains(t, annot, `"interface"`)
 	})
 
-	t.Run("SkipsDRAAttachments", func(t *testing.T) {
-		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "default"}}
-		attachments := []meridio2v1alpha1.NetworkAttachment{
-			{Type: "DRA", DRA: &meridio2v1alpha1.DRA{}},
-		}
-		applyNetworkAttachments(deployment, "", attachments)
-		assert.Empty(t, deployment.Spec.Template.Annotations)
-	})
-
 	t.Run("PreservesExistingAnnotations", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
 			Spec: appsv1.DeploymentSpec{

@@ -306,7 +306,7 @@ func (r *Reconciler) getSLLBRNextHops(ctx context.Context, gw *gatewayv1.Gateway
 }
 
 // getNetworkContexts extracts network context from GatewayConfiguration.
-// Returns subnetToType (CIDR→"NAD"/"DRA").
+// Returns subnetToType (CIDR→attachment type, currently only "NAD").
 func (r *Reconciler) getNetworkContexts(ctx context.Context, gw *gatewayv1.Gateway) (map[string]string, error) {
 	subnetToType := make(map[string]string)
 

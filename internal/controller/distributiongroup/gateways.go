@@ -136,7 +136,7 @@ func (r *DistributionGroupReconciler) isGatewayAccepted(gw *gatewayv1.Gateway) b
 }
 
 // getNetworkContexts extracts network context from GatewayConfigurations
-// Returns map: subnet CIDR → attachment type (NAD/DRA)
+// Returns map: subnet CIDR → attachment type (currently only NAD)
 func (r *DistributionGroupReconciler) getNetworkContexts(ctx context.Context, gateways []gatewayv1.Gateway) ([]gatewayNetworkContext, error) {
 	logger := log.FromContext(ctx)
 	result := make([]gatewayNetworkContext, 0, len(gateways))

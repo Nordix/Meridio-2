@@ -242,7 +242,7 @@ func TestDefaultIPScraper_UnknownType(t *testing.T) {
 		},
 	}
 
-	ip := defaultIPScraper(pod, "192.168.100.0/24", "DRA")
+	ip := defaultIPScraper(pod, "192.168.100.0/24", "UNKNOWN")
 	if ip != "" {
 		t.Errorf("Expected empty string for unknown attachment type, got %q", ip)
 	}
