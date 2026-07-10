@@ -66,7 +66,8 @@ spec:
               internalSubnets:
                 description: |-
                   internalSubnets identifies the subnet(s) where application endpoint IPs reside.
-                  Used by the ENC controller to match secondary interfaces in application Pods
+                  Used by the DG controller to scrape secondary IPs for endpoint management,
+                  and by the ENC controller to match secondary interfaces in application Pods
                   and to determine IP family (IPv4/IPv6) for VIP and next-hop assignment.
                   Each entry represents a single subnet of one IP family. For dual-stack, use two
                   separate entries (one IPv4, one IPv6).
