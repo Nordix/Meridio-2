@@ -35,19 +35,6 @@ rules:
   - patch
   - update
   - watch
-# DistributionGroup controller: manage EndpointSlices
-- apiGroups:
-  - discovery.k8s.io
-  resources:
-  - endpointslices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
 # --- Gateway API resources ---
 # Gateway controller: reconcile Gateways, update status
 - apiGroups:
@@ -103,10 +90,12 @@ rules:
   - patch
   - update
 # ENC controller: full lifecycle management of EndpointNetworkConfigurations
+# DistributionGroup controller: manage LoadBalancerEndpointSlices
 - apiGroups:
   - meridio-2.nordix.org
   resources:
   - endpointnetworkconfigurations
+  - loadbalancerendpointslices
   verbs:
   - create
   - delete
