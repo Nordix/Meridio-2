@@ -12,7 +12,7 @@ The DistributionGroup controller manages EndpointSlices for secondary network en
 
 **Network Context**: The combination of:
 - Subnet CIDR (e.g., `192.168.100.0/24`)
-- Attachment type (`NAD` for Multus, `DRA` for Dynamic Resource Allocation)
+- Attachment type (currently only `NAD` for Multus is supported)
 
 **Maglev ID**: A stable integer (0 to maxEndpoints-1) assigned to each Pod for consistent hashing. Stored in EndpointSlice's `zone` field as `maglev:<id>`. Scoped per DistributionGroup and per Gateway — the same Pod gets the same ID across all networks (IPv4/IPv6) within a Gateway, but may have different IDs in different DGs.
 
@@ -112,7 +112,7 @@ For each accepted Gateway:
 For each network context within the Gateway:
 - Scrape secondary IP from Pod based on attachment type:
   - **NAD**: Parse Multus `k8s.v1.cni.cncf.io/network-status` annotation
-  - **DRA**: (Future implementation)
+  - **Other types**: (Not currently supported; could be added in the future if needed)
 - Return first matching IP in the target subnet (NAD only)
 - Skip Pods without IPs in the target subnet
 - Skip primary interface IPs (only secondary networks)
@@ -690,9 +690,9 @@ All flags can be set via `MERIDIO_*` environment variables (e.g., `MERIDIO_NAMES
 - Remove endpoints faster than waiting for Pod deletion
 - Requires `--enable-topology-hints` flag
 
-### DRA Support
-- Implement IP scraping for Dynamic Resource Allocation
-- Add DRA-specific attachment logic in `pods.go`
+### Additional Attachment Types
+- Future attachment types (e.g., DRA) could be added if needed
+- Would require IP scraping logic and attachment-specific handling in `pods.go`
 
 ### Additional Distribution Types
 - Round-robin (no stable IDs)
