@@ -23,6 +23,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -40,6 +42,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/bird"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/log"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/router"
 )
@@ -54,9 +57,34 @@ func NewRunCmd() *cobra.Command {
 		Long:  `Run the router controller`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			cfg.BindEnv(cmd.Flags())
-			// Setup logger based on log level
-			zapOpts := zap.Options{Development: cfg.LogLevel == "debug"}
-			ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+
+			// Parse initial log level
+			initialLevel, err := log.ParseLevel(cfg.LogLevel)
+			if err != nil {
+				return fmt.Errorf("invalid --log-level: %w", err)
+			}
+
+			// Create atomic level for dynamic changes
+			atomicLevel := zap.NewAtomicLevelAt(initialLevel)
+
+			// Setup logger with atomic level
+			zapOpts := ctrlzap.Options{
+				Development: initialLevel == zapcore.DebugLevel,
+				Level:       atomicLevel,
+			}
+			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
+
+			// Create a basic zap logger for the log level server
+			zapConfig := zap.NewProductionConfig()
+			zapConfig.Level = atomicLevel
+			basicLogger, err := zapConfig.Build()
+			if err != nil {
+				return fmt.Errorf("failed to create logger for log level server: %w", err)
+			}
+
+			// Start dynamic log level server (non-blocking, non-fatal)
+			log.StartDynamicLevelServer(cfg.LogLevelAPI, atomicLevel, basicLogger)
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -196,7 +224,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 func monitorConnectivity(
 	ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird, cfg *config.RouterConfig,
 ) error {
-	log := ctrl.Log.WithName("monitor")
+	logger := ctrl.Log.WithName("monitor")
 
 	// Wait for manager cache to sync
 	if !mgr.GetCache().WaitForCacheSync(ctx) {
@@ -211,12 +239,12 @@ func monitorConnectivity(
 			types.UID(cfg.PodUID), cfg.ConnectivityHoldTime,
 		)
 		if err := gateMgr.DiscoverGates(ctx); err != nil {
-			log.Error(err, "failed to discover readiness gates, continuing without gate management")
+			logger.Error(err, "failed to discover readiness gates, continuing without gate management")
 			gateMgr = nil
 		} else if gateMgr.HasIPv4Gate() || gateMgr.HasIPv6Gate() {
-			log.Info("readiness gates discovered", "ipv4", gateMgr.HasIPv4Gate(), "ipv6", gateMgr.HasIPv6Gate())
+			logger.Info("readiness gates discovered", "ipv4", gateMgr.HasIPv4Gate(), "ipv6", gateMgr.HasIPv6Gate())
 			if err := gateMgr.SetAllGatesFalse(ctx); err != nil {
-				log.Error(err, "failed to set gates to False on startup")
+				logger.Error(err, "failed to set gates to False on startup")
 			}
 		} else {
 			gateMgr = nil // No gates declared, skip gate management
@@ -248,19 +276,19 @@ func monitorConnectivity(
 			// Fetch routers from informer cache (local memory read)
 			routers, err := getGatewayRoutersFromCache(ctx, mgr.GetClient(), cfg.GatewayName, cfg.GatewayNamespace)
 			if err != nil {
-				log.Error(err, "failed to get gateway routers from cache")
+				logger.Error(err, "failed to get gateway routers from cache")
 				continue
 			}
 
 			// Mutate static protocol states based on BFD session status.
 			// After this, all protocols reflect true connectivity (Info != Established if BFD is down).
-			applyBfdState(status.Protocols, status.BfdSessions, routers, log)
+			applyBfdState(status.Protocols, status.BfdSessions, routers, logger)
 
 			count := protocolsUp(status.Protocols)
 
 			// Log when protocol up count changes
 			if firstUpdate || count != lastCount {
-				log.Info("Gateway connectivity", "protocols", fmt.Sprintf("%d/%d up", count, len(routers)))
+				logger.Info("Gateway connectivity", "protocols", fmt.Sprintf("%d/%d up", count, len(routers)))
 				lastCount = count
 				firstUpdate = false
 			}
@@ -273,7 +301,7 @@ func monitorConnectivity(
 				}
 				// When no routers exist, ipv4/ipv6 stay false — gates set to False
 				if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
-					log.Error(err, "failed to update readiness gates")
+					logger.Error(err, "failed to update readiness gates")
 				}
 			}
 		}

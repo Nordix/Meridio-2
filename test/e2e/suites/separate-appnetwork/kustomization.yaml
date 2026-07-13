@@ -62,6 +62,10 @@ patches:
             env:
             - name: MERIDIO_LB_SERVICE_ACCOUNT
               value: meridio-2-stateless-load-balancer-separate-appnet
+            - name: MERIDIO_LOG_LEVEL
+              value: info
+            - name: MERIDIO_LOG_LEVEL_API
+              value: 127.0.0.1:9901
           volumes:
           - name: webhook-certs
             secret:
