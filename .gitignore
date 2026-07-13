@@ -10,6 +10,7 @@ dist/*
 
 # AI configuration
 .kiro
+.agents
 lsp.json
 
 # Test binary, built with `go test -c`
