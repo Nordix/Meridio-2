@@ -1,0 +1,10 @@
+# JSON Patch to add selectableFields for LoadBalancerEndpointSlice CRD.
+# Enables server-side field selectors for kubectl and direct API clients.
+# Requires K8s 1.31+ (beta, enabled by default) or 1.32+ (GA).
+# https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#crd-selectable-fields
+# controller-gen does not yet support selectableFields markers.
+- op: add
+  path: /spec/versions/0/selectableFields
+  value:
+  - jsonPath: .spec.distributionGroupName
+  - jsonPath: .spec.gatewayRef.name
