@@ -43,6 +43,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: MERIDIO_LOG_LEVEL
+          value: info
+        - name: MERIDIO_LOG_LEVEL_API
+          value: 127.0.0.1:9901
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -80,6 +84,10 @@ spec:
           value: "file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all"
         - name: MERIDIO_READINESS_DIR
           value: '/var/run/meridio'
+        - name: MERIDIO_LOG_LEVEL
+          value: info
+        - name: MERIDIO_LOG_LEVEL_API
+          value: 127.0.0.1:9902
         - name: POD_NAME
           valueFrom:
             fieldRef:

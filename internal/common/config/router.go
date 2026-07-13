@@ -36,6 +36,7 @@ type RouterConfig struct {
 	ConnectivityHoldTime time.Duration
 	ProbeAddr            string
 	LogLevel             string
+	LogLevelAPI          string
 	MetricsAddr          string
 	SecureMetrics        bool
 	MetricsCertPath      string
@@ -70,6 +71,8 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"The address the probe endpoint binds to.")
 	fs.StringVar(&c.LogLevel, "log-level", "info",
 		"Log level (debug, info, error)")
+	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
+		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
 	fs.StringVar(&c.MetricsAddr, "metrics-bind-address", "0",
 		"The address the metrics endpoint binds to. "+
 			"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -130,6 +133,7 @@ func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindDuration(fs, "connectivity-hold-time", "MERIDIO_CONNECTIVITY_HOLD_TIME", &c.ConnectivityHoldTime)
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
+	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)

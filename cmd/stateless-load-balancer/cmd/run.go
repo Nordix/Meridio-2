@@ -23,19 +23,22 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/log"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
 	"github.com/nordix/meridio-2/internal/nfqlb"
@@ -61,9 +64,34 @@ func newCmdRun() *cobra.Command {
 		Long:  `Run the stateless-load-balancer controller to manage NFQLB and nftables`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			cfg.BindEnv(cmd.Flags())
-			// Setup logger based on log level
-			zapOpts := zap.Options{Development: cfg.LogLevel == "debug"}
-			ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+
+			// Parse initial log level
+			initialLevel, err := log.ParseLevel(cfg.LogLevel)
+			if err != nil {
+				return fmt.Errorf("invalid --log-level: %w", err)
+			}
+
+			// Create atomic level for dynamic changes
+			atomicLevel := zap.NewAtomicLevelAt(initialLevel)
+
+			// Setup logger with atomic level
+			zapOpts := ctrlzap.Options{
+				Development: initialLevel == zapcore.DebugLevel,
+				Level:       atomicLevel,
+			}
+			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
+
+			// Create a basic zap logger for the log level server
+			zapConfig := zap.NewProductionConfig()
+			zapConfig.Level = atomicLevel
+			basicLogger, err := zapConfig.Build()
+			if err != nil {
+				return fmt.Errorf("failed to create logger for log level server: %w", err)
+			}
+
+			// Start dynamic log level server (non-blocking, non-fatal)
+			log.StartDynamicLevelServer(cfg.LogLevelAPI, atomicLevel, basicLogger)
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
