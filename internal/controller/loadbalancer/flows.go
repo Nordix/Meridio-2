@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -51,7 +51,7 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	}
 
 	// Check if DistributionGroup has endpoints before configuring flows
-	hasEndpoints, err := c.hasReadyEndpoints(ctx, distGroup.Name)
+	hasEndpoints, err := c.hasReadyEndpoints(ctx, distGroup)
 	if err != nil {
 		return err
 	}
@@ -126,33 +126,21 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 }
 
 // hasReadyEndpoints checks if DistributionGroup has any ready endpoints.
-func (c *Controller) hasReadyEndpoints(ctx context.Context, distGroupName string) (bool, error) {
-	endpointSliceList := &discoveryv1.EndpointSliceList{}
-	if err := c.List(ctx, endpointSliceList,
-		client.InNamespace(c.GatewayNamespace)); err != nil {
+func (c *Controller) hasReadyEndpoints(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) (bool, error) {
+	sliceList := &meridio2v1alpha1.LoadBalancerEndpointSliceList{}
+	if err := c.List(ctx, sliceList,
+		client.InNamespace(c.GatewayNamespace),
+		client.MatchingFields{"spec.distributionGroupName": distGroup.Name},
+	); err != nil {
 		return false, err
 	}
 
-	// Check EndpointSlices owned by this DistributionGroup
-	for _, eps := range endpointSliceList.Items {
-		// Check if owned by this DistributionGroup
-		isOwned := false
-		for _, ownerRef := range eps.GetOwnerReferences() {
-			if ownerRef.APIVersion == meridio2v1alpha1.GroupVersion.String() &&
-				ownerRef.Kind == kindDistributionGroup &&
-				ownerRef.Name == distGroupName &&
-				ownerRef.Controller != nil && *ownerRef.Controller {
-				isOwned = true
-				break
-			}
-		}
-		if !isOwned {
+	for i := range sliceList.Items {
+		if !metav1.IsControlledBy(&sliceList.Items[i], distGroup) {
 			continue
 		}
-
-		// Check for ready endpoints
-		for _, endpoint := range eps.Endpoints {
-			if endpoint.Conditions.Ready != nil && *endpoint.Conditions.Ready {
+		for _, endpoint := range sliceList.Items[i].Spec.Endpoints {
+			if endpoint.Ready {
 				return true, nil
 			}
 		}

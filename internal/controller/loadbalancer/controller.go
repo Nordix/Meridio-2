@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/google/nftables"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -39,15 +38,15 @@ import (
 // Controller reconciles DistributionGroup resources to manage NFQLB instances.
 //
 // Architectural Pattern: Mirrors Kubernetes Service/kube-proxy model
-// ┌─────────────────────────────────┬──────────────────────────────────────┐
-// │ Kubernetes                      │ Meridio-2                            │
-// ├─────────────────────────────────┼──────────────────────────────────────┤
-// │ Service (abstract LB)           │ DistributionGroup (abstract LB)      │
-// │ EndpointSlice (backends)        │ EndpointSlice (backends)             │
-// │ kube-proxy (per-node agent)     │ LB controller (per-Gateway agent)    │
-// │ Watches: Service (primary)      │ Watches: DistributionGroup (primary) │
-// │ Implements: iptables/ipvs       │ Implements: NFQLB (Maglev)           │
-// └─────────────────────────────────┴──────────────────────────────────────┘
+// ┌─────────────────────────────────┬──────────────────────────────────────────────┐
+// │ Kubernetes                      │ Meridio-2                                    │
+// ├─────────────────────────────────┼──────────────────────────────────────────────┤
+// │ Service (abstract LB)           │ DistributionGroup (abstract LB)              │
+// │ EndpointSlice (backends)        │ LoadBalancerEndpointSlice (backends)         │
+// │ kube-proxy (per-node agent)     │ LB controller (per-Gateway agent)            │
+// │ Watches: Service (primary)      │ Watches: DistributionGroup (primary)         │
+// │ Implements: iptables/ipvs       │ Implements: NFQLB (Maglev)                   │
+// └─────────────────────────────────┴──────────────────────────────────────────────┘
 //
 // Design Decision: DistributionGroup as Primary Resource
 // - Direct mapping: DistributionGroup → NFQLB instance (1:1)
@@ -136,7 +135,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile targets from EndpointSlices
+	// Reconcile targets from LoadBalancerEndpointSlices
 	if err := c.reconcileTargets(ctx, distGroup); err != nil {
 		logr.Error(err, "Failed to reconcile targets")
 		return ctrl.Result{}, err
@@ -314,18 +313,30 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("failed to cleanup readiness directory: %w", err)
 	}
 
+	// Register field indexer for LoadBalancerEndpointSlice lookups by DG name.
+	// This enables client.MatchingFields{"spec.distributionGroupName": ...} in List calls.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &meridio2v1alpha1.LoadBalancerEndpointSlice{},
+		"spec.distributionGroupName",
+		func(obj client.Object) []string {
+			lbes := obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice)
+			return []string{lbes.Spec.DistributionGroupName}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to index LoadBalancerEndpointSlice by distributionGroupName: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.DistributionGroup{}).
-		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(c.endpointSliceEnqueue)).
+		Watches(&meridio2v1alpha1.LoadBalancerEndpointSlice{}, handler.EnqueueRequestsFromMapFunc(c.endpointSliceEnqueue)).
 		Watches(&meridio2v1alpha1.L34Route{}, handler.EnqueueRequestsFromMapFunc(c.l34RouteEnqueue)).
 		Watches(&gatewayv1.Gateway{}, handler.EnqueueRequestsFromMapFunc(c.gatewayEnqueue)).
 		Named("loadbalancer").
 		Complete(c)
 }
 
-// endpointSliceEnqueue maps EndpointSlice events to DistributionGroup reconcile requests
+// endpointSliceEnqueue maps LoadBalancerEndpointSlice events to DistributionGroup reconcile requests
 func (c *Controller) endpointSliceEnqueue(ctx context.Context, obj client.Object) []ctrl.Request {
-	// EndpointSlices have OwnerReference to their DistributionGroup
+	// LoadBalancerEndpointSlices have OwnerReference to their DistributionGroup
 	for _, ownerRef := range obj.GetOwnerReferences() {
 		if ownerRef.APIVersion == meridio2v1alpha1.GroupVersion.String() &&
 			ownerRef.Kind == kindDistributionGroup &&
