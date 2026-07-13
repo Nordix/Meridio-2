@@ -25,7 +25,11 @@ type LoadBalancerEndpointSliceSpec struct {
 
 	// distributionGroupName is the name of the DistributionGroup that owns this slice.
 	// Same-namespace relationship is enforced by ownerReference.
+	// Immutable because the slice's identity is tied to its owning DG — Kubernetes
+	// resource names cannot change, and ownerReference binds the slice lifecycle to
+	// the DG. Reassigning a slice to a different DG is not a valid operation.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="distributionGroupName is immutable"
 	DistributionGroupName string `json:"distributionGroupName"`
 
 	// gatewayRef identifies the Gateway this slice is scoped to.

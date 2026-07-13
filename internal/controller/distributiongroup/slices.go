@@ -35,14 +35,19 @@ import (
 // Results are sorted by name for deterministic processing order.
 func (r *DistributionGroupReconciler) listOwnedSlices(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup) ([]meridio2v1alpha1.LoadBalancerEndpointSlice, error) {
 	var sliceList meridio2v1alpha1.LoadBalancerEndpointSliceList
-	if err := r.List(ctx, &sliceList, client.InNamespace(dg.Namespace)); err != nil {
+	if err := r.List(ctx, &sliceList,
+		client.InNamespace(dg.Namespace),
+		client.MatchingFields{"spec.distributionGroupName": dg.Name},
+	); err != nil {
 		return nil, err
 	}
 
-	var owned []meridio2v1alpha1.LoadBalancerEndpointSlice
-	for _, slice := range sliceList.Items {
-		if metav1.IsControlledBy(&slice, dg) {
-			owned = append(owned, slice)
+	// Verify ownership (defense against manually-created slices with matching
+	// distributionGroupName but no ownerRef).
+	owned := make([]meridio2v1alpha1.LoadBalancerEndpointSlice, 0, len(sliceList.Items))
+	for i := range sliceList.Items {
+		if metav1.IsControlledBy(&sliceList.Items[i], dg) {
+			owned = append(owned, sliceList.Items[i])
 		}
 	}
 

@@ -206,6 +206,18 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DistributionGroupReconciler) SetupWithManager(mgr ctrl.Manager, enableTopology bool) error {
+	// Register field indexer for LoadBalancerEndpointSlice lookups by DG name.
+	// This enables client.MatchingFields{"spec.distributionGroupName": ...} in List calls.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &meridio2v1alpha1.LoadBalancerEndpointSlice{},
+		"spec.distributionGroupName",
+		func(obj client.Object) []string {
+			slice := obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice)
+			return []string{slice.Spec.DistributionGroupName}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to index LoadBalancerEndpointSlice by distributionGroupName: %w", err)
+	}
+
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.DistributionGroup{}).
 		Owns(&meridio2v1alpha1.LoadBalancerEndpointSlice{}).
