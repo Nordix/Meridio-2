@@ -74,6 +74,8 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | 600 | sctp-multihoming | sctp-gw2 | `169.254.31.0/24` | — | `169.111.30.0/24` | — | `30.0.0.2/32` | 64517 | 4200000000 |
 | 700 | ipv4-simple | gw-m1 | `169.254.40.0/24` | — | `169.111.40.0/24` | — | `40.0.0.1/32` | 64518 | 4200000000 |
 | 800 | pod-cache-label | gw-pcl | `169.254.50.0/24` | — | `169.111.50.0/24` | — | `50.0.0.1/32` | 64519 | 4200000000 |
+| 1100 | separate-static-appnetwork | gw-a1 | `169.254.110.0/24` | — | `169.111.110.0/24` | — | `110.0.0.1/32` | — (static+BFD) | — |
+| 1200 | separate-static-appnetwork | gw-a2 | `169.254.111.0/24` | — | `169.111.110.0/24` | — | `110.0.0.2/32` | — (static+BFD) | — |
 
 **Next available:** VLAN 900, ASN 64520, external `169.254.60.0/24`, internal `169.111.60.0/24`, VIP `60.0.0.1/32`
 
@@ -195,3 +197,4 @@ Update this README whenever you add, remove, or modify a test suite. Specificall
 - BFD is enabled on all sessions with 300ms intervals and multiplier 3 (or 5 for SCTP)
 - The `separate-appnetwork` and `dual-stack` suites share VLAN 100 — they cannot run simultaneously
 - Suites sharing the same VLAN are mutually exclusive (deploy only one at a time)
+- The `separate-static-appnetwork` suite uses static routing with BFD. LB pod IPs are limited to `.1`-`.10` per VLAN (max 10 replicas per gateway) to match the gateway's pre-configured static routes.

@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork sctp-multihoming ipv4-simple pod-cache-label
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label
 SUITES_DS ?= dual-stack-simple
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
@@ -223,6 +223,27 @@ test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
 undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
 	@NS=e2e-separate-appnetwork; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+##############################################################################
+##@ Suite: separate-static-appnetwork
+################################################################################
+
+.PHONY: separate-static-appnetwork
+separate-static-appnetwork: deploy-separate-static-appnetwork test-separate-static-appnetwork ## Deploy and test separate-static-appnetwork suite.
+
+.PHONY: deploy-separate-static-appnetwork
+deploy-separate-static-appnetwork: cluster ## Deploy separate-static-appnetwork topology.
+	$(call deploy-suite,e2e-separate-static-appnetwork,$(shell pwd)/suites/separate-static-appnetwork,sep-static-net,sllbr-gw-a1 sllbr-gw-a2)
+
+.PHONY: test-separate-static-appnetwork
+test-separate-static-appnetwork: ## Run e2e tests for separate-static-appnetwork suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate Static App Network" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-separate-static-appnetwork
+undeploy-separate-static-appnetwork: ## Undeploy separate-static-appnetwork topology.
+	@NS=e2e-separate-static-appnetwork; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-sep-static-net --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ##############################################################################

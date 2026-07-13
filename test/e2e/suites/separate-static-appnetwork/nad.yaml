@@ -1,0 +1,120 @@
+---
+# Sysctl tuning NAD
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: sysctl-tuning
+spec:
+  config: '{
+      "cniVersion": "0.4.0",
+      "name": "sysctl-tuning",
+      "plugins": [
+        {
+          "type": "tuning",
+          "prevResult": {},
+          "sysctl": {
+            "net.ipv4.conf.all.forwarding": "1",
+            "net.ipv6.conf.all.forwarding": "1",
+            "net.ipv4.fib_multipath_hash_policy": "1",
+            "net.ipv6.fib_multipath_hash_policy": "1",
+            "net.ipv4.conf.all.rp_filter": "2",
+            "net.ipv4.conf.default.rp_filter": "2",
+            "net.ipv4.fwmark_reflect": "1",
+            "net.ipv6.fwmark_reflect": "1",
+            "net.ipv4.ip_local_port_range": "49152 65535"
+          }
+        }
+      ]
+  }'
+---
+# VLAN 1100 NAD for gw-a1 static peering
+# range_start/range_end limits allocation to .1-.10, matching the gateway's
+# static routes. The /24 subnet ensures L2 reachability to the gateway (.150).
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vlan-1100
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "type": "vlan",
+      "master": "eth0",
+      "vlanId": 1100,
+      "ipam": {
+        "type": "whereabouts",
+        "ipRanges": [
+          { "range": "169.254.110.0/24", "range_start": "169.254.110.1", "range_end": "169.254.110.10", "exclude": ["169.254.110.150/32"] }
+        ]
+      }
+    }
+---
+# VLAN 1200 NAD for gw-a2 static peering
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vlan-1200
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "type": "vlan",
+      "master": "eth0",
+      "vlanId": 1200,
+      "ipam": {
+        "type": "whereabouts",
+        "ipRanges": [
+          { "range": "169.254.111.0/24", "range_start": "169.254.111.1", "range_end": "169.254.111.10", "exclude": ["169.254.111.150/32"] }
+        ]
+      }
+    }
+---
+# App network for gw-a1 (SLLBR ↔ app Pods)
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: app-net-a1
+spec:
+  config: |
+    {
+      "cniVersion": "1.0.0",
+      "name": "app-net-a1",
+      "plugins": [
+        {
+          "type": "macvlan",
+          "master": "eth0",
+          "mode": "bridge",
+          "ipam": {
+            "type": "whereabouts",
+            "ipRanges": [
+              { "range": "169.111.110.0/24" }
+            ]
+          }
+        }
+      ]
+    }
+---
+# App network for gw-a2 (separate from gw-a1)
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: app-net-a2
+spec:
+  config: |
+    {
+      "cniVersion": "1.0.0",
+      "name": "app-net-a2",
+      "plugins": [
+        {
+          "type": "macvlan",
+          "master": "eth0",
+          "mode": "bridge",
+          "ipam": {
+            "type": "whereabouts",
+            "ipRanges": [
+              { "range": "169.111.110.0/24" }
+            ]
+          }
+        }
+      ]
+    }

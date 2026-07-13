@@ -89,9 +89,15 @@ spec:
                     - message: Must be at least 3s
                       rule: duration(self) >= duration('3s')
                   localASN:
-                    description: The ASN number of the system where the Attractor
-                      FrontEnds locates
-                    format: int32
+                    description: |-
+                      The ASN number of the system where the Attractor FrontEnds locates
+
+                      Note: Format="" suppresses the default int32 format that kubebuilder generates
+                      for uint32 fields. Without it, 4-byte ASNs (> 2147483647) would be rejected
+                      by the CRD schema validation. The explicit Maximum/Minimum enforce the full
+                      uint32 range at the API level.
+                    maximum: 4294967295
+                    minimum: 0
                     type: integer
                   localPort:
                     default: 179
@@ -100,8 +106,15 @@ spec:
                     minimum: 1
                     type: integer
                   remoteASN:
-                    description: The ASN number of the Gateway Router
-                    format: int32
+                    description: |-
+                      The ASN number of the Gateway Router
+
+                      Note: Format="" suppresses the default int32 format that kubebuilder generates
+                      for uint32 fields. Without it, 4-byte ASNs (> 2147483647) would be rejected
+                      by the CRD schema validation. The explicit Maximum/Minimum enforce the full
+                      uint32 range at the API level.
+                    maximum: 4294967295
+                    minimum: 0
                     type: integer
                   remotePort:
                     default: 179
@@ -113,10 +126,6 @@ spec:
                 - localASN
                 - remoteASN
                 type: object
-                x-kubernetes-validations:
-                - message: bgp is immutable once set
-                  optionalOldSelf: true
-                  rule: '!oldSelf.hasValue() || self == oldSelf.value()'
               gatewayRef:
                 description: gatewayRef references the Gateway this router peers with.
                 properties:
@@ -261,9 +270,6 @@ spec:
                 - BGP
                 - Static
                 type: string
-                x-kubernetes-validations:
-                - message: protocol is immutable
-                  rule: self == oldSelf
               static:
                 description: static defines static routing with BFD supervision. Required
                   when protocol is Static.
@@ -294,10 +300,6 @@ spec:
                     - multiplier
                     type: object
                 type: object
-                x-kubernetes-validations:
-                - message: static is immutable once set
-                  optionalOldSelf: true
-                  rule: '!oldSelf.hasValue() || self == oldSelf.value()'
             required:
             - address
             - gatewayRef

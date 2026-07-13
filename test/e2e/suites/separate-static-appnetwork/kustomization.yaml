@@ -1,0 +1,71 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: e2e-separate-static-appnetwork
+
+resources:
+- ../../../../config/default
+
+images:
+- name: controller-manager
+  newName: localhost:5001/controller-manager
+  newTag: latest
+
+nameSuffix: -sep-static-net
+
+labels:
+- pairs:
+    e2e-suite: sep-static-net
+
+patches:
+- patch: |-
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingWebhookConfiguration
+    metadata:
+      name: not-important
+      annotations:
+        cert-manager.io/inject-ca-from: e2e-separate-static-appnetwork/meridio-2-serving-cert-sep-static-net
+    webhooks:
+    - name: vl34route-v1alpha1.kb.io
+      namespaceSelector:
+        matchLabels:
+          e2e-suite: sep-static-net
+      clientConfig:
+        service:
+          name: meridio-2-webhook-service-sep-static-net
+          namespace: e2e-separate-static-appnetwork
+  target:
+    kind: ValidatingWebhookConfiguration
+- patch: |-
+    - op: replace
+      path: /spec/dnsNames
+      value:
+      - meridio-2-webhook-service-sep-static-net.e2e-separate-static-appnetwork.svc
+      - meridio-2-webhook-service-sep-static-net.e2e-separate-static-appnetwork.svc.cluster.local
+    - op: replace
+      path: /spec/secretName
+      value: webhook-server-cert-sep-static-net
+  target:
+    group: cert-manager.io
+    kind: Certificate
+    name: serving-cert
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: not-important
+    spec:
+      template:
+        spec:
+          containers:
+          - name: manager
+            env:
+            - name: MERIDIO_LB_SERVICE_ACCOUNT
+              value: meridio-2-stateless-load-balancer-sep-static-net
+          volumes:
+          - name: webhook-certs
+            secret:
+              secretName: webhook-server-cert-sep-static-net
+  target:
+    kind: Deployment
+    labelSelector: control-plane=controller-manager

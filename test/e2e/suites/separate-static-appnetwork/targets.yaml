@@ -1,0 +1,77 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: target-a
+  labels:
+    app: target-a
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: target-a
+  template:
+    metadata:
+      labels:
+        app: target-a
+      annotations:
+        k8s.v1.cni.cncf.io/networks: app-net-a1, app-net-a2
+    spec:
+      serviceAccountName: meridio-2-network-sidecar
+      volumes:
+      - name: restart-gate
+        emptyDir: {}
+      - name: sidecar-state
+        emptyDir: {}
+      containers:
+      - name: example-target
+        image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          screen -d -m bash -c "./ctraffic -server -address [::]:5000" ;
+          screen -d -m bash -c "./ctraffic -server -udp -address [::]:5001" ;
+          trap 'exit 0' TERM; sleep infinity & wait
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
+      - name: network-sidecar
+        image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          if [ -f /restart-gate/already-started ]; then
+            echo "Restart detected - waiting for release signal"
+            while [ ! -f /restart-gate/release-restart ]; do
+              sleep 1
+            done
+            echo "Release signal received - proceeding with startup"
+          fi
+          touch /restart-gate/already-started
+          exec ./network-sidecar run --pod-name="$POD_NAME" --pod-namespace="$POD_NAMESPACE" --pod-uid="$POD_UID" --log-level=debug
+        volumeMounts:
+        - name: restart-gate
+          mountPath: /restart-gate
+        - name: sidecar-state
+          mountPath: /var/run/meridio
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        securityContext:
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]

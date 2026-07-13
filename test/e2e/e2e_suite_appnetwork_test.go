@@ -45,6 +45,16 @@ var testCases = []suiteTestCase{
 		},
 	},
 	{
+		name:           "Separate Static App Network",
+		namespace:      "e2e-separate-static-appnetwork",
+		targetApp:      "target-a",
+		targetReplicas: 2,
+		gateways: []gwTestCase{
+			{name: "gw-a1", vip: "110.0.0.1", targets: 2, dgName: "dg-a1"},
+			{name: "gw-a2", vip: "110.0.0.2", targets: 2, dgName: "dg-a2"},
+		},
+	},
+	{
 		name:           "Shared App Network",
 		namespace:      "e2e-shared-appnetwork",
 		targetApp:      "target-b",
@@ -348,6 +358,8 @@ var _ = Describe("E2E Test Suites", Label("ipv4"), func() {
 							suiteDir = "shared-appnetwork"
 						case "Separate App Network":
 							suiteDir = "separate-appnetwork"
+						case "Separate Static App Network":
+							suiteDir = "separate-static-appnetwork"
 						default:
 							Skip(fmt.Sprintf("Unknown suite: %s", suite.name))
 						}

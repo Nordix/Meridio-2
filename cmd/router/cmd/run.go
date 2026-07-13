@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -244,33 +245,35 @@ func monitorConnectivity(
 				return fmt.Errorf("monitor channel closed unexpectedly")
 			}
 
+			// Fetch routers from informer cache (local memory read)
+			routers, err := getGatewayRoutersFromCache(ctx, mgr.GetClient(), cfg.GatewayName, cfg.GatewayNamespace)
+			if err != nil {
+				log.Error(err, "failed to get gateway routers from cache")
+				continue
+			}
+
+			// Mutate static protocol states based on BFD session status.
+			// After this, all protocols reflect true connectivity (Info != Established if BFD is down).
+			applyBfdState(status.Protocols, status.BfdSessions, routers, log)
+
 			count := protocolsUp(status.Protocols)
 
 			// Log when protocol up count changes
 			if firstUpdate || count != lastCount {
-				if status.HasConnectivity {
-					log.Info("Gateway connectivity established", "status", status.StatusString())
-				} else {
-					log.Info("Gateway connectivity lost", "status", status.StatusString())
-				}
+				log.Info("Gateway connectivity", "protocols", fmt.Sprintf("%d/%d up", count, len(routers)))
 				lastCount = count
 				firstUpdate = false
 			}
 
 			// Update readiness gates
 			if gateMgr != nil {
-				// Rebuild family map on every tick — reads from informer cache (no API call)
-				// and BuildFamilyMap is a trivial loop. Handles GatewayRouter add/remove/replace.
-				routers, err := getGatewayRoutersFromCache(ctx, mgr.GetClient(), cfg.GatewayName, cfg.GatewayNamespace)
-				if err == nil {
-					var ipv4, ipv6 bool
-					if len(routers) > 0 {
-						ipv4, ipv6 = router.ClassifyConnectivityByFamily(status.Protocols, router.BuildFamilyMap(routers))
-					}
-					// When no routers exist, ipv4/ipv6 stay false — gates set to False
-					if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
-						log.Error(err, "failed to update readiness gates")
-					}
+				var ipv4, ipv6 bool
+				if len(routers) > 0 {
+					ipv4, ipv6 = router.ClassifyConnectivityByFamily(status.Protocols, router.BuildFamilyMap(routers))
+				}
+				// When no routers exist, ipv4/ipv6 stay false — gates set to False
+				if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
+					log.Error(err, "failed to update readiness gates")
 				}
 			}
 		}
@@ -306,4 +309,52 @@ func protocolsUp(protocols []bird.ProtocolStatus) int {
 		}
 	}
 	return count
+}
+
+// applyBfdState mutates static protocol statuses based on BFD session state.
+// Static protocols with state up get Info set to Established if BFD is not
+// configured or BFD session is Up. If BFD is configured and not Up, Info is
+// set to BfdInfoDown.
+func applyBfdState(
+	protocols []bird.ProtocolStatus,
+	bfdSessions []bird.BfdSession,
+	routers []*meridio2v1alpha1.GatewayRouter,
+	log logr.Logger,
+) {
+	routerByName := make(map[string]*meridio2v1alpha1.GatewayRouter, len(routers))
+	for _, gr := range routers {
+		routerByName["NBR-"+gr.Name] = gr
+	}
+
+	type bfdKey struct {
+		ip    string
+		iface string
+	}
+	bfdByKey := make(map[bfdKey]bool, len(bfdSessions))
+	for _, s := range bfdSessions {
+		bfdByKey[bfdKey{s.IP, s.Interface}] = s.IsUp()
+	}
+
+	for i := range protocols {
+		p := &protocols[i]
+		if p.Proto != "Static" || !p.State.IsUp() {
+			continue
+		}
+
+		gr := routerByName[p.Name]
+		if gr == nil {
+			continue
+		}
+
+		if gr.Spec.Static != nil && gr.Spec.Static.BFD != nil {
+			if bfdByKey[bfdKey{gr.Spec.Address, gr.Spec.Interface}] {
+				p.Info = bird.BgpInfoEstablished
+			} else {
+				p.Info = bird.BfdInfoDown
+				log.V(1).Info("BFD session down for static protocol", "protocol", p.Name, "address", gr.Spec.Address)
+			}
+		} else {
+			p.Info = bird.BgpInfoEstablished
+		}
+	}
 }
