@@ -105,7 +105,7 @@ func (cgm *ConnectivityGateManager) HasIPv6Gate() bool {
 	return cgm.ipv6Gate != nil
 }
 
-// classifyConnectivityByFamily determines per-IP-family connectivity from protocol statuses.
+// ClassifyConnectivityByFamily determines per-IP-family connectivity from protocol statuses.
 // Returns true for each family if at least one protocol of that family is established.
 // Protocols not in familyMap are ignored.
 func ClassifyConnectivityByFamily(protocols []bird.ProtocolStatus, familyMap map[string]string) (ipv4Connected, ipv6Connected bool) {

@@ -1,0 +1,88 @@
+---
+# Gateway A1 on VLAN 1100 with app-net-a1
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-a1
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-a1
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-a1
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-separate-static-appnetwork
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-1100
+      namespace: e2e-separate-static-appnetwork
+      interface: vlan-1100
+  - type: NAD
+    nad:
+      name: app-net-a1
+      namespace: e2e-separate-static-appnetwork
+      interface: net-a1
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.110.0/24"
+  horizontalScaling:
+    replicas: 2
+---
+# Gateway A2 on VLAN 1200 with app-net-a2
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-a2
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-a2
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-a2
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-separate-static-appnetwork
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-1200
+      namespace: e2e-separate-static-appnetwork
+      interface: vlan-1200
+  - type: NAD
+    nad:
+      name: app-net-a2
+      namespace: e2e-separate-static-appnetwork
+      interface: net-a2
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.110.0/24"
+  horizontalScaling:
+    replicas: 2

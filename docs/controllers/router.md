@@ -124,13 +124,14 @@ Blackhole routes (`0.0.0.0/0` and `::/0`) in table 4097 prevent traffic leaking 
 
 Rules are reconciled idempotently: stale rules removed, missing rules added. Errors are accumulated best-effort (partial progress over rollback); the next reconcile retries any failed operations.
 
-### BGP Monitoring
+### BGP and BFD Monitoring
 
-A separate goroutine polls `birdc show protocols all "NBR-*"` at 1-second intervals:
+A separate goroutine polls `birdc show protocols all "NBR-*"` and `birdc show bfd sessions` at 1-second intervals:
 
 - Parses protocol state (up/down/start/idle) and BGP session info (Established)
-- Tracks connectivity: at least one `NBR-*` protocol in state `up` with info `Established`
-- Currently log-only; status changes logged when protocol up-count changes
+- For static protocols with BFD configured, applies BFD session state: if the BFD session is Up, Info is set to `Established`; if BFD is down or not found, Info is set to `BFD Down`
+- Tracks connectivity per IP version: at least one `NBR-*` protocol with Info containing `Established`
+- Status changes logged when protocol up-count changes
 - Failed birdc queries are logged at V(1) level for debugging
 
 ## LB Readiness Gating
@@ -152,6 +153,10 @@ All flags support environment variable overrides following the precedence: flags
 |---|---|---|---|
 | `--gateway-name` | `MERIDIO_GATEWAY_NAME` | _(required)_ | Name of the Gateway resource to watch |
 | `--gateway-namespace` | `MERIDIO_GATEWAY_NAMESPACE` | `default` | Namespace of the Gateway resource |
+| `--pod-name` | `POD_NAME` | _(required for gates)_ | Pod name (Downward API) |
+| `--pod-namespace` | `POD_NAMESPACE` | _(required for gates)_ | Pod namespace (Downward API) |
+| `--pod-uid` | `POD_UID` | _(required for gates)_ | Pod UID (Downward API) |
+| `--connectivity-hold-time` | `MERIDIO_CONNECTIVITY_HOLD_TIME` | `3s` | Hold time before setting connectivity gate to True after BGP session establishes |
 | `--table-id` | `MERIDIO_TABLE_ID` | `4096` | Kernel routing table ID for BIRD-managed routes. Blackhole table is `table-id + 1`. |
 | `--rule-priority` | `MERIDIO_RULE_PRIORITY` | `100` | Policy routing rule priority. Blackhole priority is `rule-priority + 1`. |
 | `--bird-socket` | `MERIDIO_BIRD_SOCKET` | `/var/run/bird/bird.ctl` | Path to the BIRD control socket |
@@ -170,7 +175,7 @@ All flags support environment variable overrides following the precedence: flags
 
 ### BIRD Process Lifecycle (MVP gaps)
 
-- **No error propagation**: `Bird.Run()` goroutine logs errors but doesn't signal the main process. If BIRD crashes, the controller keeps running with green health probes while doing nothing useful. Fix: use `errCh` pattern to trigger context cancellation on BIRD failure.
+- **No error propagation**: ~~`Bird.Run()` goroutine logs errors but doesn't signal the main process.~~ Resolved: the router controller uses an errgroup to run BIRD and the monitor goroutine. If either fails, the errgroup cancels the context and the router process exits.
 
 - **Startup readiness window**: `running` is set to `true` after `cmd.Start()` (fork), not after BIRD's control socket is ready. A reconcile during this window will attempt `birdc configure` and fail. Self-heals via controller-runtime requeue, but produces noisy error logs at startup.
 
@@ -209,7 +214,7 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 | Feature | Meridio-1 | This Controller | Notes |
 |---|---|---|---|
 | BGP config generation | ✅ | ✅ | Dual-stack, BFD, custom ports |
-| Static routing protocol | ✅ | ❌ | CRD only has BGP (by design) |
+| Static routing protocol | ✅ | ✅ | Default route with optional BFD supervision |
 | BGP authentication | ✅ | ❌ | Out of MVP scope |
 | BIRD process lifecycle | ✅ | ✅ | Graceful shutdown via SIGTERM, file-based logging |
 | BIRD startup readiness | ✅ | ❌ | Meridio-1 polls `birdc show status`; this controller relies on retry |
@@ -217,7 +222,7 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 | Policy routing (VIP→table) | ✅ | ✅ | With blackhole fallback |
 | BIRD log monitoring | ✅ | ⚠️ | File-based logging added; no stderr parsing or structured re-emission |
 | Connectivity → health signal | ✅ | ❌ | Meridio-1 signals NSP; this controller only logs |
-| Error propagation | ✅ | ❌ | Meridio-1 uses `errCh` pattern |
+| Error propagation | ✅ | ✅ | errgroup cancels context on BIRD/monitor failure |
 | Metrics | ✅ | ❌ | Meridio-1 has gateway metrics |
 | Config generation method | `fmt.Sprintf` | `text/template` | Migrated for maintainability and future auth support |
 
@@ -226,5 +231,5 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 ### Unit Tests
 
 - `internal/controller/router/controller_test.go`: Reconciler logic (gateway filtering, GatewayRouter matching, VIP extraction, address type filtering, enqueue mapper, configure error propagation)
-- `internal/bird/bird_test.go`: Config generation (base, VIPs, routers, full reference config comparison)
-- `internal/bird/monitor_test.go`: Protocol output parsing, connectivity detection, status formatting, monitor channel lifecycle
+- `internal/bird/bird_test.go`: Config generation (base, VIPs, routers, full reference config comparison, static routing with/without BFD, BFD interface params first-alphabetically-wins)
+- `internal/bird/monitor_test.go`: Protocol output parsing, BFD session output parsing, connectivity detection, status formatting, monitor channel lifecycle

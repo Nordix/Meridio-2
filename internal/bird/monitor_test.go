@@ -187,57 +187,12 @@ NBR-gw-ipv6 BGP       ---        up     2026-03-02    Established`,
 	}
 }
 
-func TestHasConnectivity(t *testing.T) {
-	tests := []struct {
-		name      string
-		protocols []ProtocolStatus
-		expected  bool
-	}{
-		{
-			name: "at least one established",
-			protocols: []ProtocolStatus{
-				{Name: "NBR-1", State: ProtocolStateUp, Info: "Established"},
-				{Name: "NBR-2", State: ProtocolStateStart, Info: "Connect"},
-			},
-			expected: true,
-		},
-		{
-			name: "all down",
-			protocols: []ProtocolStatus{
-				{Name: "NBR-1", State: ProtocolStateDown, Info: "Connection closed"},
-				{Name: "NBR-2", State: ProtocolStateStart, Info: "Connect"},
-			},
-			expected: false,
-		},
-		{
-			name:      "no protocols",
-			protocols: []ProtocolStatus{},
-			expected:  false,
-		},
-		{
-			name: "all established",
-			protocols: []ProtocolStatus{
-				{Name: "NBR-1", State: ProtocolStateUp, Info: "Established"},
-				{Name: "NBR-2", State: ProtocolStateUp, Info: "Established"},
-			},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := hasConnectivity(tt.protocols)
-			if result != tt.expected {
-				t.Errorf("hasConnectivity() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
 func TestParseAndFormatStatus(t *testing.T) {
 	tests := []struct {
-		name           string
-		birdcOutput    string
-		expectedStatus string
+		name          string
+		birdcOutput   string
+		expectedUp    int
+		expectedTotal int
 	}{
 		{
 			name: "dual-stack both up",
@@ -245,7 +200,7 @@ func TestParseAndFormatStatus(t *testing.T) {
 Name       Proto      Table      State  Since         Info
 NBR-gatewayrouter-sample BGP        ---        up     10:04:13.527  Established
 NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Established`,
-			expectedStatus: "2/2 protocols up",
+			expectedUp: 2, expectedTotal: 2,
 		},
 		{
 			name: "dual-stack one up",
@@ -253,25 +208,30 @@ NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Establish
 Name       Proto      Table      State  Since         Info
 NBR-gatewayrouter-sample BGP        ---        start  10:04:13.527  Connect
 NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Established`,
-			expectedStatus: "1/2 protocols up",
+			expectedUp: 1, expectedTotal: 2,
 		},
 		{
 			name: "no protocols",
 			birdcOutput: `BIRD 3.1.5 ready.
 Name       Proto      Table      State  Since         Info`,
-			expectedStatus: "No protocols configured",
+			expectedUp: 0, expectedTotal: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			protocols := parseProtocolOutput(tt.birdcOutput)
-			status := MonitorStatus{
-				Protocols: protocols,
+			if len(protocols) != tt.expectedTotal {
+				t.Errorf("protocol count = %d, want %d", len(protocols), tt.expectedTotal)
 			}
-			result := status.StatusString()
-			if result != tt.expectedStatus {
-				t.Errorf("StatusString() = %q, want %q", result, tt.expectedStatus)
+			upCount := 0
+			for _, p := range protocols {
+				if p.IsEstablished() {
+					upCount++
+				}
+			}
+			if upCount != tt.expectedUp {
+				t.Errorf("established count = %d, want %d", upCount, tt.expectedUp)
 			}
 		})
 	}
@@ -279,46 +239,45 @@ Name       Proto      Table      State  Since         Info`,
 
 func TestProtocolUpCountChanges(t *testing.T) {
 	// Simulate the sequence: 0 protocols → 1/1 up → 1/2 up → 2/2 up
-	// This verifies that status string changes at each step
+	// This verifies that up-count changes at each step
 	outputs := []struct {
-		birdcOutput    string
-		expectedStatus string
-		expectedCount  int
+		birdcOutput   string
+		expectedCount int
+		expectedTotal int
 	}{
 		{
 			birdcOutput: `BIRD 3.1.5 ready.
 Name       Proto      Table      State  Since         Info`,
-			expectedStatus: "No protocols configured",
-			expectedCount:  0,
+			expectedCount: 0, expectedTotal: 0,
 		},
 		{
 			birdcOutput: `BIRD 3.1.5 ready.
 Name       Proto      Table      State  Since         Info
 NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Established`,
-			expectedStatus: "1/1 protocols up",
-			expectedCount:  1,
+			expectedCount: 1, expectedTotal: 1,
 		},
 		{
 			birdcOutput: `BIRD 3.1.5 ready.
 Name       Proto      Table      State  Since         Info
 NBR-gatewayrouter-sample BGP        ---        start  10:04:13.527  Connect
 NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Established`,
-			expectedStatus: "1/2 protocols up",
-			expectedCount:  1,
+			expectedCount: 1, expectedTotal: 2,
 		},
 		{
 			birdcOutput: `BIRD 3.1.5 ready.
 Name       Proto      Table      State  Since         Info
 NBR-gatewayrouter-sample BGP        ---        up     10:04:13.527  Established
 NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Established`,
-			expectedStatus: "2/2 protocols up",
-			expectedCount:  2,
+			expectedCount: 2, expectedTotal: 2,
 		},
 	}
 
 	for i, step := range outputs {
 		protocols := parseProtocolOutput(step.birdcOutput)
-		status := MonitorStatus{Protocols: protocols}
+
+		if len(protocols) != step.expectedTotal {
+			t.Errorf("Step %d: protocol count = %d, want %d", i, len(protocols), step.expectedTotal)
+		}
 
 		upCount := 0
 		for _, p := range protocols {
@@ -329,11 +288,6 @@ NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Establish
 
 		if upCount != step.expectedCount {
 			t.Errorf("Step %d: upCount = %d, want %d", i, upCount, step.expectedCount)
-		}
-
-		statusStr := status.StatusString()
-		if statusStr != step.expectedStatus {
-			t.Errorf("Step %d: StatusString() = %q, want %q", i, statusStr, step.expectedStatus)
 		}
 	}
 }
@@ -382,4 +336,72 @@ func TestMonitorEmitsStatus(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 		t.Error("did not receive status in time")
 	}
+}
+
+func TestParseBfdOutput(t *testing.T) {
+	t.Run("standard output with multiple sessions", func(t *testing.T) {
+		output := `BIRD 3.2.0 ready.
+IP address                Interface  State      Since         Interval  Timeout
+169.254.110.1             vlan11     Up         14:23:45.100    0.300    0.900
+169.254.111.2             vlan12     Down       14:24:01.200    1.000    0.000`
+
+		sessions := parseBfdOutput(output)
+		if len(sessions) != 2 {
+			t.Fatalf("expected 2 sessions, got %d", len(sessions))
+		}
+		if sessions[0].IP != "169.254.110.1" || sessions[0].Interface != "vlan11" || sessions[0].State != "Up" {
+			t.Errorf("session[0] = %+v", sessions[0])
+		}
+		if sessions[1].IP != "169.254.111.2" || sessions[1].Interface != "vlan12" || sessions[1].State != "Down" {
+			t.Errorf("session[1] = %+v", sessions[1])
+		}
+	})
+
+	t.Run("empty output", func(t *testing.T) {
+		sessions := parseBfdOutput("")
+		if len(sessions) != 0 {
+			t.Errorf("expected 0 sessions, got %d", len(sessions))
+		}
+	})
+
+	t.Run("headers only no sessions", func(t *testing.T) {
+		output := `BIRD 3.2.0 ready.
+IP address                Interface  State      Since         Interval  Timeout`
+
+		sessions := parseBfdOutput(output)
+		if len(sessions) != 0 {
+			t.Errorf("expected 0 sessions, got %d", len(sessions))
+		}
+	})
+
+	t.Run("IPv6 sessions", func(t *testing.T) {
+		output := `BIRD 3.2.0 ready.
+IP address                Interface  State      Since         Interval  Timeout
+fd00:cafe:10::1           vlan11     Up         14:23:45.100    0.300    0.900
+fd00:cafe:10::2           vlan11     Down       14:24:01.200    1.000    0.000`
+
+		sessions := parseBfdOutput(output)
+		if len(sessions) != 2 {
+			t.Fatalf("expected 2 sessions, got %d", len(sessions))
+		}
+		if sessions[0].IP != "fd00:cafe:10::1" || sessions[0].State != "Up" {
+			t.Errorf("session[0] = %+v", sessions[0])
+		}
+		if sessions[1].IP != "fd00:cafe:10::2" || sessions[1].State != "Down" {
+			t.Errorf("session[1] = %+v", sessions[1])
+		}
+	})
+
+	t.Run("malformed lines skipped", func(t *testing.T) {
+		output := `BIRD 3.2.0 ready.
+IP address                Interface  State      Since         Interval  Timeout
+169.254.110.1             vlan11     Up         14:23:45.100    0.300    0.900
+short
+169.254.111.2             vlan12     Down       14:24:01.200    1.000    0.000`
+
+		sessions := parseBfdOutput(output)
+		if len(sessions) != 2 {
+			t.Fatalf("expected 2 sessions (malformed skipped), got %d", len(sessions))
+		}
+	})
 }

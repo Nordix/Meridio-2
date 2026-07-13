@@ -1,0 +1,74 @@
+---
+# gw-a1 router (VLAN 1100, static+BFD)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-a1-router-v4-static
+spec:
+  gatewayRef:
+    name: gw-a1
+  interface: "vlan-1100"
+  address: "169.254.110.150"
+  protocol: "Static"
+  static:
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-a1
+spec:
+  parentRefs:
+  - name: gw-a1
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-a1
+  destinationCIDRs:
+  - "110.0.0.1/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100
+---
+# gw-a2 router (VLAN 1200, static+BFD)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-a2-router-v4-static
+spec:
+  gatewayRef:
+    name: gw-a2
+  interface: "vlan-1200"
+  address: "169.254.111.150"
+  protocol: "Static"
+  static:
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-a2
+spec:
+  parentRefs:
+  - name: gw-a2
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-a2
+  destinationCIDRs:
+  - "110.0.0.2/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100

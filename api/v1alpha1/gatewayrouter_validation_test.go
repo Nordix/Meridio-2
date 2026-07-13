@@ -123,6 +123,14 @@ func TestGatewayRouterCRDValidation(t *testing.T) {
 		assert.NoError(t, k8sClient.Create(ctx, r))
 	})
 
+	t.Run("Static router with empty static field accepted", func(t *testing.T) {
+		r := baseRouter("static-empty")
+		r.Spec.Protocol = meridio2v1alpha1.RoutingProtocolStatic
+		r.Spec.Static = &meridio2v1alpha1.StaticSpec{}
+
+		assert.NoError(t, k8sClient.Create(ctx, r))
+	})
+
 	t.Run("BGP router without bgp field rejected", func(t *testing.T) {
 		r := baseRouter("bgp-no-spec")
 		r.Spec.Protocol = meridio2v1alpha1.RoutingProtocolBGP
@@ -192,40 +200,6 @@ func TestGatewayRouterCRDValidation(t *testing.T) {
 		assert.Contains(t, err.Error(), "Must be an ip address")
 	})
 
-	t.Run("BGP immutable once set", func(t *testing.T) {
-		r := baseRouter("immutable-bgp")
-		r.Spec.Protocol = meridio2v1alpha1.RoutingProtocolBGP
-		r.Spec.BGP = &meridio2v1alpha1.BgpSpec{RemoteASN: 65000, LocalASN: 65001}
-		require.NoError(t, k8sClient.Create(ctx, r))
-
-		fetched := &meridio2v1alpha1.GatewayRouter{}
-		require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(r), fetched))
-
-		fetched.Spec.BGP.RemoteASN = 99999
-		err := k8sClient.Update(ctx, fetched)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "bgp is immutable once set")
-	})
-
-	t.Run("Static immutable once set", func(t *testing.T) {
-		r := baseRouter("immutable-static")
-		r.Spec.Protocol = meridio2v1alpha1.RoutingProtocolStatic
-		r.Spec.Static = &meridio2v1alpha1.StaticSpec{
-			BFD: &meridio2v1alpha1.BfdSpec{
-				MinTx: "300ms", MinRx: "300ms", Multiplier: 3,
-			},
-		}
-		require.NoError(t, k8sClient.Create(ctx, r))
-
-		fetched := &meridio2v1alpha1.GatewayRouter{}
-		require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(r), fetched))
-
-		fetched.Spec.Static.BFD.MinTx = "500ms"
-		err := k8sClient.Update(ctx, fetched)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "static is immutable once set")
-	})
-
 	t.Run("missing bfd multiplier rejected", func(t *testing.T) {
 		obj := fromYAML(t, `
 apiVersion: meridio-2.nordix.org/v1alpha1
@@ -270,5 +244,27 @@ spec:
 		err := k8sClient.Create(ctx, obj)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "minTx")
+	})
+
+	t.Run("remoteASN exceeding uint32 max rejected", func(t *testing.T) {
+		obj := fromYAML(t, `
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: asn-too-large
+  namespace: default
+spec:
+  gatewayRef:
+    name: test-gateway
+  interface: ext-vlan
+  address: "169.254.100.1"
+  protocol: BGP
+  bgp:
+    remoteASN: 5000000000
+    localASN: 65001
+`)
+		err := k8sClient.Create(ctx, obj)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "remoteASN")
 	})
 }

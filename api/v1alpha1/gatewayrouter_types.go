@@ -39,7 +39,6 @@ type GatewayRouterSpec struct {
 
 	// protocol selects the routing protocol for this peering.
 	// +kubebuilder:validation:Enum=BGP;Static
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="protocol is immutable"
 	Protocol RoutingProtocol `json:"protocol"`
 
 	// bgp defines BGP session parameters. Required when protocol is BGP.
@@ -47,21 +46,35 @@ type GatewayRouterSpec struct {
 	// If the Protocol is bgp, the minimal parameters to be defined in bgp properties
 	// are RemoteASN and LocalASN
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="!oldSelf.hasValue() || self == oldSelf.value()",message="bgp is immutable once set",optionalOldSelf=true
 	BGP *BgpSpec `json:"bgp,omitempty"`
 
 	// static defines static routing with BFD supervision. Required when protocol is Static.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="!oldSelf.hasValue() || self == oldSelf.value()",message="static is immutable once set",optionalOldSelf=true
 	Static *StaticSpec `json:"static,omitempty"`
 }
 
 type BgpSpec struct {
 	// The ASN number of the Gateway Router
+	//
+	// Note: Format="" suppresses the default int32 format that kubebuilder generates
+	// for uint32 fields. Without it, 4-byte ASNs (> 2147483647) would be rejected
+	// by the CRD schema validation. The explicit Maximum/Minimum enforce the full
+	// uint32 range at the API level.
+	// +kubebuilder:validation:Format=""
+	// +kubebuilder:validation:Maximum=4294967295
+	// +kubebuilder:validation:Minimum=0
 	// +required
 	RemoteASN uint32 `json:"remoteASN"`
 
 	// The ASN number of the system where the Attractor FrontEnds locates
+	//
+	// Note: Format="" suppresses the default int32 format that kubebuilder generates
+	// for uint32 fields. Without it, 4-byte ASNs (> 2147483647) would be rejected
+	// by the CRD schema validation. The explicit Maximum/Minimum enforce the full
+	// uint32 range at the API level.
+	// +kubebuilder:validation:Format=""
+	// +kubebuilder:validation:Maximum=4294967295
+	// +kubebuilder:validation:Minimum=0
 	// +required
 	LocalASN uint32 `json:"localASN"`
 

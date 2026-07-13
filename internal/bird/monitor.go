@@ -18,7 +18,6 @@ package bird
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -34,6 +33,12 @@ const (
 	ProtocolStateIdle  ProtocolState = "idle"
 )
 
+// BgpInfoEstablished is the Info value BIRD reports for an established BGP session.
+const BgpInfoEstablished = "Established"
+
+// BfdInfoDown is the Info value set on static protocols when BFD session is down or missing.
+const BfdInfoDown = "BFD Down"
+
 // IsUp returns true if the protocol is in an operational state
 func (s ProtocolState) IsUp() bool {
 	return s == ProtocolStateUp
@@ -42,21 +47,21 @@ func (s ProtocolState) IsUp() bool {
 // IsEstablished checks if the protocol has an established BGP session
 // For BGP protocols, both State must be "up" AND Info must contain "Established"
 func (p ProtocolStatus) IsEstablished() bool {
-	return p.State.IsUp() && strings.Contains(p.Info, "Established")
+	return p.State.IsUp() && strings.Contains(p.Info, BgpInfoEstablished)
 }
 
 // ProtocolStatus represents the status of a BIRD protocol
 type ProtocolStatus struct {
 	Name  string
-	Proto string // Protocol type (BGP, Static) - TODO: handle static protocols for feature parity with Meridio-1
+	Proto string // Protocol type (BGP, Static)
 	State ProtocolState
 	Info  string
 }
 
 // MonitorStatus represents the overall monitoring status
 type MonitorStatus struct {
-	Protocols       []ProtocolStatus
-	HasConnectivity bool
+	Protocols   []ProtocolStatus
+	BfdSessions []BfdSession
 }
 
 // Monitor periodically checks BGP protocol status by querying birdc.
@@ -90,8 +95,8 @@ func (b *Bird) Monitor(ctx context.Context, interval time.Duration) (<-chan Moni
 // checkStatus queries birdc for protocol status
 func (b *Bird) checkStatus(ctx context.Context) MonitorStatus {
 	status := MonitorStatus{
-		Protocols:       []ProtocolStatus{},
-		HasConnectivity: false,
+		Protocols:   []ProtocolStatus{},
+		BfdSessions: []BfdSession{},
 	}
 
 	b.mu.Lock()
@@ -110,7 +115,14 @@ func (b *Bird) checkStatus(ctx context.Context) MonitorStatus {
 	}
 
 	status.Protocols = parseProtocolOutput(string(out))
-	status.HasConnectivity = hasConnectivity(status.Protocols)
+
+	bfdCmd := exec.CommandContext(ctx, "birdc", "-s", b.SocketPath, "show", "bfd", "sessions")
+	bfdOut, err := bfdCmd.CombinedOutput()
+	if err != nil {
+		log.V(1).Info("birdc bfd query failed", "error", err)
+	} else {
+		status.BfdSessions = parseBfdOutput(string(bfdOut))
+	}
 
 	return status
 }
@@ -147,28 +159,40 @@ func parseProtocolOutput(output string) []ProtocolStatus {
 	return protocols
 }
 
-// hasConnectivity determines if there's at least one established BGP session
-func hasConnectivity(protocols []ProtocolStatus) bool {
-	for _, p := range protocols {
-		if p.IsEstablished() {
-			return true
-		}
-	}
-	return false
+// BfdSession represents the state of a BIRD BFD session.
+type BfdSession struct {
+	IP        string
+	Interface string
+	State     string // "Up", "Down", "Init", etc.
 }
 
-// StatusString returns a human-readable status summary
-func (ms MonitorStatus) StatusString() string {
-	if len(ms.Protocols) == 0 {
-		return "No protocols configured"
-	}
+// IsUp returns true if the BFD session state is "Up".
+func (b BfdSession) IsUp() bool {
+	return b.State == "Up"
+}
 
-	upCount := 0
-	for _, p := range ms.Protocols {
-		if p.IsEstablished() {
-			upCount++
+// parseBfdOutput parses the output of `birdc show bfd sessions`.
+func parseBfdOutput(output string) []BfdSession {
+	sessions := make([]BfdSession, 0, 8)
+
+	for line := range strings.SplitSeq(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "BIRD") ||
+			strings.HasPrefix(line, "IP address") {
+			continue
 		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+
+		sessions = append(sessions, BfdSession{
+			IP:        fields[0],
+			Interface: fields[1],
+			State:     fields[2],
+		})
 	}
 
-	return fmt.Sprintf("%d/%d protocols up", upCount, len(ms.Protocols))
+	return sessions
 }
