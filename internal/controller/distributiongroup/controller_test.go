@@ -59,6 +59,13 @@ func tcSetupReconciler(objects ...client.Object) (*DistributionGroupReconciler, 
 		WithScheme(tcScheme()).
 		WithObjects(objects...).
 		WithStatusSubresource(&meridio2v1alpha1.DistributionGroup{}).
+		WithIndex(&meridio2v1alpha1.LoadBalancerEndpointSlice{},
+			"spec.distributionGroupName",
+			func(obj client.Object) []string {
+				slice := obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice)
+				return []string{slice.Spec.DistributionGroupName}
+			},
+		).
 		Build()
 
 	return &DistributionGroupReconciler{
