@@ -22,7 +22,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -36,15 +35,21 @@ import (
 	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
-const (
-	testZoneMaglev0 = "maglev:0"
-	testZoneMaglev1 = "maglev:1"
-	testZoneMaglev2 = "maglev:2"
-)
-
 func TestLoadBalancerController(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "LoadBalancer Controller Suite")
+}
+
+// newFakeClient creates a fake client with the field indexer for LoadBalancerEndpointSlice
+// registered. All tests that call reconcileTargets or hasReadyEndpoints need this.
+func newFakeClient(scheme *runtime.Scheme, objects ...client.Object) client.Client {
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithIndex(&meridio2v1alpha1.LoadBalancerEndpointSlice{}, "spec.distributionGroupName", func(obj client.Object) []string {
+			return []string{obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice).Spec.DistributionGroupName}
+		}).
+		Build()
 }
 
 // mockNFQLB mocks the NFQueueLoadBalancer for testing.
@@ -120,7 +125,6 @@ var _ = Describe("LoadBalancer Controller", func() {
 		scheme = runtime.NewScheme()
 		Expect(meridio2v1alpha1.AddToScheme(scheme)).To(Succeed())
 		Expect(gatewayv1.Install(scheme)).To(Succeed())
-		Expect(discoveryv1.AddToScheme(scheme)).To(Succeed())
 
 		mockNfqlb = newMockNFQLB()
 
@@ -175,10 +179,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(l34route).
-				Build()
+			fakeClient = newFakeClient(scheme, l34route)
 			controller.Client = fakeClient
 
 			result, err := controller.belongsToGateway(ctx, distGroup)
@@ -194,9 +195,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
 			result, err := controller.belongsToGateway(ctx, distGroup)
@@ -237,10 +236,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(l34route).
-				Build()
+			fakeClient = newFakeClient(scheme, l34route)
 			controller.Client = fakeClient
 
 			result, err := controller.belongsToGateway(ctx, distGroup)
@@ -261,9 +257,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
 			result, err := controller.belongsToGateway(ctx, distGroup)
@@ -284,9 +278,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
 			result, err := controller.belongsToGateway(ctx, distGroup)
@@ -308,9 +300,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}
 
 			// No L34Routes exist — direct parentRef should still match
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
 			result, err := controller.belongsToGateway(ctx, distGroup)
@@ -321,9 +311,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 	Describe("reconcileNFQLBInstance", func() {
 		BeforeEach(func() {
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 		})
 
@@ -457,47 +445,38 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should activate new targets with correct index and fwmark", func() {
-			ready := true
-			zone0 := testZoneMaglev0
-			zone1 := testZoneMaglev1
-			endpointSlice := &discoveryv1.EndpointSlice{
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       distGroup.Name,
-							Controller: ptr.To(true),
-						},
-					},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "meridio-2.nordix.org/v1alpha1",
+						Kind:       "DistributionGroup",
+						Name:       distGroup.Name,
+						UID:        distGroup.UID,
+						Controller: ptr.To(true),
+					}},
 				},
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses: []string{"10.0.0.1"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
+				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+					DistributionGroupName: distGroup.Name,
+					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
+						{
+							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+							Identifier: ptr.To(int32(0)),
+							Ready:      true,
 						},
-						Zone: &zone0,
-					},
-					{
-						Addresses: []string{"10.0.0.2"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
+						{
+							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
+							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
+							Identifier: ptr.To(int32(1)),
+							Ready:      true,
 						},
-						Zone: &zone1,
 					},
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(endpointSlice).
-				Build()
+			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
 
 			err := controller.reconcileTargets(ctx, distGroup)
@@ -507,48 +486,42 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// Targets are now tracked by identifier (offset is internal to nfqlb)
 
 			// Verify targets were activated with correct fwmark
-			// identifier=0 -> index=1, fwmark=offset+0
-			// identifier=1 -> index=2, fwmark=offset+1
+			// identifier=0 -> fwmark=offset+0
+			// identifier=1 -> fwmark=offset+1
 			mockInstance := mockNfqlb.instances[distGroup.Name]
-			Expect(mockInstance.targets).To(HaveKey(0))    // fwmark = 0 + offset
-			Expect(mockInstance.targets[0]).To(HaveLen(1)) // index = 0 + 1
-			Expect(mockInstance.targets).To(HaveKey(1))    // fwmark = 1 + offset
-			Expect(mockInstance.targets[1]).To(HaveLen(1)) // index = 1 + 1
+			Expect(mockInstance.targets).To(HaveKey(0)) // fwmark = 0 + offset (internal to nfqlb)
+			Expect(mockInstance.targets[0]).To(Equal([]string{"10.0.0.1"}))
+			Expect(mockInstance.targets).To(HaveKey(1)) // fwmark = 1 + offset (internal to nfqlb)
+			Expect(mockInstance.targets[1]).To(Equal([]string{"10.0.0.2"}))
 		})
 
-		It("should skip endpoints without Zone field", func() {
-			ready := true
-			endpointSlice := &discoveryv1.EndpointSlice{
+		It("should skip endpoints without Identifier field", func() {
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       distGroup.Name,
-							Controller: ptr.To(true),
-						},
-					},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "meridio-2.nordix.org/v1alpha1",
+						Kind:       "DistributionGroup",
+						Name:       distGroup.Name,
+						UID:        distGroup.UID,
+						Controller: ptr.To(true),
+					}},
 				},
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses: []string{"10.0.0.1"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
+				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+					DistributionGroupName: distGroup.Name,
+					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
+						{
+							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+							Identifier: nil, // no identifier
+							Ready:      true,
 						},
-						Zone: nil,
 					},
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(endpointSlice).
-				Build()
+			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
 
 			err := controller.reconcileTargets(ctx, distGroup)
@@ -560,39 +533,32 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should skip non-ready endpoints", func() {
-			ready := false
-			zone := "0"
-			endpointSlice := &discoveryv1.EndpointSlice{
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       distGroup.Name,
-							Controller: ptr.To(true),
-						},
-					},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "meridio-2.nordix.org/v1alpha1",
+						Kind:       "DistributionGroup",
+						Name:       distGroup.Name,
+						UID:        distGroup.UID,
+						Controller: ptr.To(true),
+					}},
 				},
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses: []string{"10.0.0.1"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
+				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+					DistributionGroupName: distGroup.Name,
+					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
+						{
+							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+							Identifier: ptr.To(int32(0)),
+							Ready:      false, // not ready
 						},
-						Zone: &zone,
 					},
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(endpointSlice).
-				Build()
+			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
 
 			err := controller.reconcileTargets(ctx, distGroup)
@@ -611,10 +577,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			// No EndpointSlices (target removed)
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			// No LoadBalancerEndpointSlices (target removed)
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
 			err := controller.reconcileTargets(ctx, distGroup)
@@ -625,172 +589,45 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(mockInstance.targets).ToNot(HaveKey(0))
 		})
 
-		It("should parse Zone field in maglev:N format", func() {
-			ready := true
-			zone0 := testZoneMaglev0
-			zone1 := testZoneMaglev1
-			endpointSlice := &discoveryv1.EndpointSlice{
+		It("should activate dual-stack endpoint with both IPs", func() {
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-					OwnerReferences: []metav1.OwnerReference{
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "meridio-2.nordix.org/v1alpha1",
+						Kind:       "DistributionGroup",
+						Name:       distGroup.Name,
+						UID:        distGroup.UID,
+						Controller: ptr.To(true),
+					}},
+				},
+				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+					DistributionGroupName: distGroup.Name,
+					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
 						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       distGroup.Name,
-							Controller: ptr.To(true),
+							Target: meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+							Addresses: []meridio2v1alpha1.EndpointAddress{
+								{IP: "192.168.100.10", Family: meridio2v1alpha1.IPv4},
+								{IP: "2001:db8:100::10", Family: meridio2v1alpha1.IPv6},
+							},
+							Identifier: ptr.To(int32(0)),
+							Ready:      true,
 						},
-					},
-				},
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses: []string{"10.0.0.1"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
-						},
-						Zone: &zone0,
-					},
-					{
-						Addresses: []string{"10.0.0.2"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
-						},
-						Zone: &zone1,
 					},
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(endpointSlice).
-				Build()
+			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
 
 			err := controller.reconcileTargets(ctx, distGroup)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Calculate expected fwmark offset for this DistributionGroup
-			// Targets are now tracked by identifier (offset is internal to nfqlb)
-
-			// Verify targets were activated with correct identifiers
-			mockInstance := mockNfqlb.instances[distGroup.Name]
-			Expect(mockInstance.targets).To(HaveKey(0))    // fwmark = 0 + offset
-			Expect(mockInstance.targets[0]).To(HaveLen(1)) // index = 0 + 1
-			Expect(mockInstance.targets).To(HaveKey(1))    // fwmark = 1 + offset
-			Expect(mockInstance.targets[1]).To(HaveLen(1)) // index = 1 + 1
-		})
-
-		It("should skip endpoints with invalid Zone format", func() {
-			ready := true
-			invalidZone := "0" // Plain integer, not maglev:N format
-			validZone := testZoneMaglev0
-			endpointSlice := &discoveryv1.EndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       distGroup.Name,
-							Controller: ptr.To(true),
-						},
-					},
-				},
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses: []string{"10.0.0.1"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
-						},
-						Zone: &invalidZone, // Should be skipped
-					},
-					{
-						Addresses: []string{"10.0.0.2"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
-						},
-						Zone: &validZone, // Should be activated
-					},
-				},
-			}
-
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(endpointSlice).
-				Build()
-			controller.Client = fakeClient
-
-			err := controller.reconcileTargets(ctx, distGroup)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Calculate expected fwmark offset for this DistributionGroup
-			// Targets are now tracked by identifier (offset is internal to nfqlb)
-
-			// Only valid endpoint should be activated
-			mockInstance := mockNfqlb.instances[distGroup.Name]
-			Expect(mockInstance.targets).To(HaveLen(1))
-			Expect(mockInstance.targets).To(HaveKey(0)) // Only maglev:0
-		})
-
-		It("should accumulate IPs from IPv4 and IPv6 EndpointSlices for the same identifier", func() {
-			ready := true
-			zone0 := testZoneMaglev0
-
-			epsV4 := &discoveryv1.EndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps-v4",
-					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-				},
-				AddressType: discoveryv1.AddressTypeIPv4,
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses:  []string{"192.168.100.10"},
-						Conditions: discoveryv1.EndpointConditions{Ready: &ready},
-						Zone:       &zone0,
-					},
-				},
-			}
-
-			epsV6 := &discoveryv1.EndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps-v6",
-					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-				},
-				AddressType: discoveryv1.AddressTypeIPv6,
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses:  []string{"2001:db8:100::10"},
-						Conditions: discoveryv1.EndpointConditions{Ready: &ready},
-						Zone:       &zone0,
-					},
-				},
-			}
-
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(epsV4, epsV6).
-				Build()
-			controller.Client = fakeClient
-
-			err := controller.reconcileTargets(ctx, distGroup)
-			Expect(err).ToNot(HaveOccurred())
-
+			// Both IPv4 and IPv6 addresses activated under the same identifier
 			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.targets).To(HaveKey(0))
-			Expect(mockInstance.targets[0]).To(Equal([]string{"192.168.100.10", "2001:db8:100::10"}))
+			Expect(mockInstance.targets[0]).To(ConsistOf("192.168.100.10", "2001:db8:100::10"))
 		})
 	})
 
@@ -814,33 +651,27 @@ var _ = Describe("LoadBalancer Controller", func() {
 			group := meridio2v1alpha1.GroupVersion.Group
 			kind := kindDistributionGroup
 
-			// Create EndpointSlice with ready endpoints
-			ready := true
-			zone := "maglev:0"
-			endpointSlice := &discoveryv1.EndpointSlice{
+			// Create LoadBalancerEndpointSlice with ready endpoints
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       distGroup.Name,
-							Controller: ptr.To(true),
-						},
-					},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "meridio-2.nordix.org/v1alpha1",
+						Kind:       "DistributionGroup",
+						Name:       distGroup.Name,
+						UID:        distGroup.UID,
+						Controller: ptr.To(true),
+					}},
 				},
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses: []string{"10.0.0.1"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
-						},
-						Zone: &zone,
-					},
+				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+					DistributionGroupName: distGroup.Name,
+					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{{
+						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+						Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+						Identifier: ptr.To(int32(0)),
+						Ready:      true,
+					}},
 				},
 			}
 
@@ -885,10 +716,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(distGroup, endpointSlice, l34route, gateway).
-				Build()
+			fakeClient = newFakeClient(scheme, distGroup, lbeps, l34route, gateway)
 			controller.Client = fakeClient
 
 			err := controller.reconcileFlows(ctx, distGroup)
@@ -916,33 +744,27 @@ var _ = Describe("LoadBalancer Controller", func() {
 			group := meridio2v1alpha1.GroupVersion.Group
 			kind := kindDistributionGroup
 
-			// Create EndpointSlice with ready endpoints
-			ready := true
-			zone := "maglev:0"
-			endpointSlice := &discoveryv1.EndpointSlice{
+			// Create LoadBalancerEndpointSlice with ready endpoints
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       distGroup.Name,
-							Controller: ptr.To(true),
-						},
-					},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "meridio-2.nordix.org/v1alpha1",
+						Kind:       "DistributionGroup",
+						Name:       distGroup.Name,
+						UID:        distGroup.UID,
+						Controller: ptr.To(true),
+					}},
 				},
-				Endpoints: []discoveryv1.Endpoint{
-					{
-						Addresses: []string{"10.0.0.1"},
-						Conditions: discoveryv1.EndpointConditions{
-							Ready: &ready,
-						},
-						Zone: &zone,
-					},
+				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+					DistributionGroupName: distGroup.Name,
+					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{{
+						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+						Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+						Identifier: ptr.To(int32(0)),
+						Ready:      true,
+					}},
 				},
 			}
 
@@ -1011,10 +833,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(distGroup, endpointSlice, l34route1, l34route2, gateway).
-				Build()
+			fakeClient = newFakeClient(scheme, distGroup, lbeps, l34route1, l34route2, gateway)
 			controller.Client = fakeClient
 
 			err := controller.reconcileFlows(ctx, distGroup)
@@ -1055,10 +874,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(l34route).
-				Build()
+			fakeClient = newFakeClient(scheme, l34route)
 			controller.Client = fakeClient
 
 			err := controller.reconcileFlows(ctx, distGroup)
@@ -1097,10 +913,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(l34route).
-				Build()
+			fakeClient = newFakeClient(scheme, l34route)
 			controller.Client = fakeClient
 
 			err := controller.reconcileFlows(ctx, distGroup)
@@ -1149,10 +962,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}
 
 			// No EndpointSlice (no endpoints)
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(distGroup, l34route).
-				Build()
+			fakeClient = newFakeClient(scheme, distGroup, l34route)
 			controller.Client = fakeClient
 
 			err := controller.reconcileFlows(ctx, distGroup)
@@ -1175,9 +985,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}
 
 			// No L34Routes in cluster (removed)
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
 			err := controller.reconcileFlows(ctx, distGroup)
@@ -1190,14 +998,11 @@ var _ = Describe("LoadBalancer Controller", func() {
 	})
 
 	Describe("endpointSliceEnqueue", func() {
-		It("should map EndpointSlice to DistributionGroup", func() {
-			endpointSlice := &discoveryv1.EndpointSlice{
+		It("should map LoadBalancerEndpointSlice to DistributionGroup", func() {
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
 					OwnerReferences: []metav1.OwnerReference{
 						{
 							APIVersion: "meridio-2.nordix.org/v1alpha1",
@@ -1209,34 +1014,29 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			requests := controller.endpointSliceEnqueue(ctx, endpointSlice)
+			requests := controller.endpointSliceEnqueue(ctx, lbeps)
 			Expect(requests).To(HaveLen(1))
-			Expect(requests[0].Name).To(Equal("test-distgroup"))
 			Expect(requests[0].Name).To(Equal("test-distgroup"))
 			Expect(requests[0].Namespace).To(Equal(namespace))
 		})
 
-		It("should return nil when label is missing", func() {
-			endpointSlice := &discoveryv1.EndpointSlice{
+		It("should return nil when ownerReference is missing", func() {
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: namespace,
-					Labels:    map[string]string{},
 				},
 			}
 
-			requests := controller.endpointSliceEnqueue(ctx, endpointSlice)
+			requests := controller.endpointSliceEnqueue(ctx, lbeps)
 			Expect(requests).To(BeNil())
 		})
 
 		It("should filter by namespace", func() {
-			endpointSlice := &discoveryv1.EndpointSlice{
+			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-eps",
 					Namespace: "other-namespace",
-					Labels: map[string]string{
-						"meridio-2.nordix.org/distribution-group": "test-distgroup",
-					},
 					OwnerReferences: []metav1.OwnerReference{
 						{
 							APIVersion: "meridio-2.nordix.org/v1alpha1",
@@ -1248,7 +1048,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			requests := controller.endpointSliceEnqueue(ctx, endpointSlice)
+			requests := controller.endpointSliceEnqueue(ctx, lbeps)
 			Expect(requests).To(BeNil())
 		})
 	})
@@ -1421,9 +1221,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.targets[distGroup.Name] = make(map[int]struct{})
 
 			// Simulate DistributionGroup deletion by returning NotFound
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				Build()
+			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
 			// Reconcile with non-existent DistributionGroup

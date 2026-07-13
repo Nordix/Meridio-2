@@ -21,16 +21,15 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strconv"
 
-	discoveryv1 "k8s.io/api/discovery/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 )
 
-// reconcileTargets synchronizes NFQLB targets from EndpointSlices.
+// reconcileTargets synchronizes NFQLB targets from LoadBalancerEndpointSlices.
 func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
 	logr := log.FromContext(ctx)
 
@@ -42,21 +41,32 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		return nil
 	}
 
-	// Get EndpointSlices for this DistributionGroup
-	endpointSliceList := &discoveryv1.EndpointSliceList{}
-	if err := c.List(ctx, endpointSliceList,
-		client.InNamespace(c.GatewayNamespace),
-		client.MatchingLabels{
-			"meridio-2.nordix.org/distribution-group": distGroup.Name,
-		}); err != nil {
+	// Get LoadBalancerEndpointSlices for this DistributionGroup
+	sliceList := &meridio2v1alpha1.LoadBalancerEndpointSliceList{}
+	if err := c.List(ctx, sliceList,
+		client.InNamespace(distGroup.Namespace),
+		client.MatchingFields{"spec.distributionGroupName": distGroup.Name},
+	); err != nil {
 		return err
 	}
 
-	// Sort EndpointSlices by name for deterministic processing order (cache List
+	// Filter to slices owned by this DistributionGroup (defense against
+	// manually-created slices with matching distributionGroupName but no ownerRef).
+	var ownedSlices []meridio2v1alpha1.LoadBalancerEndpointSlice
+	for i := range sliceList.Items {
+		if metav1.IsControlledBy(&sliceList.Items[i], distGroup) {
+			ownedSlices = append(ownedSlices, sliceList.Items[i])
+		} else {
+			logr.Info("Ignoring LoadBalancerEndpointSlice not owned by DistributionGroup",
+				"slice", sliceList.Items[i].Name, "distGroup", distGroup.Name)
+		}
+	}
+
+	// Sort slices by name for deterministic processing order (cache List
 	// does not guarantee order). Produces stable accumulated IP lists across reconciles,
-	// preventing flapping during transients when the same identifier appears in multiple
-	// slices of the same IP family (e.g., Pod replacement with >100 endpoints).
-	slices.SortFunc(endpointSliceList.Items, func(a, b discoveryv1.EndpointSlice) int {
+	// preventing flapping during transients when the same identifier appears in
+	// multiple slices (e.g., Pod replacement with >MaxEndpointsPerSlice endpoints).
+	slices.SortFunc(ownedSlices, func(a, b meridio2v1alpha1.LoadBalancerEndpointSlice) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
@@ -67,31 +77,32 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		c.targets[distGroup.Name] = currentTargets
 	}
 
-	// Build new targets map from EndpointSlices
+	// Build new targets map from LoadBalancerEndpointSlices.
+	// First occurrence of an identifier wins — during transients the same identifier
+	// may briefly appear in multiple slices.
 	newTargets := make(map[int][]string)
-	for _, eps := range endpointSliceList.Items {
-		for _, endpoint := range eps.Endpoints {
-			if endpoint.Conditions.Ready == nil || !*endpoint.Conditions.Ready {
+	for _, lbeps := range ownedSlices {
+		for _, endpoint := range lbeps.Spec.Endpoints {
+			if !endpoint.Ready {
 				continue
 			}
-			if endpoint.Zone == nil {
-				logr.V(1).Info("Endpoint missing identifier (Zone field)", "addresses", endpoint.Addresses)
-				continue
-			}
-
-			// Parse Zone field - expected format: "maglev:N"
-			zoneStr := *endpoint.Zone
-			if len(zoneStr) < 8 || zoneStr[:7] != "maglev:" {
-				logr.Error(nil, "Invalid Zone format, expected 'maglev:N'", "zone", zoneStr)
+			if endpoint.Identifier == nil {
+				logr.V(1).Info("Endpoint missing identifier", "target", endpoint.Target.Name, "addresses", endpoint.Addresses)
 				continue
 			}
 
-			identifier, err := strconv.Atoi(zoneStr[7:])
-			if err != nil {
-				logr.Error(err, "Invalid identifier in Zone field", "zone", *endpoint.Zone)
+			identifier := int(*endpoint.Identifier)
+			if existingIPs, exists := newTargets[identifier]; exists {
+				logr.V(1).Info("Duplicate identifier across slices (transient expected during reconciliation)",
+					"identifier", identifier, "existingIPs", existingIPs,
+					"ignoredTarget", endpoint.Target.Name, "ignoredSlice", lbeps.Name)
 				continue
 			}
-			newTargets[identifier] = append(newTargets[identifier], endpoint.Addresses...)
+			ips := make([]string, 0, len(endpoint.Addresses))
+			for _, addr := range endpoint.Addresses {
+				ips = append(ips, addr.IP)
+			}
+			newTargets[identifier] = ips
 		}
 	}
 
