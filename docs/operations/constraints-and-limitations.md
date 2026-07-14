@@ -8,7 +8,7 @@ Items marked *(architectural constraint)* reflect deliberate design decisions th
 
 **1. ~~Dual-stack internal networking partially supported (IPv4 + IPv6 simultaneously)~~ (Resolved)**
 
-The DistributionGroup controller assigns Maglev IDs per DG per Gateway, shared across all networks (IPv4/IPv6). The LB controller accumulates IPs from both IPv4 and IPv6 EndpointSlices per identifier and creates policy routes for both families. See [#70](https://github.com/Nordix/Meridio-2/issues/70), [#144](https://github.com/Nordix/Meridio-2/issues/144).
+The DistributionGroup controller assigns Maglev IDs per DG per Gateway, shared across all networks (IPv4/IPv6). Initially the LB controller accumulated IPs from both IPv4 and IPv6 EndpointSlices per identifier and created policy routes for both families ([#70](https://github.com/Nordix/Meridio-2/issues/70), [#144](https://github.com/Nordix/Meridio-2/issues/144)). With the LoadBalancerEndpointSlice CRD ([#178](https://github.com/Nordix/Meridio-2/issues/178)), dual-stack addresses are co-located in a single endpoint entry — no cross-slice correlation needed.
 
 **2. ~~RBAC uses ClusterRole instead of namespace-scoped Roles (controller-manager)~~ (Resolved)**
 
@@ -24,7 +24,7 @@ No metrics are exposed by any component. Future metrics should include traffic-r
 
 **5. Network subnet CIDRs must uniquely identify a single interface IP per Pod** *(architectural constraint)*
 
-Each CIDR in `GatewayConfiguration.spec.internalSubnets` must match exactly one secondary interface IP within application Pods. The DistributionGroup controller uses these subnets to select the correct IP from Multus network-status annotations when building EndpointSlices — if multiple interfaces match, the selected IP is ambiguous. Similarly, the network sidecar discovers the target interface by matching the subnet against interface addresses, and would apply VIPs and routing rules to the wrong interface if multiple interfaces match.
+Each CIDR in `GatewayConfiguration.spec.internalSubnets` must match exactly one secondary interface IP within application Pods. The DistributionGroup controller uses these subnets to select the correct IP from Multus network-status annotations when building endpoint slices — if multiple interfaces match, the selected IP is ambiguous. Similarly, the network sidecar discovers the target interface by matching the subnet against interface addresses, and would apply VIPs and routing rules to the wrong interface if multiple interfaces match.
 
 To avoid ambiguity, the default network (`0.0.0.0/0`, `::/0`) and `fe80::/10` link-local addresses are explicitly not accepted.
 
