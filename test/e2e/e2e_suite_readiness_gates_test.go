@@ -123,6 +123,19 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 			Should(ContainElements(ipv6IPs))
 	})
 
+	It("should have end-to-end reachability for both IPv4 and IPv6 VIPs", func() {
+		// Verify traffic works before running disruptive tests.
+		// This catches infrastructure issues (route sync, NDP, nftables) early.
+		Eventually(func() error {
+			return e2eutils.Ping(rgVIPv4)
+		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed(), "IPv4 VIP should be reachable from VPN gateway")
+		Eventually(func() error {
+			return e2eutils.Ping(rgVIPv6)
+		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed(), "IPv6 VIP should be reachable from VPN gateway")
+	})
+
 	It("should set ipv4 gate False and exclude Pod from IPv4 next-hops when IPv4 BGP drops", func() {
 		// Disable IPv4 BGP on both LB Pods to cause full IPv4 degradation
 		for _, pod := range lbPods {
