@@ -85,9 +85,9 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 			}).Should(Succeed())
 		})
 
-		It("should create dual-stack EndpointSlices with shared Maglev IDs", func() {
+		It("should create dual-stack LoadBalancerEndpointSlices with shared Maglev IDs", func() {
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "endpointslice", "-n", suite.namespace,
+				cmd := exec.Command("kubectl", "get", "lbeslice", "-n", suite.namespace,
 					"-l", "meridio-2.nordix.org/distribution-group=dg-ds",
 					"-o", "json")
 				out, err := utils.Run(cmd)
@@ -95,30 +95,38 @@ var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
 
 				var result struct {
 					Items []struct {
-						AddressType string `json:"addressType"`
-						Endpoints   []struct {
-							Addresses []string `json:"addresses"`
-							Zone      *string  `json:"zone"`
-						} `json:"endpoints"`
+						Spec struct {
+							Endpoints []struct {
+								Target struct {
+									Name string `json:"name"`
+								} `json:"target"`
+								Addresses []struct {
+									IP     string `json:"ip"`
+									Family string `json:"family"`
+								} `json:"addresses"`
+								Identifier *int32 `json:"identifier"`
+							} `json:"endpoints"`
+						} `json:"spec"`
 					} `json:"items"`
 				}
 				err = utils.ParseJSON(out, &result)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(result.Items).To(HaveLen(2), "should have IPv4 and IPv6 EndpointSlices")
+				g.Expect(result.Items).NotTo(BeEmpty(), "no LoadBalancerEndpointSlices found for dg-ds")
 
-				// Collect Maglev IDs per address type
-				maglevIDs := map[string][]string{"IPv4": {}, "IPv6": {}}
+				// Verify each endpoint has both IPv4 and IPv6 addresses (dual-stack in one entry)
 				for _, slice := range result.Items {
-					for _, ep := range slice.Endpoints {
-						g.Expect(ep.Zone).NotTo(BeNil())
-						g.Expect(*ep.Zone).To(MatchRegexp(`^maglev:\d+$`))
-						maglevIDs[slice.AddressType] = append(maglevIDs[slice.AddressType], *ep.Zone)
+					for _, ep := range slice.Spec.Endpoints {
+						g.Expect(ep.Identifier).NotTo(BeNil(), "endpoint %s missing identifier", ep.Target.Name)
+						g.Expect(ep.Addresses).To(HaveLen(2),
+							"dual-stack endpoint %s should have 2 addresses (IPv4 + IPv6)", ep.Target.Name)
+						families := map[string]bool{}
+						for _, addr := range ep.Addresses {
+							families[addr.Family] = true
+						}
+						g.Expect(families).To(HaveKey("IPv4"), "endpoint %s missing IPv4 address", ep.Target.Name)
+						g.Expect(families).To(HaveKey("IPv6"), "endpoint %s missing IPv6 address", ep.Target.Name)
 					}
 				}
-
-				// Verify both families have same Maglev IDs (shared allocation)
-				g.Expect(maglevIDs["IPv4"]).To(Equal(maglevIDs["IPv6"]),
-					"IPv4 and IPv6 EndpointSlices should have same Maglev IDs")
 			}).Should(Succeed())
 		})
 

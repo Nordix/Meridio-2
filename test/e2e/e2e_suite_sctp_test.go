@@ -131,11 +131,11 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label("ipv4"), func() {
 					}).Should(Succeed())
 				})
 
-				It("should create EndpointSlices with Maglev IDs for each DistributionGroup", func() {
+				It("should create LoadBalancerEndpointSlices with Maglev IDs for each DistributionGroup", func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						Eventually(func(g Gomega) {
-							cmd := exec.Command("kubectl", "get", "endpointslice", "-n", suite.namespace,
+							cmd := exec.Command("kubectl", "get", "lbeslice", "-n", suite.namespace,
 								"-l", fmt.Sprintf("meridio-2.nordix.org/distribution-group=%s", gw.dgName),
 								"-o", "json")
 							out, err := utils.Run(cmd)
@@ -143,22 +143,25 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label("ipv4"), func() {
 
 							var result struct {
 								Items []struct {
-									Endpoints []struct {
-										Addresses []string `json:"addresses"`
-										Zone      *string  `json:"zone"`
-									} `json:"endpoints"`
+									Spec struct {
+										Endpoints []struct {
+											Target struct {
+												Name string `json:"name"`
+											} `json:"target"`
+											Identifier *int32 `json:"identifier"`
+										} `json:"endpoints"`
+									} `json:"spec"`
 								} `json:"items"`
 							}
 							err = utils.ParseJSON(out, &result)
 							g.Expect(err).NotTo(HaveOccurred())
-							g.Expect(result.Items).NotTo(BeEmpty(), "no EndpointSlices found for %s", gw.dgName)
+							g.Expect(result.Items).NotTo(BeEmpty(), "no LoadBalancerEndpointSlices found for %s", gw.dgName)
 
 							totalEndpoints := 0
 							for _, slice := range result.Items {
-								for _, ep := range slice.Endpoints {
+								for _, ep := range slice.Spec.Endpoints {
 									totalEndpoints++
-									g.Expect(ep.Zone).NotTo(BeNil(), "endpoint missing zone field")
-									g.Expect(*ep.Zone).To(MatchRegexp(`^maglev:\d+$`), "invalid Maglev ID format")
+									g.Expect(ep.Identifier).NotTo(BeNil(), "endpoint %s missing identifier", ep.Target.Name)
 								}
 							}
 							g.Expect(totalEndpoints).To(Equal(suite.targetReplicas),
