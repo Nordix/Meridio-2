@@ -484,7 +484,7 @@ The sidecar runs in application Pods and configures VIPs and source-based routin
 
 ### Prerequisites
 
-Application Pods must be attached to the same secondary network(s) as the LB Pods (e.g., via Multus NAD annotations). Meridio-2 does not provision or manage secondary network connectivity — it assumes the network is already in place. If a Pod is not attached to the expected network, the sidecar will fail to find a matching interface and the DistributionGroup controller will not include the Pod in EndpointSlices.
+Application Pods must be attached to the same secondary network(s) as the LB Pods (e.g., via Multus NAD annotations). Meridio-2 does not provision or manage secondary network connectivity — it assumes the network is already in place. If a Pod is not attached to the expected network, the sidecar will fail to find a matching interface and the DistributionGroup controller will not include the Pod in LoadBalancerEndpointSlices.
 
 The sidecar container requires `NET_ADMIN` capability for netlink operations (adding VIPs, configuring routing rules and tables). This must be set in the application Pod's sidecar container spec:
 ```yaml
@@ -580,7 +580,7 @@ kubectl get distg -n <ns> <dg-name> -o jsonpath='{.status.conditions}' | jq .
 Two condition types are used:
 
 **`Ready`** — indicates whether the DG has active endpoints:
-- `Ready=True`, reason `EndpointsAvailable` — EndpointSlices have been reconciled with at least one endpoint.
+- `Ready=True`, reason `EndpointsAvailable` — LoadBalancerEndpointSlices have been reconciled with at least one endpoint.
 - `Ready=False`, reason `NoEndpoints` — no endpoints are available. The `message` field explains why:
   - `"No Pods match selector"` — no Pods match the DG's label selector.
   - `"No Gateways reference this DistributionGroup"` — no L34Route links this DG to a Gateway (check `parentRefs` or L34Route `backendRefs`).
@@ -590,35 +590,34 @@ Two condition types are used:
 - `Ready=False`, reason `MultipleGateways` — the DG is referenced by more than one accepted Gateway. Reconciliation is skipped until the conflict is resolved.
 
 **`CapacityExceeded`** (Maglev only) — present only when the number of matching Pods exceeds `maxEndpoints`:
-- `CapacityExceeded=True`, reason `MaglevCapacityExceeded` — some Pods were excluded from EndpointSlices because the Maglev table is full. The message lists affected networks with counts (e.g., `"10.0.0.0/24: 5/37 pods excluded (32 capacity)"`).
+- `CapacityExceeded=True`, reason `MaglevCapacityExceeded` — some Pods were excluded from LoadBalancerEndpointSlices because the Maglev table is full. The message lists affected networks with counts (e.g., `"10.0.0.0/24: 5/37 pods excluded (32 capacity)"`).
 - Absent — capacity is sufficient; all matching Pods have Maglev IDs assigned.
 
-### Check EndpointSlices
+### Check LoadBalancerEndpointSlices
 
-List EndpointSlices for a DistributionGroup:
+List LoadBalancerEndpointSlices for a DistributionGroup:
 ```bash
-kubectl get endpointslice -n <ns> -l meridio-2.nordix.org/distribution-group=<dg-name>
+kubectl get lbeslice -n <ns> -l meridio-2.nordix.org/distribution-group=<dg-name>
 ```
 
-Inspect details (a DG may own multiple slices — one per network subnet, and additional slices when exceeding 100 endpoints per slice):
+Inspect details (a DG may own multiple slices when exceeding the max endpoints per slice limit):
 ```bash
-kubectl get endpointslice -n <ns> -l meridio-2.nordix.org/distribution-group=<dg-name> -o yaml
+kubectl get lbeslice -n <ns> -l meridio-2.nordix.org/distribution-group=<dg-name> -o yaml
 ```
 
-Each EndpointSlice has three identifying labels:
-- `meridio-2.nordix.org/distribution-group` — the owning DistributionGroup name
-- `meridio-2.nordix.org/network-subnet` — the network subnet CIDR encoded for label compatibility: `/` replaced with `-`, `:` replaced with `_` (e.g., `192.168.100.0-24` for `192.168.100.0/24`, `fd00__1-64` for `fd00::1/64`)
-- `endpointslice.kubernetes.io/managed-by` — must be `distributiongroup-controller.meridio-2.nordix.org`
+Each LoadBalancerEndpointSlice has:
+- `spec.distributionGroupName` — the owning DistributionGroup name
+- `spec.gatewayRef` — the Gateway this slice is scoped to (name + namespace)
+- OwnerReference pointing to the DistributionGroup (ensures GC on DG deletion)
+- Label `meridio-2.nordix.org/distribution-group` — convenience label for kubectl filtering
 
-There is one set of EndpointSlices per network subnet (e.g., separate slices for IPv4 and IPv6 in dual-stack). The `addressType` field reflects the IP family (`IPv4` or `IPv6`).
+Dual-stack endpoints are co-located in a single entry (no per-family split). Each endpoint should have:
+- `spec.endpoints[].target` — Pod name and UID
+- `spec.endpoints[].addresses` — list of IPs with family annotation (e.g., `[{ip: "10.0.0.5", family: "IPv4"}, {ip: "fd00::5", family: "IPv6"}]`)
+- `spec.endpoints[].ready` — `true` if the Pod is Ready
+- `spec.endpoints[].identifier` — Maglev slot index (e.g., `5`). This is the identifier used by the LB controller to activate targets in the NFQLB shared memory instance
 
-Each endpoint should have:
-- `addresses` — the Pod's secondary network IP (matching the subnet CIDR)
-- `conditions.ready` — `true` if the Pod is Ready
-- `targetRef` — reference to the source Pod
-- `zone` — Maglev ID in the format `maglev:<N>` (e.g., `maglev:5`). This is the identifier used by the LB controller to activate targets in the NFQLB shared memory instance
-
-If EndpointSlices are missing:
+If LoadBalancerEndpointSlices are missing:
 - Check the DistributionGroup status conditions for the specific reason (see "Check DistributionGroup status" above)
 - Verify Pods have the expected secondary network IP via Multus annotation: `kubectl get pod <name> -o jsonpath='{.metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}'`
 - Verify the Pod IP falls within a `GatewayConfiguration.spec.internalSubnets` CIDR
@@ -633,6 +632,6 @@ kubectl get gatewayconfiguration -n <ns> <name> -o yaml
 
 Check:
 - `spec.networkAttachments` — lists the secondary network interfaces (NADs) attached to LB Pods. Must include both the external interface (towards the gateway router) and the internal interface(s) (towards application Pods). Network attachments may also be defined in the LB deployment template; the GatewayConfiguration entries are merged on top.
-- `spec.internalSubnets` — lists the CIDRs of the internal network(s) where application Pod IPs reside. Used by the DistributionGroup controller to select the correct Pod IP when building EndpointSlices. Must cover all application Pod secondary IPs.
+- `spec.internalSubnets` — lists the CIDRs of the internal network(s) where application Pod IPs reside. Used by the DistributionGroup controller to select the correct Pod IP when building LoadBalancerEndpointSlices. Must cover all application Pod secondary IPs.
 
 Missing or misconfigured entries here are a common cause of traffic issues even when all resources show healthy status.

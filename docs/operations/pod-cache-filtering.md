@@ -47,7 +47,7 @@ When enabling pod cache filtering on an existing deployment:
 If pre-labeling is skipped:
 - Application Pods without the label will not have ENCs created/updated. Existing ENCs become stale (ownerReference GC won't fire because the Pod still exists).
 - LB Pods without the label are invisible during rollout (not included in ENC next-hop lists), causing brief degradation until replaced by new labeled Pods.
-- The DG controller incidentally removes unlabeled application Pods from EndpointSlices during the LB rollout (new LB Pods trigger the DG Pod mapper → reconciliation lists only labeled Pods).
+- The DG controller incidentally removes unlabeled application Pods from endpoint slices during the LB rollout (new LB Pods trigger the DG Pod mapper → reconciliation lists only labeled Pods).
 
 ## Disabling the Feature
 
@@ -60,7 +60,7 @@ Note: the label applied to the LB Deployment template is additive. The controlle
 The cache label is a **hard contract**:
 
 - Do not remove the label from running application Pods. If removed:
-  - The DG controller removes the Pod from EndpointSlices (triggered by the synthetic Delete event from the filtered watch)
+  - The DG controller removes the Pod from endpoint slices (triggered by the synthetic Delete event from the filtered watch)
   - The ENC becomes orphaned (stale content, not garbage-collected because the Pod still exists)
 
 - If runtime label removal is intentional, follow this order:
