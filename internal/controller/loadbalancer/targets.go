@@ -45,7 +45,10 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	sliceList := &meridio2v1alpha1.LoadBalancerEndpointSliceList{}
 	if err := c.List(ctx, sliceList,
 		client.InNamespace(distGroup.Namespace),
-		client.MatchingFields{"spec.distributionGroupName": distGroup.Name},
+		client.MatchingFields{
+			"spec.distributionGroupName": distGroup.Name,
+			"spec.gatewayRef.name":       c.GatewayName,
+		},
 	); err != nil {
 		return err
 	}
