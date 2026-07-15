@@ -49,7 +49,42 @@ func newFakeClient(scheme *runtime.Scheme, objects ...client.Object) client.Clie
 		WithIndex(&meridio2v1alpha1.LoadBalancerEndpointSlice{}, "spec.distributionGroupName", func(obj client.Object) []string {
 			return []string{obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice).Spec.DistributionGroupName}
 		}).
+		WithIndex(&meridio2v1alpha1.LoadBalancerEndpointSlice{}, "spec.gatewayRef.name", func(obj client.Object) []string {
+			return []string{obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice).Spec.GatewayRef.Name}
+		}).
 		Build()
+}
+
+// newTestLBEPS creates a LoadBalancerEndpointSlice with sensible defaults for testing.
+// Defaults: namespace "default", gatewayRef pointing to "test-gateway"/"default",
+// ownerRef to the given DG, and distributionGroupName matching the DG.
+// Functional options override specific fields to isolate what each test checks.
+func newTestLBEPS(dg *meridio2v1alpha1.DistributionGroup, endpoints []meridio2v1alpha1.LoadBalancerEndpoint, opts ...func(*meridio2v1alpha1.LoadBalancerEndpointSlice)) *meridio2v1alpha1.LoadBalancerEndpointSlice {
+	lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-eps",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "meridio-2.nordix.org/v1alpha1",
+				Kind:       "DistributionGroup",
+				Name:       dg.Name,
+				UID:        dg.UID,
+				Controller: ptr.To(true),
+			}},
+		},
+		Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
+			DistributionGroupName: dg.Name,
+			GatewayRef: meridio2v1alpha1.SliceGatewayRef{
+				Name:      "test-gateway",
+				Namespace: "default",
+			},
+			Endpoints: endpoints,
+		},
+	}
+	for _, opt := range opts {
+		opt(lbeps)
+	}
+	return lbeps
 }
 
 // mockNFQLB mocks the NFQueueLoadBalancer for testing.
@@ -445,36 +480,20 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should activate new targets with correct index and fwmark", func() {
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "meridio-2.nordix.org/v1alpha1",
-						Kind:       "DistributionGroup",
-						Name:       distGroup.Name,
-						UID:        distGroup.UID,
-						Controller: ptr.To(true),
-					}},
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
 				},
-				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
-					DistributionGroupName: distGroup.Name,
-					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
-						{
-							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
-							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
-							Identifier: ptr.To(int32(0)),
-							Ready:      true,
-						},
-						{
-							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
-							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
-							Identifier: ptr.To(int32(1)),
-							Ready:      true,
-						},
-					},
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(1)),
+					Ready:      true,
 				},
-			}
+			})
 
 			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
@@ -496,30 +515,14 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should skip endpoints without Identifier field", func() {
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "meridio-2.nordix.org/v1alpha1",
-						Kind:       "DistributionGroup",
-						Name:       distGroup.Name,
-						UID:        distGroup.UID,
-						Controller: ptr.To(true),
-					}},
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: nil, // no identifier
+					Ready:      true,
 				},
-				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
-					DistributionGroupName: distGroup.Name,
-					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
-						{
-							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
-							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
-							Identifier: nil, // no identifier
-							Ready:      true,
-						},
-					},
-				},
-			}
+			})
 
 			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
@@ -533,30 +536,14 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should skip non-ready endpoints", func() {
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "meridio-2.nordix.org/v1alpha1",
-						Kind:       "DistributionGroup",
-						Name:       distGroup.Name,
-						UID:        distGroup.UID,
-						Controller: ptr.To(true),
-					}},
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      false, // not ready
 				},
-				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
-					DistributionGroupName: distGroup.Name,
-					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
-						{
-							Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
-							Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
-							Identifier: ptr.To(int32(0)),
-							Ready:      false, // not ready
-						},
-					},
-				},
-			}
+			})
 
 			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
@@ -590,33 +577,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should activate dual-stack endpoint with both IPs", func() {
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "meridio-2.nordix.org/v1alpha1",
-						Kind:       "DistributionGroup",
-						Name:       distGroup.Name,
-						UID:        distGroup.UID,
-						Controller: ptr.To(true),
-					}},
-				},
-				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
-					DistributionGroupName: distGroup.Name,
-					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
-						{
-							Target: meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
-							Addresses: []meridio2v1alpha1.EndpointAddress{
-								{IP: "192.168.100.10", Family: meridio2v1alpha1.IPv4},
-								{IP: "2001:db8:100::10", Family: meridio2v1alpha1.IPv6},
-							},
-							Identifier: ptr.To(int32(0)),
-							Ready:      true,
-						},
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target: meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses: []meridio2v1alpha1.EndpointAddress{
+						{IP: "192.168.100.10", Family: meridio2v1alpha1.IPv4},
+						{IP: "2001:db8:100::10", Family: meridio2v1alpha1.IPv6},
 					},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
 				},
-			}
+			})
 
 			fakeClient = newFakeClient(scheme, lbeps)
 			controller.Client = fakeClient
@@ -628,6 +599,81 @@ var _ = Describe("LoadBalancer Controller", func() {
 			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.targets).To(HaveKey(0))
 			Expect(mockInstance.targets[0]).To(ConsistOf("192.168.100.10", "2001:db8:100::10"))
+		})
+
+		It("should ignore slices scoped to a different Gateway", func() {
+			// Slice for this Gateway — should be processed
+			lbepsOurs := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			})
+
+			// Slice for a different Gateway — should be excluded by field index
+			lbepsOther := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(1)),
+					Ready:      true,
+				},
+			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
+				s.Name = "other-gw-eps"
+				s.Spec.GatewayRef.Name = "other-gateway"
+			})
+
+			fakeClient = newFakeClient(scheme, lbepsOurs, lbepsOther)
+			controller.Client = fakeClient
+
+			err := controller.reconcileTargets(ctx, distGroup)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Only the slice for our Gateway should produce a target
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(HaveKey(0))
+			Expect(mockInstance.targets[0]).To(Equal([]string{"10.0.0.1"}))
+			Expect(mockInstance.targets).ToNot(HaveKey(1), "slice for other Gateway should be excluded")
+		})
+
+		It("should use first-occurrence-wins for duplicate identifiers across slices", func() {
+			// Two slices with the same identifier=0 but different IPs.
+			// Sorted by name: "slice-a" < "slice-b", so slice-a's endpoint wins.
+			sliceA := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
+				s.Name = "slice-a"
+			})
+
+			sliceB := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.99", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
+				s.Name = "slice-b"
+			})
+
+			fakeClient = newFakeClient(scheme, sliceA, sliceB)
+			controller.Client = fakeClient
+
+			err := controller.reconcileTargets(ctx, distGroup)
+			Expect(err).ToNot(HaveOccurred())
+
+			// First occurrence (slice-a, sorted by name) wins
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(HaveKey(0))
+			Expect(mockInstance.targets[0]).To(Equal([]string{"10.0.0.1"}),
+				"first-occurrence-wins: slice-a should take priority over slice-b for identifier=0")
 		})
 	})
 
@@ -652,28 +698,12 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			// Create LoadBalancerEndpointSlice with ready endpoints
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "meridio-2.nordix.org/v1alpha1",
-						Kind:       "DistributionGroup",
-						Name:       distGroup.Name,
-						UID:        distGroup.UID,
-						Controller: ptr.To(true),
-					}},
-				},
-				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
-					DistributionGroupName: distGroup.Name,
-					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{{
-						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
-						Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
-						Identifier: ptr.To(int32(0)),
-						Ready:      true,
-					}},
-				},
-			}
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{{
+				Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+				Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+				Identifier: ptr.To(int32(0)),
+				Ready:      true,
+			}})
 
 			l34route := &meridio2v1alpha1.L34Route{
 				ObjectMeta: metav1.ObjectMeta{
@@ -745,28 +775,12 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			// Create LoadBalancerEndpointSlice with ready endpoints
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "meridio-2.nordix.org/v1alpha1",
-						Kind:       "DistributionGroup",
-						Name:       distGroup.Name,
-						UID:        distGroup.UID,
-						Controller: ptr.To(true),
-					}},
-				},
-				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
-					DistributionGroupName: distGroup.Name,
-					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{{
-						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
-						Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
-						Identifier: ptr.To(int32(0)),
-						Ready:      true,
-					}},
-				},
-			}
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{{
+				Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+				Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+				Identifier: ptr.To(int32(0)),
+				Ready:      true,
+			}})
 
 			l34route1 := &meridio2v1alpha1.L34Route{
 				ObjectMeta: metav1.ObjectMeta{
@@ -998,21 +1012,19 @@ var _ = Describe("LoadBalancer Controller", func() {
 	})
 
 	Describe("endpointSliceEnqueue", func() {
-		It("should map LoadBalancerEndpointSlice to DistributionGroup", func() {
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
+		var distGroup *meridio2v1alpha1.DistributionGroup
+
+		BeforeEach(func() {
+			distGroup = &meridio2v1alpha1.DistributionGroup{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
+					Name:      "test-distgroup",
 					Namespace: namespace,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       "test-distgroup",
-							Controller: ptr.To(true),
-						},
-					},
 				},
 			}
+		})
+
+		It("should map LoadBalancerEndpointSlice to DistributionGroup", func() {
+			lbeps := newTestLBEPS(distGroup, nil)
 
 			requests := controller.endpointSliceEnqueue(ctx, lbeps)
 			Expect(requests).To(HaveLen(1))
@@ -1021,32 +1033,27 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should return nil when ownerReference is missing", func() {
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: namespace,
-				},
-			}
+			lbeps := newTestLBEPS(distGroup, nil, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
+				s.OwnerReferences = nil
+			})
 
 			requests := controller.endpointSliceEnqueue(ctx, lbeps)
 			Expect(requests).To(BeNil())
 		})
 
 		It("should filter by namespace", func() {
-			lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-eps",
-					Namespace: "other-namespace",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "meridio-2.nordix.org/v1alpha1",
-							Kind:       "DistributionGroup",
-							Name:       "test-distgroup",
-							Controller: ptr.To(true),
-						},
-					},
-				},
-			}
+			lbeps := newTestLBEPS(distGroup, nil, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
+				s.Namespace = "other-namespace"
+			})
+
+			requests := controller.endpointSliceEnqueue(ctx, lbeps)
+			Expect(requests).To(BeNil())
+		})
+
+		It("should skip slices scoped to a different Gateway", func() {
+			lbeps := newTestLBEPS(distGroup, nil, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
+				s.Spec.GatewayRef.Name = "other-gateway"
+			})
 
 			requests := controller.endpointSliceEnqueue(ctx, lbeps)
 			Expect(requests).To(BeNil())

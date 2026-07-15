@@ -325,6 +325,17 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("failed to index LoadBalancerEndpointSlice by distributionGroupName: %w", err)
 	}
 
+	// Index by gatewayRef.name for efficient per-Gateway slice lookups for example in reconcileTargets.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &meridio2v1alpha1.LoadBalancerEndpointSlice{},
+		"spec.gatewayRef.name",
+		func(obj client.Object) []string {
+			lbes := obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice)
+			return []string{lbes.Spec.GatewayRef.Name}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to index LoadBalancerEndpointSlice by gatewayRef.name: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.DistributionGroup{}).
 		Watches(&meridio2v1alpha1.LoadBalancerEndpointSlice{}, handler.EnqueueRequestsFromMapFunc(c.endpointSliceEnqueue)).
@@ -336,16 +347,26 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 
 // endpointSliceEnqueue maps LoadBalancerEndpointSlice events to DistributionGroup reconcile requests
 func (c *Controller) endpointSliceEnqueue(ctx context.Context, obj client.Object) []ctrl.Request {
-	// LoadBalancerEndpointSlices have OwnerReference to their DistributionGroup
+	lbeps, ok := obj.(*meridio2v1alpha1.LoadBalancerEndpointSlice)
+	if !ok {
+		return nil
+	}
+
+	// Only trigger if in our namespace
+	if obj.GetNamespace() != c.GatewayNamespace {
+		return nil
+	}
+
+	// Skip slices not scoped to this Gateway
+	if lbeps.Spec.GatewayRef.Name != c.GatewayName || lbeps.Spec.GatewayRef.Namespace != c.GatewayNamespace {
+		return nil
+	}
+
+	// Find owning DG via ownerReference
 	for _, ownerRef := range obj.GetOwnerReferences() {
 		if ownerRef.APIVersion == meridio2v1alpha1.GroupVersion.String() &&
 			ownerRef.Kind == kindDistributionGroup &&
 			ownerRef.Controller != nil && *ownerRef.Controller {
-			// Only trigger if in our namespace
-			if obj.GetNamespace() != c.GatewayNamespace {
-				return nil
-			}
-
 			return []ctrl.Request{{
 				NamespacedName: client.ObjectKey{
 					Name:      ownerRef.Name,
