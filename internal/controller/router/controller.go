@@ -19,6 +19,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -165,6 +166,12 @@ func getVIPs(gateway *gatewayapiv1.Gateway) []string {
 			seen[addr.Value] = struct{}{}
 		}
 	}
+
+	// Sort for deterministic BIRD config generation: Gateway status addresses
+	// are pre-sorted by the gateway controller, but sort defensively to avoid
+	// config rewrites if that invariant is ever broken.
+	slices.Sort(vips)
+
 	return vips
 }
 

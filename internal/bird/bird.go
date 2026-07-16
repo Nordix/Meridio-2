@@ -172,6 +172,12 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 		}
 	}
 
+	// Sort VIPs for deterministic config output: input order depends on
+	// Gateway status addresses which are pre-sorted, but sort defensively
+	// to guarantee stable BIRD config regardless of caller ordering.
+	slices.Sort(data.IPv4VIPs)
+	slices.Sort(data.IPv6VIPs)
+
 	slices.SortFunc(routers, func(a, b *meridio2v1alpha1.GatewayRouter) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
