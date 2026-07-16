@@ -117,7 +117,7 @@ type HorizontalScaling struct {
 	// If true, the controller enforces the replicas value on every reconcile.
 	// If false, the controller only sets replicas on initial creation, allowing
 	// HPA or other autoscalers to manage the count afterward.
-	// +kubebuilder:default=false
+	// +kubebuilder:default=true
 	EnforceReplicas bool `json:"enforceReplicas"`
 }
 
