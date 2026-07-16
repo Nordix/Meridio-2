@@ -17,8 +17,11 @@ limitations under the License.
 package bird
 
 import (
+	"context"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -608,5 +611,57 @@ func TestGenerateConfig_Deterministic(t *testing.T) {
 				t.Fatalf("vips[%d] routers[%d]: config differs from reference (input ordering affected output)", i, j)
 			}
 		}
+	}
+}
+
+func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		SocketPath:     dir + "/bird.ctl",
+		ConfigFile:     dir + "/bird.conf",
+		TableID:        4096,
+		RulePriority:   100,
+		KernelScanTime: 10,
+	}
+	b, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.nl = &netlinkMock{} // avoid real netlink calls
+
+	vips := []string{"20.0.0.1", "2001:db8::1"}
+	routers := []*meridio2v1alpha1.GatewayRouter{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "router-a"},
+			Spec: meridio2v1alpha1.GatewayRouterSpec{
+				Interface: "ext1", Address: "169.254.100.1",
+				BGP: &testBGPSpec,
+			},
+		},
+	}
+
+	// First Configure writes the config file
+	if err := b.Configure(context.Background(), vips, routers); err != nil {
+		t.Fatal(err)
+	}
+	info1, err := os.Stat(cfg.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Ensure mtime would differ if file is rewritten
+	time.Sleep(10 * time.Millisecond)
+
+	// Second Configure with same inputs should skip the write
+	if err := b.Configure(context.Background(), vips, routers); err != nil {
+		t.Fatal(err)
+	}
+	info2, err := os.Stat(cfg.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if info2.ModTime() != info1.ModTime() {
+		t.Error("config file was rewritten despite no change (skip-if-unchanged guard failed)")
 	}
 }
