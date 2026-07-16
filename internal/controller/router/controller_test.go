@@ -478,3 +478,20 @@ done:
 	// At least 1 event was delivered (the first one); dropped events don't crash
 	assert.GreaterOrEqual(t, drained, 1)
 }
+
+func TestGetVIPs_Deterministic(t *testing.T) {
+	// Different address orderings must produce the same sorted output
+	permutations := [][]string{
+		{"40.0.0.1", "10.0.0.1", "2000::2", "20.0.0.1", "2000::1", "30.0.0.1"},
+		{"10.0.0.1", "20.0.0.1", "30.0.0.1", "40.0.0.1", "2000::1", "2000::2"},
+		{"2000::2", "2000::1", "40.0.0.1", "30.0.0.1", "20.0.0.1", "10.0.0.1"},
+	}
+
+	expected := []string{"10.0.0.1", "20.0.0.1", "2000::1", "2000::2", "30.0.0.1", "40.0.0.1"}
+
+	for i, addrs := range permutations {
+		gw := newGateway(testGatewayName, testNamespace, addrs...)
+		vips := getVIPs(gw)
+		assert.Equal(t, expected, vips, "permutation %d: input ordering affected output", i)
+	}
+}
