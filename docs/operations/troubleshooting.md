@@ -60,7 +60,7 @@ kubectl get pods -n <namespace>
 
 Expected Pods:
 - **controller-manager** — 1 Pod, 1/1 Ready
-- **sllbr-\<gateway-name\>** — LB Pods (2 containers each: `loadbalancer` + `router`), count matches `GatewayConfiguration.spec.horizontalScaling.replicas` (default: 2) unless HPA is managing the Deployment (`enforceReplicas: false`)
+- **sllbr-\<gateway-name\>** — LB Pods (2 containers each: `loadbalancer` + `router`), count matches `GatewayConfiguration.spec.horizontalScaling.replicas` (default: 2). If `enforceReplicas: false` is set, the controller only seeds the initial count and defers to an external scaler (HPA/KEDA).
 - **Application Pods** — with network-sidecar container if using EndpointNetworkConfiguration
 
 All Pods should be Running with all containers ready. Check for restarts.

@@ -47,7 +47,7 @@ spec:
                   https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/
                 properties:
                   enforceReplicas:
-                    default: false
+                    default: true
                     description: |-
                       enforceReplicas controls whether the controller manages the replica count.
                       If true, the controller enforces the replicas value on every reconcile.

@@ -501,7 +501,7 @@ spec:
     - cidr: "2001:db8:100::/64"
   horizontalScaling:
     replicas: 1
-    enforceReplicas: false
+    enforceReplicas: false  # Not needed for single-replica test setup
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway

@@ -327,12 +327,20 @@ Controls LB Deployment replica count with optional HPA integration:
 ```yaml
 horizontalScaling:
   replicas: 2
-  enforceReplicas: false  # Let HPA manage (default)
+  enforceReplicas: true  # Controller enforces on every reconcile (default)
+```
+
+To defer scaling to an external autoscaler (HPA, KEDA), opt out explicitly:
+
+```yaml
+horizontalScaling:
+  replicas: 2             # Seed value for initial creation
+  enforceReplicas: false  # Let HPA/KEDA manage after initial deployment
 ```
 
 **Behavior:**
-- `enforceReplicas=false`: Apply replicas on initial creation, skip updates (HPA manages)
-- `enforceReplicas=true`: Always enforce replicas value (override HPA)
+- `enforceReplicas=true` (default): Always enforce the configured replicas value — manual edits or external changes are reconciled back
+- `enforceReplicas=false`: Apply replicas on initial creation only, skip updates (HPA/KEDA manages)
 
 ### Vertical Scaling
 
