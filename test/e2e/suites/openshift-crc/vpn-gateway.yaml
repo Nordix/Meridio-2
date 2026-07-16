@@ -1,0 +1,154 @@
+---
+# VPN Gateway BIRD configuration (dual-stack)
+# Uses passive BGP — the gateway waits for LB router to initiate the session.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpn-gateway-bird-config
+data:
+  bird.conf: |
+    log stderr all;
+    router id 169.254.100.150;
+
+    protocol device {
+      scan time 10;
+    }
+
+    protocol bfd {
+      interface "*" {
+        passive on;
+      };
+    }
+
+    protocol static DEFAULT4 {
+      ipv4 { preference 110; };
+      route 0.0.0.0/0 blackhole;
+    }
+
+    protocol static DEFAULT6 {
+      ipv6 { preference 110; };
+      route ::/0 blackhole;
+    }
+
+    filter gw_kernel_export {
+      if source = RTS_STATIC && dest = RTD_BLACKHOLE then reject;
+      else accept;
+    }
+
+    filter gw_kernel_export6 {
+      if source = RTS_STATIC && dest = RTD_BLACKHOLE then reject;
+      else accept;
+    }
+
+    filter bgp_announce {
+      if ( net ~ [ 0.0.0.0/0 ] ) then accept;
+      if source = RTS_STATIC && dest = RTD_BLACKHOLE then accept;
+      else reject;
+    }
+
+    filter bgp_announce6 {
+      if ( net ~ [ ::/0 ] ) then accept;
+      if source = RTS_STATIC && dest = RTD_BLACKHOLE then accept;
+      else reject;
+    }
+
+    protocol kernel {
+      ipv4 {
+        import none;
+        export filter gw_kernel_export;
+      };
+      merge paths on;
+    }
+
+    protocol kernel {
+      ipv6 {
+        import none;
+        export filter gw_kernel_export6;
+      };
+      merge paths on;
+    }
+
+    template bgp LINK {
+      debug {events};
+      direct;
+      hold time 24;
+      bfd on;
+      graceful restart off;
+    }
+
+    # IPv4 BGP — passive, waits for LB router (ASN 64512) to connect
+    protocol bgp GW4_OCP from LINK {
+      local 169.254.100.150 port 10179 as 4200000000;
+      neighbor range 169.254.100.0/24 port 10179 as 64512;
+      passive;
+      dynamic name "GW4_OCP_";
+      ipv4 {
+        import all;
+        export filter bgp_announce;
+        next hop self;
+      };
+    }
+
+    # IPv6 BGP — passive, waits for LB router (ASN 64512) to connect
+    protocol bgp GW6_OCP from LINK {
+      local fd00:cafe:100::150 port 10179 as 4200000000;
+      neighbor range fd00:cafe:100::/64 port 10179 as 64512;
+      passive;
+      dynamic name "GW6_OCP_";
+      ipv6 {
+        import all;
+        export filter bgp_announce6;
+        next hop self;
+      };
+    }
+  init.sh: |
+    #!/bin/sh
+    set -e
+
+    sysctl -w net.ipv4.fib_multipath_hash_policy=1
+    sysctl -w net.ipv4.conf.all.forwarding=1
+    sysctl -w net.ipv6.conf.all.forwarding=1
+    sysctl -w net.ipv6.conf.all.disable_ipv6=0
+    sysctl -w net.ipv4.conf.all.rp_filter=2
+    sysctl -w net.ipv4.conf.default.rp_filter=2
+
+    ethtool -K net1 tx off 2>/dev/null || true
+
+    echo "VPN Gateway ready (dual-stack) on 169.254.100.150 / fd00:cafe:100::150"
+
+    exec /usr/sbin/bird -d -c /etc/bird/bird.conf
+---
+# VPN Gateway Pod (dual-stack)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vpn-gateway
+  annotations:
+    k8s.v1.cni.cncf.io/networks: '[
+      {
+        "name": "bgp-net",
+        "ips": ["169.254.100.150/24", "fd00:cafe:100::150/64"],
+        "interface": "net1"
+      }
+    ]'
+spec:
+  serviceAccountName: vpn-gateway
+  containers:
+  - name: vpn-gateway
+    image: registry.nordix.org/cloud-native/meridio-2/vpn-gateway:latest
+    imagePullPolicy: Always
+    command: ["/bin/sh", "/config/init.sh"]
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: bird-config
+      mountPath: /etc/bird/bird.conf
+      subPath: bird.conf
+    - name: bird-config
+      mountPath: /config/init.sh
+      subPath: init.sh
+  volumes:
+  - name: bird-config
+    configMap:
+      name: vpn-gateway-bird-config
+  restartPolicy: Always

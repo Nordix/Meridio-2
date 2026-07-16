@@ -1,0 +1,157 @@
+# OpenShift-adapted LB deployment template
+#
+# Key differences from vanilla Kubernetes:
+# - Pod securityContext.sysctls: declares the per-pod unsafe sysctls (requires KubeletConfig
+#   allowlist + meridio-lb SCC). This replaces the tuning CNI NAD approach which OpenShift blocks.
+# - seccompProfile: Unconfined (Pod-level): RuntimeDefault blocks NETLINK_NETFILTER messages
+#   required by nftables and nfqueue in the loadbalancer container.
+# - seLinuxOptions: type: spc_t (loadbalancer container only): SELinux container_t blocks
+#   nfqueue bind and nftables set operations. The router container does NOT need this.
+# - runAsNonRoot: true (MustRunAsNonRoot SCC — no longer needs runAsUser: 0)
+# - No pod anti-affinity (CRC is single-node)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stateless-load-balancer
+  namespace: placeholder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stateless-load-balancer
+  template:
+    metadata:
+      labels:
+        app: stateless-load-balancer
+    spec:
+      serviceAccountName: stateless-load-balancer
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: Unconfined
+        sysctls:
+        - name: net.ipv4.conf.all.forwarding
+          value: "1"
+        - name: net.ipv6.conf.all.forwarding
+          value: "1"
+        - name: net.ipv4.fib_multipath_hash_policy
+          value: "1"
+        - name: net.ipv6.fib_multipath_hash_policy
+          value: "1"
+        - name: net.ipv4.conf.all.rp_filter
+          value: "2"
+        - name: net.ipv4.conf.default.rp_filter
+          value: "2"
+        - name: net.ipv4.fwmark_reflect
+          value: "1"
+        - name: net.ipv6.fwmark_reflect
+          value: "1"
+        - name: net.ipv4.ip_local_port_range
+          value: "49152 65535"
+      containers:
+      - name: loadbalancer
+        image: registry.nordix.org/cloud-native/meridio-2/stateless-load-balancer:latest
+        imagePullPolicy: Always
+        args:
+          - run
+        env:
+        - name: MERIDIO_READINESS_DIR
+          value: '/var/run/meridio'
+        - name: MERIDIO_GATEWAY_NAME
+          value:  # to be filled by operator
+        - name: MERIDIO_GATEWAY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          seLinuxOptions:
+            type: spc_t
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_ADMIN
+            - IPC_LOCK
+            - IPC_OWNER
+        volumeMounts:
+        - name: lb-run
+          mountPath: /var/run/meridio
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      - name: router
+        image: registry.nordix.org/cloud-native/meridio-2/router:latest
+        imagePullPolicy: Always
+        args:
+          - run
+        env:
+        - name: MERIDIO_GATEWAY_NAME
+          value:  # to be filled by operator
+        - name: MERIDIO_GATEWAY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: MERIDIO_BIRD_LOG
+          value: "file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all"
+        - name: MERIDIO_READINESS_DIR
+          value: '/var/run/meridio'
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_ADMIN
+            - NET_BIND_SERVICE
+            - NET_RAW
+        volumeMounts:
+        - name: bird-run
+          mountPath: /var/run/bird
+        - name: bird-etc
+          mountPath: /etc/bird
+        - name: bird-log
+          mountPath: /var/log/bird
+        - name: lb-run
+          mountPath: /var/run/meridio
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: lb-run
+        emptyDir:
+          medium: Memory
+      - name: bird-run
+        emptyDir:
+          medium: Memory
+      - name: bird-etc
+        emptyDir:
+          medium: Memory
+      - name: bird-log
+        emptyDir:
+          medium: Memory

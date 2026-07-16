@@ -1,0 +1,30 @@
+---
+# KubeletConfig: allowlist unsafe sysctls required by Meridio-2 LB Pods
+#
+# OpenShift's kubelet rejects Pod-level unsafe sysctls at runtime unless
+# explicitly allowlisted here. This works together with the meridio-lb SCC
+# (which allows pods to declare them at admission) — both layers are required.
+#
+# WARNING: Applying this triggers a MachineConfig rollout which reboots the
+# CRC node (~3-5 minutes). Wait for the node to return to Ready before proceeding.
+#
+# For CRC (single-node, master+worker), the pool selector targets the master pool.
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: meridio-unsafe-sysctls
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/master: ""
+  kubeletConfig:
+    allowedUnsafeSysctls:
+    - "net.ipv4.conf.all.forwarding"
+    - "net.ipv6.conf.all.forwarding"
+    - "net.ipv4.fib_multipath_hash_policy"
+    - "net.ipv6.fib_multipath_hash_policy"
+    - "net.ipv4.conf.all.rp_filter"
+    - "net.ipv4.conf.default.rp_filter"
+    - "net.ipv4.fwmark_reflect"
+    - "net.ipv6.fwmark_reflect"
+    - "net.ipv4.ip_local_port_range"

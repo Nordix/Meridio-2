@@ -1,0 +1,81 @@
+---
+# SCC for LB Pods (loadbalancer + router containers)
+#
+# Why these settings are needed:
+# - allowedCapabilities: nftables (NET_ADMIN), NFQLB shared memory (IPC_LOCK, IPC_OWNER),
+#   BIRD port 179 (NET_BIND_SERVICE), BIRD SO_BINDTODEVICE (NET_RAW)
+# - allowedUnsafeSysctls: IP forwarding, multipath hashing, rp_filter, fwmark_reflect —
+#   required per-Pod for traffic forwarding. Set in pod securityContext.sysctls after
+#   KubeletConfig allowlists them.
+# - seccompProfiles: ["*"]: RuntimeDefault blocks NETLINK_NETFILTER messages (nftables/nfqueue).
+#   The loadbalancer container must run with Unconfined seccomp.
+# - seLinuxContext: RunAsAny: allows the pod spec to set seLinuxOptions.type: spc_t on the
+#   loadbalancer container only. SELinux container_t blocks nfqueue bind and nftables set
+#   operations. The router container works fine with the default SELinux type.
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: meridio-lb
+allowPrivilegeEscalation: false
+requiredDropCapabilities:
+- ALL
+allowedCapabilities:
+- NET_ADMIN
+- NET_BIND_SERVICE
+- NET_RAW
+- IPC_LOCK
+- IPC_OWNER
+allowedUnsafeSysctls:
+- net.ipv4.conf.all.forwarding
+- net.ipv6.conf.all.forwarding
+- net.ipv4.fib_multipath_hash_policy
+- net.ipv6.fib_multipath_hash_policy
+- net.ipv4.conf.all.rp_filter
+- net.ipv4.conf.default.rp_filter
+- net.ipv4.fwmark_reflect
+- net.ipv6.fwmark_reflect
+- net.ipv4.ip_local_port_range
+runAsUser:
+  type: MustRunAsNonRoot
+seLinuxContext:
+  type: RunAsAny
+fsGroup:
+  type: RunAsAny
+seccompProfiles:
+- "*"
+volumes:
+- configMap
+- emptyDir
+- downwardAPI
+- projected
+- secret
+readOnlyRootFilesystem: true
+---
+# SCC for application Pods running the network-sidecar
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: meridio-sidecar
+allowPrivilegeEscalation: false
+requiredDropCapabilities:
+- ALL
+allowedCapabilities:
+- NET_ADMIN
+- NET_RAW
+- DAC_OVERRIDE
+- SYS_PTRACE
+runAsUser:
+  type: MustRunAsNonRoot
+seLinuxContext:
+  type: MustRunAs
+fsGroup:
+  type: RunAsAny
+seccompProfiles:
+- runtime/default
+volumes:
+- configMap
+- emptyDir
+- downwardAPI
+- projected
+- secret
+readOnlyRootFilesystem: false

@@ -1,0 +1,53 @@
+# NOTE: Unlike the Kind-based suites, this suite does NOT use a `sysctl-tuning` NAD.
+# On OpenShift the LB Pod's sysctls are set via the pod's securityContext.sysctls
+# (see lb-deployment.yaml), allowlisted by the KubeletConfig (kubeletconfig.yaml).
+# OpenShift's tuning CNI only permits per-interface sysctls, so the NAD approach
+# cannot set the global sysctls Meridio-2 requires.
+---
+# BGP peering network (external) - bridge CNI with VLAN, dual-stack
+# Bridge CNI auto-creates br-meridio with vlan_filtering.
+# All Pods on same node share L2 (including IPv6 NDP) — no external wiring needed.
+# IPv4: 169.254.100.0/24 (.150 reserved for VPN gateway)
+# IPv6: fd00:cafe:100::/64 (::150 reserved for VPN gateway)
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: bgp-net
+spec:
+  config: '{
+    "cniVersion": "0.4.0",
+    "name": "bgp-net",
+    "type": "bridge",
+    "bridge": "br-meridio",
+    "vlan": 100,
+    "ipam": {
+      "type": "whereabouts",
+      "ipRanges": [
+        { "range": "169.254.100.0/24", "exclude": ["169.254.100.150/32"] },
+        { "range": "fd00:cafe:100::/64", "exclude": ["fd00:cafe:100::150/128"] }
+      ]
+    }
+  }'
+---
+# App network (internal) - bridge CNI, dual-stack
+# Uses a separate bridge for internal LB → target traffic.
+# IPv4: 169.111.100.0/24
+# IPv6: fd00:cafe:1100::/64 (must differ from external fd00:cafe:100::/64)
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: app-net
+spec:
+  config: '{
+    "cniVersion": "0.4.0",
+    "name": "app-net",
+    "type": "bridge",
+    "bridge": "br-meridio-app",
+    "ipam": {
+      "type": "whereabouts",
+      "ipRanges": [
+        { "range": "169.111.100.0/24" },
+        { "range": "fd00:cafe:1100::/64" }
+      ]
+    }
+  }'

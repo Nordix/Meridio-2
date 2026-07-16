@@ -1,0 +1,67 @@
+---
+# IPv4 GatewayRouter - BGP peering on bgp-net
+# LB router (ASN 64512) peers with VPN gateway (ASN 4200000000)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gwr-ocp-v4
+spec:
+  gatewayRef:
+    name: gw-ocp
+  interface: "bgp-net"
+  address: "169.254.100.150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64512
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+# IPv6 GatewayRouter - BGP peering on bgp-net
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gwr-ocp-v6
+spec:
+  gatewayRef:
+    name: gw-ocp
+  interface: "bgp-net"
+  address: "fd00:cafe:100::150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64512
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+# L34Route with both IPv4 and IPv6 VIPs
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-ocp
+spec:
+  parentRefs:
+  - name: gw-ocp
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-ocp
+  destinationCIDRs:
+  - "100.0.0.1/32"
+  - "fd00:cafe:1::1/128"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100
