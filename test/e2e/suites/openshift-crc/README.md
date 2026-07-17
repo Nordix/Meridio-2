@@ -131,10 +131,11 @@ make -C test/e2e/ deploy-openshift-crc KUBECTL=oc
 make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 ```
 
-The `openshift-crc` target handles: namespace creation, ImageStreams, image push (tag+push of
-locally-built images + vpn-gateway build), cert-manager install, SCCs, RBAC, controller-manager
-(via kustomize overlay with RBAC finalizer patches + LB template override), VPN gateway, NADs,
-Gateway, routing, targets, and waits for all pods to become Ready.
+Together, `push-images-openshift-crc` and `deploy-openshift-crc` handle: namespace creation,
+ImageStreams, image push (tag+push of locally-built images + vpn-gateway build), cert-manager
+install, SCCs, RBAC, controller-manager (via kustomize overlay with RBAC finalizer patches + LB
+template override), VPN gateway, NADs, Gateway, routing, targets, and waits for all pods to
+become Ready.
 
 ---
 
@@ -232,7 +233,6 @@ make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 | `push-images-openshift-crc` | Create namespace + ImageStreams, build vpn-gateway, tag+push all 6 images |
 | `deploy-openshift-crc` | Full deployment (cert-manager, SCCs, controller-manager, VPN gateway, topology, wait for Ready) |
 | `undeploy-openshift-crc` | Delete webhook config, SCCs, and namespace (removes everything) |
-| `openshift-crc` | Umbrella: push-images + deploy |
 
 All targets accept `KUBECTL=oc` and derive registry paths from:
 - `OCP_REGISTRY_HOST` (default: `default-route-openshift-image-registry.apps-crc.testing`)
@@ -247,7 +247,7 @@ All targets accept `KUBECTL=oc` and derive registry paths from:
 | `namespace.yaml` | Namespace with PSA=privileged labels |
 | `kubeletconfig.yaml` | KubeletConfig to allowlist unsafe sysctls (triggers node reboot) |
 | `scc.yaml` | Custom SCCs: `meridio-lb` (LB pods) and `meridio-sidecar` (target+sidecar pods) |
-| `kustomization.yaml` | Deploys controller-manager with OpenShift patches (RBAC finalizers + LB template) |
+| `kustomization.yaml` | Deploys controller-manager with OpenShift patches (RBAC finalizers + webhook/cert naming) |
 | `nad.yaml` | NetworkAttachmentDefinitions (bridge CNI: bgp-net with VLAN 100, app-net) |
 | `gateway.yaml` | Gateway + GatewayConfiguration |
 | `routing.yaml` | GatewayRouter (IPv4 + IPv6, protocol: BGP) + L34Route |
@@ -255,7 +255,7 @@ All targets accept `KUBECTL=oc` and derive registry paths from:
 | `targets.yaml` | Target Pod Deployment (2 replicas + network-sidecar) |
 | `rbac.yaml` | ServiceAccounts + Role + RoleBinding |
 | `vpn-gateway.yaml` | VPN gateway ConfigMap (BIRD config, passive BGP) + Pod |
-| `lb-deployment.yaml` | OpenShift-adapted LB template (reference; embedded in kustomization.yaml) |
+| `lb-deployment.yaml` | OpenShift-adapted LB template, injected via the `deploy-suite` override mechanism (`MERIDIO_TEMPLATE_PATH`) |
 
 ---
 
