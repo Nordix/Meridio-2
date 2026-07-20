@@ -54,9 +54,10 @@ type Config struct {
 
 type Bird struct {
 	Config
-	nl      abstractNetlink
-	running bool
-	mu      sync.Mutex
+	nl         abstractNetlink
+	running    bool
+	lastConfig string // last written config for skip-if-unchanged guard
+	mu         sync.Mutex
 }
 
 func New(cfg Config) (*Bird, error) {
@@ -94,10 +95,16 @@ func (b *Bird) Run(ctx context.Context) error {
 	}
 
 	if _, err := os.Stat(b.ConfigFile); errors.Is(err, os.ErrNotExist) {
-		if err := b.writeConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}); err != nil {
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{})
+		if err != nil {
 			b.mu.Unlock()
 			return err
 		}
+		if err := b.writeConfigString(conf); err != nil {
+			b.mu.Unlock()
+			return err
+		}
+		b.lastConfig = conf
 	}
 
 	cmd := exec.CommandContext(ctx, "bird", "-d", "-c", b.ConfigFile, "-s", b.SocketPath)
@@ -146,7 +153,18 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 		return err
 	}
 
-	if err := b.writeConfig(vips, routers); err != nil {
+	conf, err := b.generateConfig(vips, routers)
+	if err != nil {
+		return err
+	}
+
+	// Skip file write and BIRD reload if config is unchanged.
+	// Relies on generateConfig producing deterministic output (sorted VIPs and routers).
+	if conf == b.lastConfig {
+		return nil
+	}
+
+	if err := b.writeConfigString(conf); err != nil {
 		return err
 	}
 
@@ -157,6 +175,10 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 			return fmt.Errorf("birdc configure failed: %w: %s", err, out)
 		}
 	}
+
+	// Update lastConfig only after successful write and reload.
+	// If either fails, the next reconcile must retry.
+	b.lastConfig = conf
 
 	return nil
 }
@@ -171,6 +193,12 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 			data.IPv4VIPs = append(data.IPv4VIPs, vip)
 		}
 	}
+
+	// Sort VIPs for deterministic config output: input order depends on
+	// Gateway status addresses which are pre-sorted, but sort defensively
+	// to guarantee stable BIRD config regardless of caller ordering.
+	slices.Sort(data.IPv4VIPs)
+	slices.Sort(data.IPv6VIPs)
 
 	slices.SortFunc(routers, func(a, b *meridio2v1alpha1.GatewayRouter) int {
 		return cmp.Compare(a.Name, b.Name)
@@ -216,12 +244,7 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 	return buf.String(), nil
 }
 
-func (b *Bird) writeConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter) error {
-	conf, err := b.generateConfig(vips, routers)
-	if err != nil {
-		return err
-	}
-
+func (b *Bird) writeConfigString(conf string) error {
 	tmp := b.ConfigFile + ".tmp"
 	if err := os.WriteFile(tmp, []byte(conf), 0644); err != nil {
 		return err

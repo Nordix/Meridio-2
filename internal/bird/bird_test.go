@@ -17,8 +17,11 @@ limitations under the License.
 package bird
 
 import (
+	"context"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -550,4 +553,115 @@ func normalizeWhitespace(s string) string {
 
 func uint16Ptr(i uint16) *uint16 {
 	return &i
+}
+
+func TestGenerateConfig_Deterministic(t *testing.T) {
+	b, err := New(testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	routers := []*meridio2v1alpha1.GatewayRouter{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "router-a"},
+			Spec: meridio2v1alpha1.GatewayRouterSpec{
+				Interface: "ext1", Address: "169.254.100.1",
+				BGP: &testBGPSpec,
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "router-b"},
+			Spec: meridio2v1alpha1.GatewayRouterSpec{
+				Interface: "ext2", Address: "169.254.100.2",
+				BGP: &testBGPSpec,
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "router-c"},
+			Spec: meridio2v1alpha1.GatewayRouterSpec{
+				Interface: "ext3", Address: "169.254.100.3",
+				BGP: &testBGPSpec,
+			},
+		},
+	}
+
+	// Different input orderings must produce identical config output
+	vipPermutations := [][]string{
+		{"10.0.0.1/32", "10.0.0.2/32", "10.0.0.3/32", "2001:db8::1/128", "2001:db8::2/128", "2001:db8::3/128"},
+		{"2001:db8::3/128", "10.0.0.3/32", "2001:db8::1/128", "10.0.0.1/32", "2001:db8::2/128", "10.0.0.2/32"},
+		{"10.0.0.3/32", "10.0.0.2/32", "10.0.0.1/32", "2001:db8::3/128", "2001:db8::2/128", "2001:db8::1/128"},
+	}
+
+	routerPermutations := [][]*meridio2v1alpha1.GatewayRouter{
+		{routers[0], routers[1], routers[2]},
+		{routers[2], routers[0], routers[1]},
+		{routers[1], routers[2], routers[0]},
+	}
+
+	var reference string
+	for i, vips := range vipPermutations {
+		for j, rts := range routerPermutations {
+			conf, err := b.generateConfig(vips, rts)
+			if err != nil {
+				t.Fatalf("vips[%d] routers[%d]: generateConfig() error = %v", i, j, err)
+			}
+			if reference == "" {
+				reference = conf
+			} else if conf != reference {
+				t.Fatalf("vips[%d] routers[%d]: config differs from reference (input ordering affected output)", i, j)
+			}
+		}
+	}
+}
+
+func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		SocketPath:     dir + "/bird.ctl",
+		ConfigFile:     dir + "/bird.conf",
+		TableID:        4096,
+		RulePriority:   100,
+		KernelScanTime: 10,
+	}
+	b, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.nl = &netlinkMock{} // avoid real netlink calls
+
+	vips := []string{"20.0.0.1", "2001:db8::1"}
+	routers := []*meridio2v1alpha1.GatewayRouter{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "router-a"},
+			Spec: meridio2v1alpha1.GatewayRouterSpec{
+				Interface: "ext1", Address: "169.254.100.1",
+				BGP: &testBGPSpec,
+			},
+		},
+	}
+
+	// First Configure writes the config file
+	if err := b.Configure(context.Background(), vips, routers); err != nil {
+		t.Fatal(err)
+	}
+	info1, err := os.Stat(cfg.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Ensure mtime would differ if file is rewritten
+	time.Sleep(10 * time.Millisecond)
+
+	// Second Configure with same inputs should skip the write
+	if err := b.Configure(context.Background(), vips, routers); err != nil {
+		t.Fatal(err)
+	}
+	info2, err := os.Stat(cfg.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if info2.ModTime() != info1.ModTime() {
+		t.Error("config file was rewritten despite no change (skip-if-unchanged guard failed)")
+	}
 }
