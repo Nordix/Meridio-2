@@ -41,7 +41,7 @@ func TestLoadBalancerController(t *testing.T) {
 }
 
 // newFakeClient creates a fake client with the field indexer for LoadBalancerEndpointSlice
-// registered. All tests that call reconcileTargets or hasReadyEndpoints need this.
+// registered. All tests that call reconcileTargets need this.
 func newFakeClient(scheme *runtime.Scheme, objects ...client.Object) client.Client {
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -938,7 +938,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(mockInstance.flows).To(BeEmpty())
 		})
 
-		It("should delete flows when DistributionGroup has no endpoints", func() {
+		It("should preserve flows when DistributionGroup has no ready endpoints", func() {
 			group := meridio2v1alpha1.GroupVersion.Group
 			kind := kindDistributionGroup
 
@@ -975,17 +975,29 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			// No EndpointSlice (no endpoints)
-			fakeClient = newFakeClient(scheme, distGroup, l34route)
+			// No LoadBalancerEndpointSlice (no endpoints) but L34Route and Gateway exist
+			ipAddrType := gatewayv1.IPAddressType
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+				Status: gatewayv1.GatewayStatus{
+					Addresses: []gatewayv1.GatewayStatusAddress{
+						{Type: &ipAddrType, Value: "20.0.0.1"},
+					},
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, distGroup, l34route, gateway)
 			controller.Client = fakeClient
 
 			err := controller.reconcileFlows(ctx, distGroup)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Flows should be deleted
+			// Flows should be preserved (L34Route still exists)
 			mockInstance := mockNfqlb.instances[distGroup.Name]
-			Expect(mockInstance.flows).To(BeEmpty())
-			Expect(mockInstance.flows).ToNot(HaveKey("test-route"))
+			Expect(mockInstance.flows).To(HaveKey("test-route"))
 		})
 
 		It("should delete flows when L34Route is removed", func() {
