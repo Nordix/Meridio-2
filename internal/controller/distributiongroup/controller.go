@@ -205,7 +205,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *DistributionGroupReconciler) SetupWithManager(mgr ctrl.Manager, enableTopology bool) error {
+func (r *DistributionGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Register field indexer for LoadBalancerEndpointSlice lookups by DG name.
 	// This enables client.MatchingFields{"spec.distributionGroupName": ...} in List calls.
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &meridio2v1alpha1.LoadBalancerEndpointSlice{},
@@ -226,10 +226,6 @@ func (r *DistributionGroupReconciler) SetupWithManager(mgr ctrl.Manager, enableT
 		Watches(&meridio2v1alpha1.L34Route{}, handler.EnqueueRequestsFromMapFunc(r.mapL34RouteToDistributionGroup)).
 		Watches(&meridio2v1alpha1.GatewayConfiguration{}, handler.EnqueueRequestsFromMapFunc(r.mapGatewayConfigToDistributionGroup)).
 		Named("distributiongroup")
-
-	if enableTopology {
-		builder = builder.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToDistributionGroup))
-	}
 
 	return builder.Complete(r)
 }

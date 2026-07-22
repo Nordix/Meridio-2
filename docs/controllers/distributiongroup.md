@@ -262,7 +262,6 @@ The controller reconciles when:
 | Gateway | Create/Update/Delete | Referenced in parentRefs or L34Routes |
 | L34Route | Create/Update/Delete | BackendRef points to DG |
 | GatewayConfiguration | Create/Update/Delete | Referenced by Gateway |
-| Node | Create/Update/Delete | Topology hints (optional) |
 
 **Note:** Gateway watch includes early filtering - only Gateways with `Accepted=True` trigger reconciliation.
 
@@ -691,8 +690,6 @@ Deploy to cluster and verify:
 
 **`--max-endpoints-per-slice`**: Maximum number of endpoints per LoadBalancerEndpointSlice (default: 200)
 
-**`--enable-topology-hints`**: Enable Node watching for faster endpoint removal when Nodes fail
-
 ### Environment Variables
 All flags can be set via `MERIDIO_*` environment variables (e.g., `MERIDIO_NAMESPACE`, `MERIDIO_MAX_ENDPOINTS_PER_SLICE`).
 
@@ -700,7 +697,7 @@ All flags can be set via `MERIDIO_*` environment variables (e.g., `MERIDIO_NAMES
 
 The controller manager's RBAC is split into:
 - **Role** (namespace-scoped): Pods, Deployments, Gateways, L34Routes, GatewayConfigurations, DistributionGroups, LoadBalancerEndpointSlices, EndpointNetworkConfigurations
-- **ClusterRole** (cluster-scoped): GatewayClasses, Nodes (optional, for topology hints)
+- **ClusterRole** (cluster-scoped): GatewayClasses
 
 See `config/rbac/manager-role.yaml` and `config/rbac/manager-clusterrole.yaml`.
 
@@ -709,13 +706,19 @@ The DG controller specifically requires:
 - Read/Write: LoadBalancerEndpointSlices (create, update, delete)
 - Write: DistributionGroups/status
 
-## Future Enhancements
+## Node Failure Detection
 
-### Node Availability Monitoring
-- Watch Node resources for NotReady conditions
-- Trigger immediate reconciliation when Nodes fail
-- Remove endpoints faster than waiting for Pod deletion
-- Requires `--enable-topology-hints` flag
+The DG controller does **not** watch Node events or independently detect node failure. When a Node becomes unreachable, the affected Pod's `PodReady` condition remains stale (`True`) because the dead kubelet cannot update it. Endpoint removal and Maglev ID reallocation are deferred until Kubernetes evicts and deletes the Pod.
+
+This is intentional:
+
+1. **Node unreachable ≠ node dead.** A control-plane network partition triggers NotReady, but the Pod may still be running and serving traffic on the data-plane path.
+2. **Premature Maglev ID reallocation disrupts active connections.** Revoking an ID reshuffles the hash table, reassigning in-flight connections to a different endpoint — even if the original Pod is still alive.
+3. **Kubernetes provides the control mechanism.** Applications set Pod `tolerationSeconds` for `node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable` taints to control the eviction window (default 300s, reducible to e.g. 30s for faster failover).
+
+Once the Pod is deleted or transitions out of `Running` phase, the DG controller removes it from EndpointSlices and the Maglev ID is freed — this is the safe trigger, as Kubernetes has committed to terminating the Pod.
+
+## Future Enhancements
 
 ### Additional Attachment Types
 - Future attachment types (e.g., DRA) could be added if needed
