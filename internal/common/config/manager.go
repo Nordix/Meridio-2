@@ -47,7 +47,6 @@ type ManagerConfig struct {
 	LogLevelAPI string
 
 	// Features
-	EnableTopologyHints  bool
 	MaxEndpointsPerSlice int
 
 	// Filtering
@@ -100,8 +99,6 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Log level (debug, info, warn, error)")
 	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
 		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
-	fs.BoolVar(&c.EnableTopologyHints, "enable-topology-hints", false,
-		"Enable Node watching for topology-aware endpoint hints. Requires RBAC permissions for nodes.")
 	fs.IntVar(&c.MaxEndpointsPerSlice, "max-endpoints-per-slice", 200,
 		"Maximum number of endpoints per LoadBalancerEndpointSlice.")
 	fs.StringVar(&c.PodCacheLabel, "pod-cache-label", "",
@@ -147,7 +144,6 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
-	bindBool(fs, "enable-topology-hints", "MERIDIO_ENABLE_TOPOLOGY_HINTS", &c.EnableTopologyHints)
 	bindInt(fs, "max-endpoints-per-slice", "MERIDIO_MAX_ENDPOINTS_PER_SLICE", &c.MaxEndpointsPerSlice)
 	bindString(fs, "pod-cache-label", "MERIDIO_POD_CACHE_LABEL", &c.PodCacheLabel)
 	bindString(fs, "template-path", "MERIDIO_TEMPLATE_PATH", &c.TemplatePath)
