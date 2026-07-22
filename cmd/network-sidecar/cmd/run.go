@@ -77,16 +77,8 @@ func newCmdRun() *cobra.Command {
 			}
 			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
 
-			// Create a basic zap logger for the log level server
-			zapConfig := zap.NewProductionConfig()
-			zapConfig.Level = atomicLevel
-			basicLogger, err := zapConfig.Build()
-			if err != nil {
-				return fmt.Errorf("failed to create logger for log level server: %w", err)
-			}
-
 			// Start dynamic log level server (non-blocking, non-fatal)
-			log.StartDynamicLevelServer(cfg.LogLevelAPI, atomicLevel, basicLogger)
+			log.StartDynamicLevelServer(cfg.LogLevelAPI, atomicLevel, ctrl.Log)
 
 			return nil
 		},

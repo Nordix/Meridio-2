@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -31,7 +32,7 @@ import (
 func TestStartDynamicLevelServer_Disabled(t *testing.T) {
 	// Empty address should be a no-op
 	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	logger := zap.NewNop()
+	logger := logr.Discard()
 
 	StartDynamicLevelServer("", level, logger)
 	// If it doesn't panic or block, test passes
@@ -49,7 +50,7 @@ func TestStartDynamicLevelServer_AcceptsLoopback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-			logger := zap.NewNop()
+			logger := logr.Discard()
 
 			StartDynamicLevelServer(tt.addr, level, logger)
 
@@ -74,7 +75,7 @@ func TestStartDynamicLevelServer_AcceptsLoopback(t *testing.T) {
 
 func TestStartDynamicLevelServer_GetAndPut(t *testing.T) {
 	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	logger := zap.NewNop()
+	logger := logr.Discard()
 
 	StartDynamicLevelServer("127.0.0.1:19903", level, logger)
 
@@ -132,7 +133,7 @@ func TestStartDynamicLevelServer_RejectsNonLoopback(t *testing.T) {
 	for _, tt := range dangerousAddresses {
 		t.Run(tt.name, func(t *testing.T) {
 			level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-			logger := zap.NewNop()
+			logger := logr.Discard()
 
 			// Should reject and not start server
 			// We verify this by the fact that StartDynamicLevelServer returns
@@ -162,7 +163,7 @@ func TestStartDynamicLevelServer_InvalidAddress(t *testing.T) {
 	for _, addr := range invalidAddresses {
 		t.Run(addr, func(t *testing.T) {
 			level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-			logger := zap.NewNop()
+			logger := logr.Discard()
 
 			// Should handle gracefully (log error, don't panic)
 			StartDynamicLevelServer(addr, level, logger)
@@ -182,9 +183,11 @@ func TestParseLevel(t *testing.T) {
 		{"info", zapcore.InfoLevel, false},
 		{"warn", zapcore.WarnLevel, false},
 		{"error", zapcore.ErrorLevel, false},
-		{"dpanic", zapcore.DPanicLevel, false},
-		{"panic", zapcore.PanicLevel, false},
-		{"fatal", zapcore.FatalLevel, false},
+
+		// Dangerous levels (rejected - would silence logging or crash)
+		{"dpanic", zapcore.InfoLevel, true},
+		{"panic", zapcore.InfoLevel, true},
+		{"fatal", zapcore.InfoLevel, true},
 
 		// Case insensitive
 		{"DEBUG", zapcore.DebugLevel, false},
