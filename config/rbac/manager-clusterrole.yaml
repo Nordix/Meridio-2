@@ -1,6 +1,6 @@
 ---
 # ClusterRole for cluster-scoped resources only.
-# GatewayClass and Nodes are cluster-scoped and must be accessible
+# GatewayClass is cluster-scoped and must be accessible
 # regardless of --namespace.
 #
 # RBAC: This file is hand-maintained. Update when controller permissions change.
@@ -17,15 +17,6 @@ rules:
   - gateway.networking.k8s.io
   resources:
   - gatewayclasses
-  verbs:
-  - get
-  - list
-  - watch
-# DistributionGroup controller: topology-aware hints (optional, requires --enable-topology-hints)
-- apiGroups:
-  - ""
-  resources:
-  - nodes
   verbs:
   - get
   - list

@@ -283,9 +283,6 @@ func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 		cacheOptions.ByObject = map[client.Object]cache.ByObject{
 			&gatewayapiv1.GatewayClass{}: {},
 		}
-		if cfg.EnableTopologyHints {
-			cacheOptions.ByObject[&corev1.Node{}] = cache.ByObject{}
-		}
 	}
 
 	// Apply pod cache label filter (already validated)
@@ -346,7 +343,7 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 		ControllerName:       cfg.ControllerName,
 		Namespace:            cfg.Namespace,
 		MaxEndpointsPerSlice: cfg.MaxEndpointsPerSlice,
-	}).SetupWithManager(mgr, cfg.EnableTopologyHints); err != nil {
+	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("controller DistributionGroup: %w", err)
 	}
 
