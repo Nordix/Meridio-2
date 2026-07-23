@@ -339,7 +339,7 @@ func applyBfdState(
 	protocols []bird.ProtocolStatus,
 	bfdSessions []bird.BfdSession,
 	routers []*meridio2v1alpha1.GatewayRouter,
-	log logr.Logger,
+	logger logr.Logger,
 ) {
 	routerByName := make(map[string]*meridio2v1alpha1.GatewayRouter, len(routers))
 	for _, gr := range routers {
@@ -371,7 +371,7 @@ func applyBfdState(
 				p.Info = bird.BgpInfoEstablished
 			} else {
 				p.Info = bird.BfdInfoDown
-				log.V(1).Info("BFD session down for static protocol", "protocol", p.Name, "address", gr.Spec.Address)
+				logger.V(1).Info("BFD session down for static protocol", "protocol", p.Name, "address", gr.Spec.Address)
 			}
 		} else {
 			p.Info = bird.BgpInfoEstablished
