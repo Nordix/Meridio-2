@@ -116,9 +116,9 @@ When a Node becomes unreachable, the DG controller does not independently detect
 
 ## Deployment / Operations
 
-**23. No runtime log level change**
+**23. ~~No runtime log level change~~ (Resolved)**
 
-Log level is set at startup via `--log-level` / `MERIDIO_LOG_LEVEL` and cannot be changed without restarting the process. All four controllers (controller-manager, router, loadbalancer, sidecar) share this limitation.
+Log level can now be changed at runtime via an opt-in HTTP endpoint. Set `--log-level-api` / `MERIDIO_LOG_LEVEL_API` to a loopback address (e.g., `127.0.0.1:9901`) to enable the feature. The endpoint exposes GET/PUT on `/log/level` and is restricted to localhost only. Changes are ephemeral (reset on container restart). When the env var is empty (default), the feature is disabled and log level remains static as before.
 
 **24. ~~No cert-wait-timeout~~ (Resolved)**
 

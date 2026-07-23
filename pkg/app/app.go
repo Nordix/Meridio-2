@@ -30,12 +30,13 @@ package app
 import (
 	"context"
 	"crypto/tls"
-	goflag "flag"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,7 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -53,6 +54,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/log"
 	"github.com/nordix/meridio-2/internal/common/prerequisites"
 	"github.com/nordix/meridio-2/internal/controller/distributiongroup"
 	"github.com/nordix/meridio-2/internal/controller/endpointnetworkconfiguration"
@@ -86,7 +88,6 @@ type Config struct {
 //	}
 func NewCommand(additional ...ControllerSetup) *cobra.Command {
 	cfg := &config.ManagerConfig{}
-	zapOpts := zap.Options{Development: true}
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -94,7 +95,26 @@ func NewCommand(additional ...ControllerSetup) *cobra.Command {
 		Long:  "Start the controller manager to reconcile Gateway API resources",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			cfg.BindEnv(cmd.Flags())
-			ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+
+			// Parse initial log level
+			initialLevel, err := log.ParseLevel(cfg.LogLevel)
+			if err != nil {
+				return fmt.Errorf("invalid --log-level: %w", err)
+			}
+
+			// Create atomic level for dynamic changes
+			atomicLevel := zap.NewAtomicLevelAt(initialLevel)
+
+			// Setup logger with atomic level
+			zapOpts := ctrlzap.Options{
+				Development: initialLevel == zapcore.DebugLevel,
+				Level:       atomicLevel,
+			}
+			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
+
+			// Start dynamic log level server (non-blocking, non-fatal)
+			log.StartDynamicLevelServer(cfg.LogLevelAPI, atomicLevel, ctrl.Log)
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -103,10 +123,6 @@ func NewCommand(additional ...ControllerSetup) *cobra.Command {
 	}
 
 	cfg.AddFlags(cmd.Flags())
-
-	goFlags := goflag.NewFlagSet("", goflag.ContinueOnError)
-	zapOpts.BindFlags(goFlags)
-	cmd.Flags().AddGoFlagSet(goFlags)
 
 	return cmd
 }

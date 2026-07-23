@@ -71,6 +71,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.uid
+        - name: MERIDIO_LOG_LEVEL_API
+          value: 127.0.0.1:9903
         securityContext:
           capabilities:
             drop: ["ALL"]

@@ -21,6 +21,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -29,12 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/log"
 	"github.com/nordix/meridio-2/internal/controller/sidecar"
 )
 
@@ -57,8 +60,26 @@ func newCmdRun() *cobra.Command {
 		Long:  `Run the network sidecar controller to configure VIPs and source-based routing`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			cfg.BindEnv(cmd.Flags())
-			zapOpts := zap.Options{Development: cfg.LogLevel == "debug"}
-			ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+
+			// Parse initial log level
+			initialLevel, err := log.ParseLevel(cfg.LogLevel)
+			if err != nil {
+				return fmt.Errorf("invalid --log-level: %w", err)
+			}
+
+			// Create atomic level for dynamic changes
+			atomicLevel := zap.NewAtomicLevelAt(initialLevel)
+
+			// Setup logger with atomic level
+			zapOpts := ctrlzap.Options{
+				Development: initialLevel == zapcore.DebugLevel,
+				Level:       atomicLevel,
+			}
+			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
+
+			// Start dynamic log level server (non-blocking, non-fatal)
+			log.StartDynamicLevelServer(cfg.LogLevelAPI, atomicLevel, ctrl.Log)
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
