@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -50,24 +49,13 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 		c.flows[distGroup.Name] = make(map[string]*meridio2v1alpha1.L34Route)
 	}
 
-	// Check if DistributionGroup has endpoints before configuring flows
-	hasEndpoints, err := c.hasReadyEndpoints(ctx, distGroup)
-	if err != nil {
-		return err
-	}
-
-	if !hasEndpoints {
-		logr.Info("No ready endpoints, deleting flows", "distGroup", distGroup.Name)
-		return c.deleteAllFlows(ctx, instance, distGroup.Name)
-	}
-
 	// Get L34Routes for this Gateway and DistributionGroup
 	newFlows, err := c.listMatchingL34Routes(ctx, distGroup)
 	if err != nil {
 		return err
 	}
 
-	// BUG FIX #2: Handle empty L34Route list
+	// Handle empty L34Route list — no routes means no flows needed
 	if len(newFlows) == 0 {
 		logr.Info("No L34Routes found, deleting all flows", "distGroup", distGroup.Name)
 		if err := c.deleteAllFlows(ctx, instance, distGroup.Name); err != nil {
@@ -94,7 +82,7 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 		}
 	}
 
-	// IMPROVEMENT #5: Add/update flows BEFORE configuring nftables
+	// Add/update flows BEFORE configuring nftables
 	successfulFlows := make(map[string]*meridio2v1alpha1.L34Route)
 	for flowName, route := range newFlows {
 		flow := newL34RouteFlow(flowName, route)
@@ -118,37 +106,11 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 		return fmt.Errorf("failed to configure nftables: %w", err)
 	}
 
-	// BUG FIX #3: Update tracked flows with only successful ones
+	// Update tracked flows with only successful ones
 	c.flows[distGroup.Name] = successfulFlows
 
 	logr.Info("Reconciled flows", "distGroup", distGroup.Name, "count", len(successfulFlows))
 	return errFinal
-}
-
-// hasReadyEndpoints checks if DistributionGroup has any ready endpoints.
-func (c *Controller) hasReadyEndpoints(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) (bool, error) {
-	sliceList := &meridio2v1alpha1.LoadBalancerEndpointSliceList{}
-	if err := c.List(ctx, sliceList,
-		client.InNamespace(c.GatewayNamespace),
-		client.MatchingFields{
-			"spec.distributionGroupName": distGroup.Name,
-			"spec.gatewayRef.name":       c.GatewayName,
-		},
-	); err != nil {
-		return false, err
-	}
-
-	for i := range sliceList.Items {
-		if !metav1.IsControlledBy(&sliceList.Items[i], distGroup) {
-			continue
-		}
-		for _, endpoint := range sliceList.Items[i].Spec.Endpoints {
-			if endpoint.Ready {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
 }
 
 // deleteAllFlows deletes all flows for a DistributionGroup.
