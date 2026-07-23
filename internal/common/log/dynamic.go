@@ -45,7 +45,10 @@ import (
 //   - GET  /log/level  -> {"level":"info"}
 //   - PUT  /log/level  <- {"level":"debug"}
 //
-// Valid log levels: debug, info, warn, error, dpanic, panic, fatal
+// NOTE: the HTTP endpoint delegates directly to zap.AtomicLevel.ServeHTTP,
+// which currently accepts any valid zapcore.Level (including dpanic, panic,
+// and fatal) via PUT. Only the initial level parsed from --log-level (see
+// ParseLevel) is restricted to debug/info/warn/error.
 func StartDynamicLevelServer(addr string, level zap.AtomicLevel, logger logr.Logger) {
 	if addr == "" {
 		return // disabled by default
