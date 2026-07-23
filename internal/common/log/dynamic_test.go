@@ -119,6 +119,42 @@ func TestStartDynamicLevelServer_GetAndPut(t *testing.T) {
 	require.Equal(t, "debug", result.Level)
 }
 
+// TestStartDynamicLevelServer_HTTPAcceptsDangerousLevels documents a known
+// gap: unlike ParseLevel (used for the initial --log-level value), the HTTP
+// endpoint delegates directly to zap.AtomicLevel.ServeHTTP and does not
+// restrict which levels can be set at runtime. Setting "fatal" or "panic"
+// via this endpoint will silence all lower-severity logging and can cause
+// the process to exit or panic the next time something logs at that level.
+//
+// This test intentionally documents the current (unrestricted) behavior so
+// it isn't a silent, unnoticed gap. If the HTTP endpoint is later restricted
+// to match ParseLevel, this test should be updated to assert a 400 response
+// instead.
+func TestStartDynamicLevelServer_HTTPAcceptsDangerousLevels(t *testing.T) {
+	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	logger := logr.Discard()
+
+	StartDynamicLevelServer("127.0.0.1:19904", level, logger)
+	time.Sleep(100 * time.Millisecond)
+
+	body := strings.NewReader(`{"level":"fatal"}`)
+	req, err := http.NewRequest(http.MethodPut, "http://127.0.0.1:19904/log/level", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	// KNOWN GAP: this currently succeeds (200) instead of being rejected.
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, zapcore.FatalLevel, level.Level())
+
+	// Reset to a safe level so this test doesn't affect others if the
+	// process/logger were ever reused.
+	level.SetLevel(zapcore.InfoLevel)
+}
+
 func TestStartDynamicLevelServer_RejectsNonLoopback(t *testing.T) {
 	dangerousAddresses := []struct {
 		name string
