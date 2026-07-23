@@ -51,7 +51,7 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&c.ProbeAddr, "health-probe-bind-address", ":8081",
 		"The address the probe endpoint binds to")
 	fs.StringVar(&c.LogLevel, "log-level", "info",
-		"Log level (debug, info, error)")
+		"Log level (debug, info, warn, error)")
 	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
 		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
 	fs.StringVar(&c.MetricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+

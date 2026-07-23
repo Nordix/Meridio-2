@@ -20,10 +20,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -36,6 +38,48 @@ func TestStartDynamicLevelServer_Disabled(t *testing.T) {
 
 	StartDynamicLevelServer("", level, logger)
 	// If it doesn't panic or block, test passes
+}
+
+// capturingLogger returns a logr.Logger backed by funcr that appends every
+// formatted log line to lines (guarded by mu), so tests can assert real log
+// output rather than only compiling against the logr.Logger interface.
+func capturingLogger(mu *sync.Mutex, lines *[]string) logr.Logger {
+	return funcr.New(func(prefix, args string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if prefix != "" {
+			*lines = append(*lines, prefix+": "+args)
+		} else {
+			*lines = append(*lines, args)
+		}
+	}, funcr.Options{})
+}
+
+func TestStartDynamicLevelServer_LogsThroughRealLogger(t *testing.T) {
+	var mu sync.Mutex
+	var lines []string
+	logger := capturingLogger(&mu, &lines)
+
+	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	StartDynamicLevelServer("127.0.0.1:19905", level, logger)
+
+	// Give server time to start and log its startup message
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, lines, "expected at least one log line through the real logger")
+
+	found := false
+	for _, l := range lines {
+		if strings.Contains(l, "Log level API listening") {
+			found = true
+			// WithName("loglevel-api") should be reflected in the logger name
+			require.Contains(t, l, "loglevel-api")
+			break
+		}
+	}
+	require.True(t, found, "expected startup log line to be emitted through the provided logr.Logger, got: %v", lines)
 }
 
 func TestStartDynamicLevelServer_AcceptsLoopback(t *testing.T) {
