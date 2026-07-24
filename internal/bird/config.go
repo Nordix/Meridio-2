@@ -17,8 +17,10 @@ limitations under the License.
 package bird
 
 import (
+	"cmp"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -62,6 +64,7 @@ type bgpRouterData struct {
 	BFD        string
 	HoldTime   string
 	IPFamily   string
+	TcpAo      string
 }
 
 type staticRouterData struct {
@@ -70,6 +73,19 @@ type staticRouterData struct {
 	Address   string
 	BFD       string
 	IPFamily  string
+}
+
+type tcpAoData struct {
+	Keys      []tcpAoKeyData
+	NextKeyId *uint8
+}
+
+type tcpAoKeyData struct {
+	SendId    uint8
+	RecvId    uint8
+	Secret    string
+	Algorithm string
+	Preferred bool
 }
 
 var tmplFuncs = template.FuncMap{
@@ -186,6 +202,9 @@ protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
 		import filter gateway_routes;
 		export filter announced_routes;
 	};
+	{{- if .TcpAo}}
+	{{.TcpAo}}
+	{{- end}}
 }
 {{- end}}
 {{- range .StaticRouters}}
@@ -199,7 +218,27 @@ protocol static 'NBR-{{.Name}}' {
 {{- end}}
 `))
 
-func toBGPRouterData(router *meridio2v1alpha1.GatewayRouter) (bgpRouterData, error) {
+var tcpAoTmpl = template.Must(template.New("tcpao").Funcs(template.FuncMap{
+	"deref": func(p *uint8) uint8 { return *p },
+}).Parse(`authentication ao;
+	keys {
+{{- range .Keys}}
+		key {
+			send id {{.SendId}};
+			recv id {{.RecvId}};
+			secret "{{.Secret}}";
+			algorithm {{.Algorithm}};
+{{- if .Preferred}}
+			preferred;
+{{- end}}
+		};
+{{- end}}
+	};
+{{- if .NextKeyId}}
+	rnext id {{deref .NextKeyId}};
+{{- end}}`))
+
+func toBGPRouterData(router *meridio2v1alpha1.GatewayRouter, passwords map[uint8]string) (bgpRouterData, error) {
 	if router.Spec.BGP.LocalPort == nil {
 		return bgpRouterData{}, fmt.Errorf("router %q: LocalPort is required", router.Name)
 	}
@@ -224,6 +263,7 @@ func toBGPRouterData(router *meridio2v1alpha1.GatewayRouter) (bgpRouterData, err
 	if isIPv6(router.Spec.Address) {
 		ipFamily = ipFamilyIPv6
 	}
+	tcpAo := tcpAoConfig(router.Spec.BGP.Authentication, passwords)
 
 	return bgpRouterData{
 		Name:       router.Name,
@@ -236,6 +276,7 @@ func toBGPRouterData(router *meridio2v1alpha1.GatewayRouter) (bgpRouterData, err
 		BFD:        bfd,
 		HoldTime:   holdTime,
 		IPFamily:   ipFamily,
+		TcpAo:      tcpAo,
 	}, nil
 }
 
@@ -279,6 +320,48 @@ func formatBFDInterfaceParams(spec meridio2v1alpha1.BfdSpec) string {
 		fmt.Sprintf("min tx interval %s;", spec.MinTx),
 		fmt.Sprintf("multiplier %d;", spec.Multiplier),
 	}, " ")
+}
+
+func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]string) string {
+	if tcpAo == nil || len(tcpAo.Keychain) == 0 {
+		return ""
+	}
+
+	keys := make([]tcpAoKeyData, 0, len(tcpAo.Keychain))
+	for _, key := range tcpAo.Keychain {
+		password, ok := passwords[key.SendId]
+		if !ok {
+			continue
+		}
+		keys = append(keys, tcpAoKeyData{
+			SendId:    key.SendId,
+			RecvId:    key.RecvId,
+			Secret:    escapeBirdString(password),
+			Algorithm: key.Algorithm,
+			Preferred: tcpAo.CurrentKeyId != nil && *tcpAo.CurrentKeyId == key.SendId,
+		})
+	}
+
+	if len(keys) == 0 {
+		return ""
+	}
+
+	slices.SortFunc(keys, func(a, b tcpAoKeyData) int {
+		return cmp.Compare(a.SendId, b.SendId)
+	})
+	var buf strings.Builder
+	if err := tcpAoTmpl.Execute(&buf, tcpAoData{Keys: keys, NextKeyId: tcpAo.NextKeyId}); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+func escapeBirdString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	return s
 }
 
 func isIPv6(ipOrCIDR string) bool {

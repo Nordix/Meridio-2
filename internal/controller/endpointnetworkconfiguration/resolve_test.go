@@ -37,9 +37,9 @@ import (
 
 const (
 	testControllerName = "test-controller"
-	testSubnetV4       = "169.111.100.0/24"
+	testSubnetV4       = "169.111.60.0/24"
 	testSubnetV6       = "fd00::100:0/120"
-	testNextHopV4      = "169.111.100.3"
+	testNextHopV4      = "169.111.60.3"
 	testNextHopV6      = "fd00::100:3"
 	testIPFamilyV4     = "IPv4"
 )
@@ -280,7 +280,7 @@ func TestBuildGatewayConnection_VIPsSorted(t *testing.T) {
 	targetPod.Annotations = map[string]string{
 		"k8s.v1.cni.cncf.io/network-status": `[
 			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
-			{"name":"net1","interface":"net1","ips":["169.111.100.10","fd00::100:a"]}
+			{"name":"net1","interface":"net1","ips":["169.111.60.10","fd00::100:a"]}
 		]`,
 	}
 
@@ -460,7 +460,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 	targetPod.Annotations = map[string]string{
 		"k8s.v1.cni.cncf.io/network-status": `[
 			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
-			{"name":"net1","interface":"net1","ips":["169.111.100.10"]}
+			{"name":"net1","interface":"net1","ips":["169.111.60.10"]}
 		]`,
 	}
 
@@ -501,7 +501,7 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 	targetPod.Annotations = map[string]string{
 		"k8s.v1.cni.cncf.io/network-status": `[
 			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
-			{"name":"net1","interface":"net1","ips":["169.111.100.10","fd00:100::a"]}
+			{"name":"net1","interface":"net1","ips":["169.111.60.10","fd00:100::a"]}
 		]`,
 	}
 
@@ -551,7 +551,7 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 	pod.Annotations = map[string]string{
 		"k8s.v1.cni.cncf.io/network-status": `[
 			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
-			{"name":"nad-1","interface":"net1","ips":["169.111.100.10"]}
+			{"name":"nad-1","interface":"net1","ips":["169.111.60.10"]}
 		]`,
 	}
 	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1")
@@ -592,7 +592,7 @@ func TestResolveGatewayConnections_DeterministicOrdering(t *testing.T) {
 	pod.Annotations = map[string]string{
 		"k8s.v1.cni.cncf.io/network-status": `[
 			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
-			{"name":"nad-1","interface":"net1","ips":["169.111.100.10","fd00::100:10"]}
+			{"name":"nad-1","interface":"net1","ips":["169.111.60.10","fd00::100:10"]}
 		]`,
 	}
 
@@ -706,7 +706,7 @@ func TestSidecarContract_DualStack(t *testing.T) {
 	pod.Annotations = map[string]string{
 		"k8s.v1.cni.cncf.io/network-status": `[
 			{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
-			{"name":"nad-1","interface":"net1","ips":["169.111.100.10","fd00::100:a"]}
+			{"name":"nad-1","interface":"net1","ips":["169.111.60.10","fd00::100:a"]}
 		]`,
 	}
 	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "2001:db8::1")

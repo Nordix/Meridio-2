@@ -107,6 +107,10 @@ type BgpSpec struct {
 	// BGP listening port of the Attractor FrontEnds.
 	// +optional
 	LocalPort *uint16 `json:"localPort,omitempty"`
+
+	// BGP authentication with TCP Authentication Option (RFC5925).
+	// +optional
+	Authentication *BgpTcpAoSpec `json:"authentication,omitempty"`
 }
 
 // +enum
@@ -140,6 +144,53 @@ type BfdSpec struct {
 	// When this number of bfd packets failed to receive, bfd session will go down.
 	// +required
 	Multiplier uint16 `json:"multiplier"`
+}
+
+// BgpTcpAo defines the parameters to configure TCP Authentication Option (RFC5925).
+type BgpTcpAoSpec struct {
+	// KeyChain defines the list of TCP-AO keys for authentication and rotation.
+	// At least one key must be provided.
+	// +kubebuilder:validation:MinItems=1
+	Keychain []TcpAoKeyChain `json:"keychain"`
+
+	// CurrentKeyId specifies the active key ID for sending (only this key gets preferred in BIRD).
+	// If unset, no keys are marked preferred.
+	// +optional
+	CurrentKeyId *uint8 `json:"currentKeyId,omitempty"`
+
+	// NextKeyId specifies the key ID the peer should transition to (maps to BIRD's rnext id).
+	// +optional
+	NextKeyId *uint8 `json:"nextKeyId,omitempty"`
+}
+
+// TcpAoKeyChain defines a single TCP-AO key configuration.
+type TcpAoKeyChain struct {
+	// SendId is the Send_ID for this key (0-255).
+	SendId uint8 `json:"sendId"`
+
+	// RecvId is the Recv_ID for this key (0-255).
+	RecvId uint8 `json:"recvId"`
+
+	// Algorithm specifies the MAC algorithm for this key.
+	// Supported by BIRD as of version 3.3.1:
+	// "hmac md5"
+	// "hmac sha1"
+	// "hmac sha224"
+	// "hmac sha256"
+	// "hmac sha384"
+	// "hmac sha512"
+	// "cmac aes128"
+	// Unknown values are passed through and rejected by BIRD at config load.
+	// +kubebuilder:validation:MinLength=1
+	Algorithm string `json:"algorithm"`
+
+	// SecretName is the name of the Kubernetes Secret containing the master key.
+	// +kubebuilder:validation:MinLength=1
+	SecretName string `json:"secretName"`
+
+	// SecretKey is the key in the Secret's data section containing the master key value.
+	// +kubebuilder:validation:MinLength=1
+	SecretKey string `json:"secretKey"`
 }
 
 // GatewayRouterStatus defines the observed state of GatewayRouter.
