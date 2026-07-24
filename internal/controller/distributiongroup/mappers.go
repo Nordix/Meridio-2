@@ -127,9 +127,3 @@ func (r *DistributionGroupReconciler) mapGatewayConfigToDistributionGroup(ctx co
 
 	return r.findDGsReferencingGateways(ctx, gatewayKeys)
 }
-
-// mapNodeToDistributionGroup maps Node changes to DistributionGroup reconciliation requests
-func (r *DistributionGroupReconciler) mapNodeToDistributionGroup(ctx context.Context, obj client.Object) []ctrl.Request {
-	// TODO: List all Pods on this Node, find DistributionGroups matching those Pods
-	return nil
-}

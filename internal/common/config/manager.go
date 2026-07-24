@@ -43,7 +43,6 @@ type ManagerConfig struct {
 	EnableHTTP2   bool
 
 	// Features
-	EnableTopologyHints  bool
 	MaxEndpointsPerSlice int
 
 	// Filtering
@@ -92,8 +91,6 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"If set, the metrics endpoint is served securely via HTTPS.")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	fs.BoolVar(&c.EnableTopologyHints, "enable-topology-hints", false,
-		"Enable Node watching for topology-aware endpoint hints. Requires RBAC permissions for nodes.")
 	fs.IntVar(&c.MaxEndpointsPerSlice, "max-endpoints-per-slice", 200,
 		"Maximum number of endpoints per LoadBalancerEndpointSlice.")
 	fs.StringVar(&c.PodCacheLabel, "pod-cache-label", "",
@@ -137,7 +134,6 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindBool(fs, "enable-webhooks", "MERIDIO_ENABLE_WEBHOOKS", &c.EnableWebhooks)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
-	bindBool(fs, "enable-topology-hints", "MERIDIO_ENABLE_TOPOLOGY_HINTS", &c.EnableTopologyHints)
 	bindInt(fs, "max-endpoints-per-slice", "MERIDIO_MAX_ENDPOINTS_PER_SLICE", &c.MaxEndpointsPerSlice)
 	bindString(fs, "pod-cache-label", "MERIDIO_POD_CACHE_LABEL", &c.PodCacheLabel)
 	bindString(fs, "template-path", "MERIDIO_TEMPLATE_PATH", &c.TemplatePath)
