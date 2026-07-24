@@ -98,6 +98,7 @@ The controller mirrors the Kubernetes Service/kube-proxy architectural pattern:
 
 ```
 DistributionGroup
+├── spec.parentRefs → Gateway (direct reference, checked first by belongsToGateway)
 ├── spec.selector → Pods (label matching, managed by DG controller)
 ├── spec.maglev.maxEndpoints → NFQLB N parameter
 └── (indirect) ← L34Route.backendRefs → DistributionGroup
@@ -205,7 +206,7 @@ nftables (shared across all DGs in this LB Pod)
 **If no L34Routes found:** Delete ALL flows for this DG + clear nftables VIPs. This only happens when L34Routes are explicitly removed — flows are never deleted based on endpoint availability.
 - Delete removed flows from NFQLB instance
 - Add/update flows: maps L34Route → `nfqlb.Flow` via `l34RouteFlow` adapter
-- Configure nftables VIP sets: aggregate `destinationCIDRs` from ALL matching L34Routes across ALL DGs, call `nftManager.SetVIPs()`
+- Configure nftables VIP sets: fetch VIPs from `Gateway.status.addresses` (via `getGatewayVIPs()`), call `nftManager.SetVIPs()`
 
 **Flow naming:** The flow name is the L34Route's metadata name (e.g., `my-http-route`). The flow is bound to its NFQLB instance via the `--target` flag which receives the DistributionGroup name.
 
@@ -222,13 +223,13 @@ nftables (shared across all DGs in this LB Pod)
 |----------|---------|-----------------|-------------------|
 | DistributionGroup | Create/Update/Delete | Direct (`.For()`) | None (all events) |
 | LoadBalancerEndpointSlice | Create/Update/Delete | `endpointSliceEnqueue` | OwnerReference to DistributionGroup + `spec.gatewayRef` matches this Gateway |
-| Gateway | Create/Update/Delete | `gatewayEnqueue` | Name matches controller's Gateway + lists DGs via L34Routes |
+| Gateway | Create/Update/Delete | `gatewayEnqueue` | Name matches controller's Gateway + lists DGs with direct `parentRefs` to this Gateway |
 | L34Route | Create/Update/Delete | `l34RouteEnqueue` | Checks parentRefs for this Gateway AND backendRefs for DG kind |
 
 ### Filtering Strategy Rationale
 
 - **LoadBalancerEndpointSlice mapper**: Checks namespace matches this Gateway's namespace, `spec.gatewayRef` matches this Gateway, and ownerReference points to a DistributionGroup. Enqueues the owning DG.
-- **Gateway mapper**: Only triggers if Gateway name matches this controller's Gateway. Enqueues all DGs referenced by L34Routes pointing to this Gateway.
+- **Gateway mapper**: Only triggers if Gateway name matches this controller's Gateway. Lists all DistributionGroups and enqueues those with `spec.parentRefs` referencing this Gateway. Note: DGs linked only via L34Route (no direct `parentRefs`) are not re-reconciled by this mapper — they rely on the L34Route mapper instead.
 - **L34Route mapper**: Checks both `parentRefs` (Gateway match) and `backendRefs` (DG kind). Enqueues each referenced DG.
 - **All mappers enqueue broadly**: The reconcile loop makes the final decision via `belongsToGateway()`. This is simpler and more robust than pre-filtering in mappers.
 
@@ -308,6 +309,8 @@ Where:
 Contiguous packing: ranges are sized by actual `maxTargets` per DG (not a fixed block size).
 
 **Known limitation:** `maxOffset` is hardcoded and not configurable by users. Should be exposed via a CLI flag or `WithMaxOffset` option for clusters with many DistributionGroups.
+
+**Fragmentation:** The allocation algorithm does not compact or defragment freed ranges. In deployments with aggressive DG churn and varied `maxEndpoints` values, fragmentation can exhaust the offset range earlier than the raw `maxOffset` ceiling would suggest — small gaps between allocations may be too small for new DGs with larger `maxEndpoints`.
 
 ### Example
 
