@@ -1,0 +1,111 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: meridio-2
+
+resources:
+  - ../../../../config/default
+
+images:
+  - name: controller-manager
+    newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
+    newTag: latest
+
+nameSuffix: -ocp
+
+# Patch the webhook to use the correct suffixed namespace/names
+
+# OpenShift RBAC patch: add finalizer permissions required for blockOwnerDeletion.
+#
+# Meridio-2 controllers use ctrl.SetControllerReference() which sets
+# blockOwnerDeletion: true on ownerReferences. OpenShift's
+# OwnerReferencesPermissionEnforcement admission controller (enabled by default,
+# unlike vanilla Kubernetes) requires the creator to have "update" permission on
+# the owner resource's /finalizers subresource.
+#
+# Affected relationships:
+#   - Gateway controller:  Gateway → Deployment  (needs gateways/finalizers)
+#   - DG controller:       DistributionGroup → LoadBalancerEndpointSlice (needs distributiongroups/finalizers)
+#   - ENC controller:      Pod → EndpointNetworkConfiguration (needs pods/finalizers)
+#
+# Proper fix: add these to config/rbac/manager-role.yaml in the Meridio-2 repo.
+#
+# Note: the OpenShift-adapted LB template (lb-deployment.yaml) is NOT applied via a
+# ConfigMap patch here. It is injected by the deploy-suite Makefile macro, which
+# overrides MERIDIO_TEMPLATE_PATH to /templates-override — this takes precedence over
+# the default /templates path a ConfigMap patch would target.
+patches:
+  - patch: |-
+      apiVersion: admissionregistration.k8s.io/v1
+      kind: ValidatingWebhookConfiguration
+      metadata:
+        name: not-important
+        annotations:
+          cert-manager.io/inject-ca-from: meridio-2/meridio-2-serving-cert-ocp
+      webhooks:
+      - name: vl34route-v1alpha1.kb.io
+        namespaceSelector:
+          matchLabels:
+            e2e-suite: ocp
+        clientConfig:
+          service:
+            name: meridio-2-webhook-service-ocp
+            namespace: meridio-2
+    target:
+      kind: ValidatingWebhookConfiguration
+  - patch: |-
+      - op: replace
+        path: /spec/dnsNames
+        value:
+        - meridio-2-webhook-service-ocp.meridio-2.svc
+        - meridio-2-webhook-service-ocp.meridio-2.svc.cluster.local
+      - op: replace
+        path: /spec/secretName
+        value: webhook-server-cert-ocp
+    target:
+      group: cert-manager.io
+      kind: Certificate
+      name: serving-cert
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: not-important
+      spec:
+        template:
+          spec:
+            containers:
+            - name: manager
+              imagePullPolicy: Always
+              env:
+              - name: MERIDIO_LB_SERVICE_ACCOUNT
+                value: meridio-2-stateless-load-balancer-ocp
+            volumes:
+            - name: webhook-certs
+              secret:
+                secretName: webhook-server-cert-ocp
+    target:
+      kind: Deployment
+      labelSelector: control-plane=controller-manager
+  - patch: |-
+      - op: add
+        path: /rules/-
+        value:
+          apiGroups: ["gateway.networking.k8s.io"]
+          resources: ["gateways/finalizers"]
+          verbs: ["update"]
+      - op: add
+        path: /rules/-
+        value:
+          apiGroups: ["meridio-2.nordix.org"]
+          resources: ["distributiongroups/finalizers"]
+          verbs: ["update"]
+      - op: add
+        path: /rules/-
+        value:
+          apiGroups: [""]
+          resources: ["pods/finalizers"]
+          verbs: ["update"]
+    target:
+      kind: Role
+      name: manager-role

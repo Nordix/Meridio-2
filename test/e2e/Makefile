@@ -134,16 +134,17 @@ cluster-cleanup: ## Cleanup cluster dependencies.
 ################################################################################
 
 # deploy-suite: Deploy a test suite
-# Args: $(1)=namespace, $(2)=suite-dir, $(3)=suite-label, $(4)=sllbr-deployments
+# Args: $(1)=namespace, $(2)=suite-dir, $(3)=suite-label, $(4)=sllbr-deployments, $(5)=lb-template (optional)
 define deploy-suite
 	@NS=$(1); \
 	SUITE_DIR=$(2); \
 	SUITE_LABEL=$(3); \
+	LB_TEMPLATE=$(if $(5),$(5),$(PROJECT_ROOT)/config/templates/lb-deployment.yaml); \
 	$(KUBECTL) create namespace $$NS --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
 	$(KUBECTL) label namespace $$NS e2e-suite=$$SUITE_LABEL --overwrite; \
 	$(KUBECTL) apply -f suites/common/gatewayclass.yaml; \
 	sed 's|registry.nordix.org/cloud-native/meridio-2|$(REGISTRY)|g; s|:latest|:$(VERSION)|g' \
-		$(PROJECT_ROOT)/config/templates/lb-deployment.yaml | \
+		$$LB_TEMPLATE | \
 		$(KUBECTL) create configmap lb-template-override-$$SUITE_LABEL --from-file=lb-deployment.yaml=/dev/stdin -n $$NS --dry-run=client -o yaml | \
 		$(KUBECTL) apply -f -; \
 	cd $$SUITE_DIR && $(KUSTOMIZE) edit set image controller-manager=$(REGISTRY)/controller-manager:$(VERSION); \
@@ -418,3 +419,81 @@ test-dual-stack: ## Run all dual-stack e2e tests in parallel.
 .PHONY: undeploy-dual-stack
 undeploy-dual-stack: ## Undeploy all dual-stack suites.
 	@for suite in $(SUITES_DS); do $(MAKE) undeploy-$$suite; done
+
+################################################################################
+##@ Suite: openshift-crc
+################################################################################
+
+# OpenShift CRC registry configuration.
+# OCP_REGISTRY_HOST: external route hostname for docker push (from host).
+# OCP_NAMESPACE: namespace where images and workloads are deployed.
+# Derived:
+#   OCP_PUSH_REGISTRY: used for docker tag/push (external route).
+#   OCP_INTERNAL_REGISTRY: used by pods to pull images (cluster-internal service).
+OCP_REGISTRY_HOST ?= default-route-openshift-image-registry.apps-crc.testing
+OCP_NAMESPACE ?= meridio-2
+OCP_PUSH_REGISTRY = $(OCP_REGISTRY_HOST)/$(OCP_NAMESPACE)
+OCP_INTERNAL_REGISTRY = image-registry.openshift-image-registry.svc:5000/$(OCP_NAMESPACE)
+OCP_IMAGES ?= controller-manager stateless-load-balancer router network-sidecar example-target vpn-gateway
+
+.PHONY: crc-registry-login
+crc-registry-login: ## [CRC-only] Trust CRC registry CA and docker login (needs sudo).
+	@echo "Extracting CRC registry CA..."
+	@$(KUBECTL) get secret -n openshift-ingress-operator router-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/crc-ca.crt
+	@$(KUBECTL) get secret -n openshift-ingress router-certs-default -o jsonpath='{.data.tls\.crt}' | base64 -d >> /tmp/crc-ca.crt
+	@echo "Installing CA into /etc/docker/certs.d/$(OCP_REGISTRY_HOST) (requires sudo)..."
+	@sudo mkdir -p /etc/docker/certs.d/$(OCP_REGISTRY_HOST)
+	@sudo cp /tmp/crc-ca.crt /etc/docker/certs.d/$(OCP_REGISTRY_HOST)/ca.crt
+	@echo "Logging in to $(OCP_REGISTRY_HOST)..."
+	@docker login -u kubeadmin -p "$$($(KUBECTL) whoami -t)" $(OCP_REGISTRY_HOST)
+	@echo "Registry login complete"
+
+.PHONY: push-images-openshift-crc
+push-images-openshift-crc: ## Tag and push all images to CRC internal registry (requires docker login).
+	@echo "Ensuring namespace $(OCP_NAMESPACE) exists..."
+	@$(KUBECTL) create namespace $(OCP_NAMESPACE) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@echo "Creating ImageStreams in namespace $(OCP_NAMESPACE)..."
+	@for img in $(OCP_IMAGES); do \
+		$(KUBECTL) create imagestream $$img -n $(OCP_NAMESPACE) 2>/dev/null || true; \
+	done
+	@echo "Building VPN gateway (not covered by root Makefile)..."
+	@docker build -t vpn-gateway:$(VERSION) $(PROJECT_ROOT)/hack/vpn-gateway/
+	@echo "Tagging and pushing images to $(OCP_PUSH_REGISTRY)..."
+	@for img in $(OCP_IMAGES); do \
+		docker tag $$img:$(VERSION) $(OCP_PUSH_REGISTRY)/$$img:$(VERSION); \
+		docker push $(OCP_PUSH_REGISTRY)/$$img:$(VERSION); \
+	done
+	@echo "All images pushed to $(OCP_PUSH_REGISTRY)"
+
+.PHONY: deploy-openshift-crc
+deploy-openshift-crc: kustomize cert-manager push-images-openshift-crc ## Deploy openshift-crc topology (requires CRC prerequisites + pushed images).
+deploy-openshift-crc: REGISTRY = $(OCP_INTERNAL_REGISTRY)
+deploy-openshift-crc:
+	@echo "Deploying OpenShift CRC suite (namespace: $(OCP_NAMESPACE))..."
+	@NS=$(OCP_NAMESPACE); \
+	$(KUBECTL) apply -f suites/openshift-crc/namespace.yaml; \
+	$(KUBECTL) apply -f suites/openshift-crc/scc.yaml; \
+	$(KUBECTL) apply -f suites/openshift-crc/rbac.yaml -n $$NS; \
+	$(KUBECTL) adm policy add-scc-to-user meridio-lb -z meridio-2-stateless-load-balancer-ocp -n $$NS; \
+	$(KUBECTL) adm policy add-scc-to-user meridio-sidecar -z meridio-2-network-sidecar -n $$NS; \
+	$(KUBECTL) adm policy add-scc-to-user privileged -z vpn-gateway -n $$NS
+	@echo "Deploying VPN gateway pod (must be up before LB readiness gates can clear)..."
+	@NS=$(OCP_NAMESPACE); \
+	$(KUBECTL) apply -f suites/openshift-crc/nad.yaml -n $$NS; \
+	sed 's|registry.nordix.org/cloud-native/meridio-2|$(OCP_INTERNAL_REGISTRY)|g; s|:latest|:$(VERSION)|g' \
+		suites/openshift-crc/vpn-gateway.yaml | $(KUBECTL) apply -n $$NS -f -; \
+	timeout=120; elapsed=0; \
+	until $(KUBECTL) get pod vpn-gateway -n $$NS -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; do \
+		sleep 2; elapsed=$$((elapsed + 2)); \
+		if [ $$elapsed -ge $$timeout ]; then echo "Timeout waiting for vpn-gateway pod"; exit 1; fi; \
+	done; \
+	echo "VPN gateway ready"
+	$(call deploy-suite,$(OCP_NAMESPACE),$(shell pwd)/suites/openshift-crc,ocp,sllbr-gw-ocp,$(shell pwd)/suites/openshift-crc/lb-deployment.yaml)
+	@echo "OpenShift CRC suite deployed successfully"
+
+.PHONY: undeploy-openshift-crc
+undeploy-openshift-crc: ## Undeploy openshift-crc topology.
+	@NS=$(OCP_NAMESPACE); \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-ocp --ignore-not-found=true; \
+	$(KUBECTL) delete -f suites/openshift-crc/scc.yaml --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true

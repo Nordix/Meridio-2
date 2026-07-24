@@ -1,0 +1,40 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-ocp
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-ocp
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-ocp
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: bgp-net
+      namespace: meridio-2
+      interface: bgp-net
+  - type: NAD
+    nad:
+      name: app-net
+      namespace: meridio-2
+      interface: app-net
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.100.0/24"
+  - attachmentType: NAD
+    cidr: "fd00:cafe:1100::/64"
+  horizontalScaling:
+    replicas: 1
