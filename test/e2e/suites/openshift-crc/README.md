@@ -110,7 +110,7 @@ oc apply -f test/e2e/suites/openshift-crc/kubeletconfig.yaml
 
 ---
 
-## Deploy (Makefile — recommended)
+## Deploy
 
 Once the prerequisites are complete, the entire deployment and teardown can be done via Make:
 
@@ -131,9 +131,9 @@ make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 
 `deploy-openshift-crc` depends on `push-images-openshift-crc`, so a single call handles:
 namespace creation, ImageStreams, image push (tag+push of locally-built images + vpn-gateway
-build), cert-manager install, SCCs, RBAC, controller-manager (via kustomize overlay with RBAC
-finalizer patches + LB template override), VPN gateway, NADs, Gateway, routing, targets, and
-waits for all pods to become Ready.
+build), cert-manager install (idempotent — skipped if already present), SCCs, RBAC,
+controller-manager (via kustomize overlay with RBAC finalizer patches + LB template override),
+VPN gateway, NADs, Gateway, routing, targets, and waits for all pods to become Ready.
 
 ### Alternative: pull images from registry.nordix.org
 
@@ -160,58 +160,7 @@ make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 **Use the default (build-and-push) flow when iterating on component code** — `OCP_USE_NORDIX=true`
 deploys whatever is currently published on nordix, not your local changes.
 
----
-
-## Deploy (manual steps)
-
-If you prefer to run each step individually (e.g., for debugging):
-
-### Step 1 — Install cert-manager
-
-> **Note**: `deploy-openshift-crc` already depends on the `cert-manager` target and installs it
-> automatically (idempotent — skipped if already present). This step is only needed if you want
-> cert-manager installed ahead of time, independent of the rest of the deployment.
-
-```bash
-oc apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
-
-oc wait --for=condition=Available --timeout=300s -n cert-manager \
-  deployment/cert-manager \
-  deployment/cert-manager-webhook \
-  deployment/cert-manager-cainjector
-```
-
-> **Note**: Gateway API CRDs are pre-installed on OpenShift — no action needed.
-
-### Step 2 — Registry login and image push
-
-```bash
-# Trust CRC registry CA (one-time per machine)
-make -C test/e2e crc-registry-login KUBECTL=oc
-
-# Build all component images locally
-make IMAGES="controller-manager stateless-load-balancer router network-sidecar example-target" BUILD_STEPS=build
-
-# Push to CRC internal registry (creates namespace + ImageStreams automatically)
-make -C test/e2e push-images-openshift-crc KUBECTL=oc
-```
-
-> **Alternative**: set `OCP_USE_NORDIX=true` to skip the local build and pull
-> `controller-manager`/`stateless-load-balancer`/`router`/`network-sidecar`/`example-target`
-> directly from `registry.nordix.org` instead. `vpn-gateway` has no published image and is
-> always built/pushed locally regardless. See [Makefile Targets Reference](#makefile-targets-reference).
-
-### Step 3 — Deploy
-
-```bash
-make -C test/e2e deploy-openshift-crc KUBECTL=oc
-```
-
-This single command deploys everything: namespace (with PSA labels), SCCs, RBAC, SCC bindings,
-NADs, VPN gateway (waits for Ready), cert-manager (idempotent), controller-manager (with
-OpenShift patches), GatewayClass, Gateway, routing, targets, and waits for all pods Running.
-
-### Step 4 — Validate
+### Validate
 
 Wait ~30 seconds after deployment for BGP convergence and nfqlb flow programming, then:
 
@@ -249,11 +198,7 @@ Expected results:
 - `birdc show route`: `100.0.0.1/32` and `fd00:cafe:1::1/128` learned via BGP
 - `ctraffic`: 0 failed connections, traffic distributed across 2 target pods
 
-### Step 5 — Teardown
-
-```bash
-make -C test/e2e undeploy-openshift-crc KUBECTL=oc
-```
+> **Note**: Gateway API CRDs are pre-installed on OpenShift — no action needed.
 
 ---
 
