@@ -28,7 +28,7 @@ import (
 )
 
 func TestNewManager(t *testing.T) {
-	mgr, err := NewManager(0, 4)
+	mgr, err := NewManager(0, 4, 4998, 4999)
 	assert.NoError(t, err)
 	assert.NotNil(t, mgr)
 	assert.Equal(t, "meridio-lb", mgr.tableName)

@@ -53,6 +53,12 @@ func New(options ...Option) (*NFQueueLoadBalancer, error) {
 		opt(config)
 	}
 
+	// startingOffset must be >= 3: fwmark 0 is reserved (means "no mark"),
+	// and we need two values below startingOffset for drop accounting.
+	if config.startingOffset < 3 {
+		return nil, fmt.Errorf("startingOffset must be >= 3 (got %d): fwmark 0 is reserved and 2 slots are needed for drop accounting", config.startingOffset)
+	}
+
 	// Validate queue format to prevent command injection
 	if _, _, err := getQueue(config.queue); err != nil {
 		return nil, fmt.Errorf("invalid queue %q: %w", config.queue, err)
@@ -63,6 +69,16 @@ func New(options ...Option) (*NFQueueLoadBalancer, error) {
 		instances:   map[string]*Instance{},
 		logger:      ctrl.Log.WithName("nfqlb"),
 	}, nil
+}
+
+// NoLBFwmark returns the fwmark value used when no flow matches.
+func (nfqlb *NFQueueLoadBalancer) NoLBFwmark() int {
+	return nfqlb.startingOffset - 2
+}
+
+// NoTargetsFwmark returns the fwmark value used when no targets are active.
+func (nfqlb *NFQueueLoadBalancer) NoTargetsFwmark() int {
+	return nfqlb.startingOffset - 1
 }
 
 // Start nfqlb process in 'flowlb' mode supporting multiple shared mem lbs at once
@@ -89,6 +105,8 @@ func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 		"--promiscuous_ping",                   // accept ICMP Echo (ping) by default
 		fmt.Sprintf("--queue=%s", nfqlb.queue), // gosec: queue is secured with the getQueue function.
 		fmt.Sprintf("--qlength=%d", nfqlb.qlength), // gosec: qlength is secured since it is an int.
+		fmt.Sprintf("--nolb_fwmark=%d", nfqlb.NoLBFwmark()),
+		fmt.Sprintf("--notargets_fwmark=%d", nfqlb.NoTargetsFwmark()),
 	)
 
 	stdoutStderr, err := cmd.CombinedOutput()

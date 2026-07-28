@@ -115,6 +115,45 @@ var _ = Describe("Options", func() {
 	})
 })
 
+var _ = Describe("NoLBFwmark / NoTargetsFwmark", func() {
+	It("should derive from startingOffset with default config", func() {
+		lb, err := New()
+		Expect(err).ToNot(HaveOccurred())
+		// Contract: NoLBFwmark = startingOffset - 2, NoTargetsFwmark = startingOffset - 1
+		Expect(lb.NoLBFwmark()).To(Equal(defaultStartingOffset - 2))
+		Expect(lb.NoTargetsFwmark()).To(Equal(defaultStartingOffset - 1))
+	})
+
+	It("should derive from custom startingOffset", func() {
+		lb, err := New(WithStartingOffset(100))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(lb.NoLBFwmark()).To(Equal(98))
+		Expect(lb.NoTargetsFwmark()).To(Equal(99))
+	})
+
+	It("should always place NoLBFwmark below NoTargetsFwmark", func() {
+		lb, err := New(WithStartingOffset(3))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(lb.NoLBFwmark()).To(Equal(1))
+		Expect(lb.NoTargetsFwmark()).To(Equal(2))
+		Expect(lb.NoLBFwmark()).To(BeNumerically("<", lb.NoTargetsFwmark()))
+	})
+
+	It("should never return fwmark 0 (reserved)", func() {
+		// Minimum valid startingOffset is 3, which yields NoLBFwmark=1
+		lb, err := New(WithStartingOffset(3))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(lb.NoLBFwmark()).To(BeNumerically(">", 0))
+		Expect(lb.NoTargetsFwmark()).To(BeNumerically(">", 0))
+	})
+
+	It("should reject startingOffset < 3 (would produce fwmark 0)", func() {
+		_, err := New(WithStartingOffset(2))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("startingOffset must be >= 3"))
+	})
+})
+
 var _ = Describe("New", func() {
 	It("should create with defaults", func() {
 		lb, err := New()

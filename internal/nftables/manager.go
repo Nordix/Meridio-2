@@ -28,41 +28,47 @@ import (
 )
 
 const (
-	preroutingChainName = "prerouting"
-	outputChainName     = "output"
-	pmtudChainName      = "snat-local"
-	ipv4VIPSetName      = "ipv4-vips"
-	ipv6VIPSetName      = "ipv6-vips"
+	preroutingChainName     = "prerouting"
+	outputChainName         = "output"
+	pmtudChainName          = "snat-local"
+	dropAccountingChainName = "drop-accounting"
+	ipv4VIPSetName          = "ipv4-vips"
+	ipv6VIPSetName          = "ipv6-vips"
 )
 
 // Manager manages nftables rules for VIP traffic.
 type Manager struct {
-	tableName   string
-	queueNum    uint16
-	queueTotal  uint16
-	table       *nftables.Table
-	preChain    *nftables.Chain
-	outputChain *nftables.Chain
-	pmtudChain  *nftables.Chain
-	ipv4Set     *nftables.Set
-	ipv6Set     *nftables.Set
-	ipv4PreRule *nftables.Rule
-	ipv6PreRule *nftables.Rule
-	ipv4OutRule *nftables.Rule
-	ipv6OutRule *nftables.Rule
-	conn        *nftables.Conn
+	tableName       string
+	queueNum        uint16
+	queueTotal      uint16
+	nolbFwmark      uint32
+	notargetsFwmark uint32
+	table           *nftables.Table
+	preChain        *nftables.Chain
+	outputChain     *nftables.Chain
+	pmtudChain      *nftables.Chain
+	dropChain       *nftables.Chain
+	ipv4Set         *nftables.Set
+	ipv6Set         *nftables.Set
+	ipv4PreRule     *nftables.Rule
+	ipv6PreRule     *nftables.Rule
+	ipv4OutRule     *nftables.Rule
+	ipv6OutRule     *nftables.Rule
+	conn            *nftables.Conn
 }
 
 const sharedTableName = "meridio-lb" // Shared table for all DistributionGroups
 
 // NewManager creates a new nftables manager.
 // Uses a single shared table for all DistributionGroups.
-func NewManager(queueNum, queueTotal uint16) (*Manager, error) {
+func NewManager(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (*Manager, error) {
 	return &Manager{
-		tableName:  sharedTableName,
-		queueNum:   queueNum,
-		queueTotal: queueTotal,
-		conn:       &nftables.Conn{},
+		tableName:       sharedTableName,
+		queueNum:        queueNum,
+		queueTotal:      queueTotal,
+		nolbFwmark:      nolbFwmark,
+		notargetsFwmark: notargetsFwmark,
+		conn:            &nftables.Conn{},
 	}, nil
 }
 
@@ -75,6 +81,9 @@ func (m *Manager) Setup() error {
 		return err
 	}
 	if err := m.createPreroutingChain(); err != nil {
+		return err
+	}
+	if err := m.createDropAccountingChain(); err != nil {
 		return err
 	}
 	if err := m.createOutputChain(); err != nil {
@@ -174,6 +183,54 @@ func (m *Manager) createPreroutingChain() error {
 			&expr.Queue{Num: m.queueNum, Total: m.queueTotal, Flag: 0},
 		},
 	})
+
+	return m.conn.Flush()
+}
+
+// createDropAccountingChain creates a separate prerouting chain with higher priority
+// (runs after the main prerouting chain) to catch packets that NFQLB returned with
+// NF_ACCEPT and a drop-reason fwmark. Packets returning from NFQUEUE with NF_ACCEPT
+// skip remaining rules in the originating chain, so a separate chain is required.
+func (m *Manager) createDropAccountingChain() error {
+	if m.nolbFwmark == 0 && m.notargetsFwmark == 0 {
+		return nil // Drop accounting disabled
+	}
+
+	m.dropChain = m.conn.AddChain(&nftables.Chain{
+		Name:     dropAccountingChainName,
+		Table:    m.table,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityRef(*nftables.ChainPriorityFilter + 1),
+	})
+
+	// No-flow drop: packet matched a VIP but no flow selector matched in nfqlb
+	if m.nolbFwmark != 0 {
+		m.conn.AddRule(&nftables.Rule{
+			Table: m.table,
+			Chain: m.dropChain,
+			Exprs: []expr.Any{
+				&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(m.nolbFwmark)},
+				&expr.Counter{},
+				&expr.Verdict{Kind: expr.VerdictDrop},
+			},
+		})
+	}
+
+	// No-targets drop: flow matched but the LB instance has no active targets
+	if m.notargetsFwmark != 0 {
+		m.conn.AddRule(&nftables.Rule{
+			Table: m.table,
+			Chain: m.dropChain,
+			Exprs: []expr.Any{
+				&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(m.notargetsFwmark)},
+				&expr.Counter{},
+				&expr.Verdict{Kind: expr.VerdictDrop},
+			},
+		})
+	}
 
 	return m.conn.Flush()
 }
