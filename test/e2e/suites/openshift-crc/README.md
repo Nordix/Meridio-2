@@ -121,21 +121,44 @@ make -C test/e2e crc-registry-login KUBECTL=oc
 # Build images locally first (from project root)
 make IMAGES="controller-manager stateless-load-balancer router network-sidecar example-target" BUILD_STEPS=build
 
-# Push images to the local OpenShift registry
-make -C test/e2e/ push-images-openshift-crc KUBECTL=oc
-
-# Deploy the full topology
+# Deploy the full topology (depends on push-images-openshift-crc, so this also
+# creates the namespace/ImageStreams and pushes all images)
 make -C test/e2e/ deploy-openshift-crc KUBECTL=oc
 
 # Teardown
 make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 ```
 
-Together, `push-images-openshift-crc` and `deploy-openshift-crc` handle: namespace creation,
-ImageStreams, image push (tag+push of locally-built images + vpn-gateway build), cert-manager
-install, SCCs, RBAC, controller-manager (via kustomize overlay with RBAC finalizer patches + LB
-template override), VPN gateway, NADs, Gateway, routing, targets, and waits for all pods to
-become Ready.
+`deploy-openshift-crc` depends on `push-images-openshift-crc`, so a single call handles:
+namespace creation, ImageStreams, image push (tag+push of locally-built images + vpn-gateway
+build), cert-manager install, SCCs, RBAC, controller-manager (via kustomize overlay with RBAC
+finalizer patches + LB template override), VPN gateway, NADs, Gateway, routing, targets, and
+waits for all pods to become Ready.
+
+### Alternative: pull images from registry.nordix.org
+
+If you want to validate the OCP suite itself (network/RBAC/SCC/topology) against known-good
+published images instead of your local working tree, set `OCP_USE_NORDIX=true`. This skips the
+local build step; `deploy-openshift-crc` will only build/push `vpn-gateway` (which has no
+published image):
+
+```bash
+# Still required: vpn-gateway has no published image and is always built/pushed locally
+make -C test/e2e crc-registry-login KUBECTL=oc
+
+# No local build step (`make IMAGES=... BUILD_STEPS=build`) needed for the other 5 images
+
+# controller-manager, stateless-load-balancer, router, network-sidecar, example-target
+# all resolve to registry.nordix.org/cloud-native/meridio-2/<name>:latest;
+# only vpn-gateway is built and pushed to the CRC internal registry
+make -C test/e2e deploy-openshift-crc KUBECTL=oc OCP_USE_NORDIX=true
+
+# Teardown is unchanged
+make -C test/e2e undeploy-openshift-crc KUBECTL=oc
+```
+
+**Use the default (build-and-push) flow when iterating on component code** — `OCP_USE_NORDIX=true`
+deploys whatever is currently published on nordix, not your local changes.
 
 ---
 
@@ -144,6 +167,10 @@ become Ready.
 If you prefer to run each step individually (e.g., for debugging):
 
 ### Step 1 — Install cert-manager
+
+> **Note**: `deploy-openshift-crc` already depends on the `cert-manager` target and installs it
+> automatically (idempotent — skipped if already present). This step is only needed if you want
+> cert-manager installed ahead of time, independent of the rest of the deployment.
 
 ```bash
 oc apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
@@ -168,6 +195,11 @@ make IMAGES="controller-manager stateless-load-balancer router network-sidecar e
 # Push to CRC internal registry (creates namespace + ImageStreams automatically)
 make -C test/e2e push-images-openshift-crc KUBECTL=oc
 ```
+
+> **Alternative**: set `OCP_USE_NORDIX=true` to skip the local build and pull
+> `controller-manager`/`stateless-load-balancer`/`router`/`network-sidecar`/`example-target`
+> directly from `registry.nordix.org` instead. `vpn-gateway` has no published image and is
+> always built/pushed locally regardless. See [Makefile Targets Reference](#makefile-targets-reference).
 
 ### Step 3 — Deploy
 
@@ -237,6 +269,15 @@ make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 All targets accept `KUBECTL=oc` and derive registry paths from:
 - `OCP_REGISTRY_HOST` (default: `default-route-openshift-image-registry.apps-crc.testing`)
 - `OCP_NAMESPACE` (default: `meridio-2`)
+- `OCP_USE_NORDIX` (default: `false`) — if set to `true`, `controller-manager`,
+  `stateless-load-balancer`, `router`, `network-sidecar`, and `example-target` are pulled
+  directly from `registry.nordix.org` instead of being built and pushed to the CRC internal
+  registry. `vpn-gateway` has no published image and is always built/pushed locally regardless
+  of this flag:
+  ```bash
+  make -C test/e2e push-images-openshift-crc KUBECTL=oc OCP_USE_NORDIX=true
+  make -C test/e2e deploy-openshift-crc KUBECTL=oc OCP_USE_NORDIX=true
+  ```
 
 ---
 

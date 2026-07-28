@@ -430,11 +430,20 @@ undeploy-dual-stack: ## Undeploy all dual-stack suites.
 # Derived:
 #   OCP_PUSH_REGISTRY: used for docker tag/push (external route).
 #   OCP_INTERNAL_REGISTRY: used by pods to pull images (cluster-internal service).
+# OCP_USE_NORDIX: if true, pull controller-manager/stateless-load-balancer/router/
+#   network-sidecar/example-target directly from registry.nordix.org instead of
+#   building and pushing them to the CRC internal registry. vpn-gateway has no
+#   published image and is always built/pushed locally regardless of this flag.
 OCP_REGISTRY_HOST ?= default-route-openshift-image-registry.apps-crc.testing
 OCP_NAMESPACE ?= meridio-2
 OCP_PUSH_REGISTRY = $(OCP_REGISTRY_HOST)/$(OCP_NAMESPACE)
 OCP_INTERNAL_REGISTRY = image-registry.openshift-image-registry.svc:5000/$(OCP_NAMESPACE)
+OCP_USE_NORDIX ?= false
+ifeq ($(OCP_USE_NORDIX),true)
+OCP_IMAGES ?= vpn-gateway
+else
 OCP_IMAGES ?= controller-manager stateless-load-balancer router network-sidecar example-target vpn-gateway
+endif
 
 .PHONY: crc-registry-login
 crc-registry-login: ## [CRC-only] Trust CRC registry CA and docker login (needs sudo).
@@ -467,7 +476,9 @@ push-images-openshift-crc: ## Tag and push all images to CRC internal registry (
 
 .PHONY: deploy-openshift-crc
 deploy-openshift-crc: kustomize cert-manager push-images-openshift-crc ## Deploy openshift-crc topology (requires CRC prerequisites + pushed images).
+ifneq ($(OCP_USE_NORDIX),true)
 deploy-openshift-crc: REGISTRY = $(OCP_INTERNAL_REGISTRY)
+endif
 deploy-openshift-crc:
 	@echo "Deploying OpenShift CRC suite (namespace: $(OCP_NAMESPACE))..."
 	@NS=$(OCP_NAMESPACE); \
