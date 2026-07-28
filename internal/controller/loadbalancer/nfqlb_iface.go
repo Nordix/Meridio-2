@@ -26,6 +26,9 @@ import (
 type nfqlbManager interface {
 	AddInstance(ctx context.Context, name string, options ...nfqlb.InstanceOption) (nfqlbInstance, error)
 	DeleteInstance(ctx context.Context, name string) error
+	// DropFwmarks returns the fwmark values used for drop accounting:
+	// nolbFwmark (no flow matched) and notargetsFwmark (no active targets).
+	DropFwmarks() (nolb, notargets int)
 }
 
 // nfqlbInstance abstracts per-DistributionGroup NFQLB operations for testability.
@@ -47,4 +50,8 @@ func (a *NFQLBManagerAdapter) AddInstance(ctx context.Context, name string, opti
 
 func (a *NFQLBManagerAdapter) DeleteInstance(ctx context.Context, name string) error {
 	return a.NFQLB.DeleteInstance(ctx, name)
+}
+
+func (a *NFQLBManagerAdapter) DropFwmarks() (nolb, notargets int) {
+	return a.NFQLB.NoLBFwmark(), a.NFQLB.NoTargetsFwmark()
 }

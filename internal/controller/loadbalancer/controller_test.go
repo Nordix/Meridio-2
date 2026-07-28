@@ -89,11 +89,15 @@ func newTestLBEPS(dg *meridio2v1alpha1.DistributionGroup, endpoints []meridio2v1
 
 // mockNFQLB mocks the NFQueueLoadBalancer for testing.
 type mockNFQLB struct {
-	instances map[string]*mockNFQLBInstance
+	instances      map[string]*mockNFQLBInstance
+	startingOffset int
 }
 
 func newMockNFQLB() *mockNFQLB {
-	return &mockNFQLB{instances: make(map[string]*mockNFQLBInstance)}
+	return &mockNFQLB{
+		instances:      make(map[string]*mockNFQLBInstance),
+		startingOffset: 5000,
+	}
 }
 
 func (m *mockNFQLB) AddInstance(_ context.Context, name string, _ ...nfqlb.InstanceOption) (nfqlbInstance, error) {
@@ -109,6 +113,10 @@ func (m *mockNFQLB) AddInstance(_ context.Context, name string, _ ...nfqlb.Insta
 func (m *mockNFQLB) DeleteInstance(_ context.Context, name string) error {
 	delete(m.instances, name)
 	return nil
+}
+
+func (m *mockNFQLB) DropFwmarks() (nolb, notargets int) {
+	return m.startingOffset - 2, m.startingOffset - 1
 }
 
 // mockNFQLBInstance mocks a single NFQLB instance (per DistributionGroup).

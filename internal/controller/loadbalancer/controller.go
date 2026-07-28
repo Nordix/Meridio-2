@@ -310,7 +310,9 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	if c.NftManagerFactory != nil {
 		c.nftManager, err = c.NftManagerFactory(0, 4)
 	} else {
-		c.nftManager, err = nftablesmanager.NewManager(0, 4)
+		nolb, notargets := c.NFQLB.DropFwmarks()
+		c.nftManager, err = nftablesmanager.NewManager(0, 4,
+			uint32(nolb), uint32(notargets))
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create nftables manager: %w", err)
