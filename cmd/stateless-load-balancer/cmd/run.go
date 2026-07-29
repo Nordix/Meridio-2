@@ -82,7 +82,7 @@ func newCmdRun() *cobra.Command {
 			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
 
 			// Start dynamic log level server (non-blocking, non-fatal)
-			log.StartDynamicLevelServer(cfg.LogLevelAPI, atomicLevel, ctrl.Log)
+			log.StartDynamicLevelServer(cmd.Context(), cfg.LogLevelAPI, atomicLevel, ctrl.Log)
 
 			return nil
 		},

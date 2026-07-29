@@ -17,6 +17,7 @@ limitations under the License.
 package log
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -31,13 +32,22 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// testContext returns a context that is automatically cancelled when the
+// test completes, so any server started with it is shut down and its
+// listener goroutine does not leak past the test.
+func testContext(t *testing.T) context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func TestStartDynamicLevelServer_Disabled(t *testing.T) {
 	// Empty address should be a no-op
 	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	logger := logr.Discard()
 
-	StartDynamicLevelServer("", level, logger)
-	// If it doesn't panic or block, test passes
+	srv := StartDynamicLevelServer(testContext(t), "", level, logger)
+	require.Nil(t, srv, "expected nil server when addr is empty")
 }
 
 // capturingLogger returns a logr.Logger backed by funcr that appends every
@@ -61,7 +71,8 @@ func TestStartDynamicLevelServer_LogsThroughRealLogger(t *testing.T) {
 	logger := capturingLogger(&mu, &lines)
 
 	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	StartDynamicLevelServer("127.0.0.1:19905", level, logger)
+	srv := StartDynamicLevelServer(testContext(t), "127.0.0.1:19905", level, logger)
+	require.NotNil(t, srv)
 
 	// Give server time to start and log its startup message
 	time.Sleep(100 * time.Millisecond)
@@ -96,7 +107,8 @@ func TestStartDynamicLevelServer_AcceptsLoopback(t *testing.T) {
 			level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 			logger := logr.Discard()
 
-			StartDynamicLevelServer(tt.addr, level, logger)
+			srv := StartDynamicLevelServer(testContext(t), tt.addr, level, logger)
+			require.NotNil(t, srv)
 
 			// Give server time to start
 			time.Sleep(100 * time.Millisecond)
@@ -121,7 +133,8 @@ func TestStartDynamicLevelServer_GetAndPut(t *testing.T) {
 	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	logger := logr.Discard()
 
-	StartDynamicLevelServer("127.0.0.1:19903", level, logger)
+	srv := StartDynamicLevelServer(testContext(t), "127.0.0.1:19903", level, logger)
+	require.NotNil(t, srv)
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -163,6 +176,36 @@ func TestStartDynamicLevelServer_GetAndPut(t *testing.T) {
 	require.Equal(t, "debug", result.Level)
 }
 
+// TestStartDynamicLevelServer_ShutsDownOnContextCancel verifies that
+// cancelling the context passed to StartDynamicLevelServer causes the
+// underlying listener to close, so the server doesn't outlive the caller
+// (avoiding a leaked goroutine/port, as opposed to relying on the test
+// process exiting to release them).
+func TestStartDynamicLevelServer_ShutsDownOnContextCancel(t *testing.T) {
+	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	logger := logr.Discard()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	addr := "127.0.0.1:19906"
+	srv := StartDynamicLevelServer(ctx, addr, level, logger)
+	require.NotNil(t, srv)
+
+	// Give the server time to start and confirm it's actually listening.
+	time.Sleep(100 * time.Millisecond)
+	resp, err := http.Get("http://" + addr + "/log/level")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Cancel the context; the server should shut down shortly after.
+	cancel()
+
+	require.Eventually(t, func() bool {
+		_, err := http.Get("http://" + addr + "/log/level")
+		return err != nil
+	}, 2*time.Second, 20*time.Millisecond, "expected server to stop accepting connections after context cancellation")
+}
+
 // TestStartDynamicLevelServer_HTTPAcceptsDangerousLevels documents a known
 // gap: unlike ParseLevel (used for the initial --log-level value), the HTTP
 // endpoint delegates directly to zap.AtomicLevel.ServeHTTP and does not
@@ -178,7 +221,8 @@ func TestStartDynamicLevelServer_HTTPAcceptsDangerousLevels(t *testing.T) {
 	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	logger := logr.Discard()
 
-	StartDynamicLevelServer("127.0.0.1:19904", level, logger)
+	srv := StartDynamicLevelServer(testContext(t), "127.0.0.1:19904", level, logger)
+	require.NotNil(t, srv)
 	time.Sleep(100 * time.Millisecond)
 
 	body := strings.NewReader(`{"level":"fatal"}`)
@@ -218,7 +262,8 @@ func TestStartDynamicLevelServer_RejectsNonLoopback(t *testing.T) {
 			// Should reject and not start server
 			// We verify this by the fact that StartDynamicLevelServer returns
 			// early without panic - the validation logic prevents server start
-			StartDynamicLevelServer(tt.addr, level, logger)
+			srv := StartDynamicLevelServer(testContext(t), tt.addr, level, logger)
+			require.Nil(t, srv, "expected nil server for rejected non-loopback address")
 
 			// Brief sleep to ensure goroutine would have started if it was going to
 			time.Sleep(10 * time.Millisecond)
@@ -246,8 +291,8 @@ func TestStartDynamicLevelServer_InvalidAddress(t *testing.T) {
 			logger := logr.Discard()
 
 			// Should handle gracefully (log error, don't panic)
-			StartDynamicLevelServer(addr, level, logger)
-			// If no panic, test passes
+			srv := StartDynamicLevelServer(testContext(t), addr, level, logger)
+			require.Nil(t, srv, "expected nil server for invalid address")
 		})
 	}
 }

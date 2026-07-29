@@ -17,9 +17,11 @@ limitations under the License.
 package log
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -30,11 +32,18 @@ import (
 // StartDynamicLevelServer starts an HTTP server to serve zap.AtomicLevel
 // for runtime log level changes via HTTP GET/PUT requests.
 //
-// If addr is empty, this is a no-op (feature disabled by default).
+// If addr is empty, this is a no-op (feature disabled by default) and
+// StartDynamicLevelServer returns a nil *http.Server.
 //
 // The server runs in a goroutine and does not block startup. Errors are
 // logged but do not cause the application to fail (this is an auxiliary
 // operational feature).
+//
+// The server is shut down gracefully when ctx is cancelled. Callers that
+// don't need explicit lifecycle control (e.g. production binaries using a
+// context tied to process shutdown) can ignore the returned *http.Server.
+// Tests should use the returned value to call Shutdown/Close explicitly
+// (or simply cancel ctx) to avoid leaking the listener goroutine.
 //
 // SECURITY: The endpoint MUST bind to loopback (127.0.0.1 or ::1) only.
 // Non-loopback addresses are rejected to prevent network exposure of the
@@ -49,9 +58,9 @@ import (
 // which currently accepts any valid zapcore.Level (including dpanic, panic,
 // and fatal) via PUT. Only the initial level parsed from --log-level (see
 // ParseLevel) is restricted to debug/info/warn/error.
-func StartDynamicLevelServer(addr string, level zap.AtomicLevel, logger logr.Logger) {
+func StartDynamicLevelServer(ctx context.Context, addr string, level zap.AtomicLevel, logger logr.Logger) *http.Server {
 	if addr == "" {
-		return // disabled by default
+		return nil // disabled by default
 	}
 
 	log := logger.WithName("loglevel-api")
@@ -62,7 +71,15 @@ func StartDynamicLevelServer(addr string, level zap.AtomicLevel, logger logr.Log
 		log.Error(err, "Invalid log-level-api address",
 			"addr", addr,
 			"hint", "expected format: 127.0.0.1:9901")
-		return
+		return nil
+	}
+
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		log.Error(err, "Invalid port in log-level-api address",
+			"addr", addr,
+			"port", port,
+			"hint", "expected format: 127.0.0.1:9901")
+		return nil
 	}
 
 	// SECURITY: Reject non-loopback addresses
@@ -71,7 +88,7 @@ func StartDynamicLevelServer(addr string, level zap.AtomicLevel, logger logr.Log
 		log.Error(nil, "Invalid IP address in log-level-api",
 			"host", host,
 			"addr", addr)
-		return
+		return nil
 	}
 
 	if !ip.IsLoopback() {
@@ -80,7 +97,7 @@ func StartDynamicLevelServer(addr string, level zap.AtomicLevel, logger logr.Log
 			"correct_format_ipv4", "127.0.0.1:"+port,
 			"correct_format_ipv6", "[::1]:"+port,
 			"security_note", "non-loopback binding exposes unauthenticated endpoint to network")
-		return // FAIL SAFE: do not start server
+		return nil // FAIL SAFE: do not start server
 	}
 
 	// Create HTTP server with zap's built-in AtomicLevel handler
@@ -108,6 +125,20 @@ func StartDynamicLevelServer(addr string, level zap.AtomicLevel, logger logr.Log
 			// Non-fatal: logging continues to work even if this auxiliary feature fails
 		}
 	}()
+
+	// Shut down gracefully when ctx is cancelled, so the listener and its
+	// goroutine don't outlive the caller (important for tests and for a
+	// clean process shutdown path).
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Error(err, "Log level API server shutdown error", "addr", addr)
+		}
+	}()
+
+	return server
 }
 
 // ParseLevel parses a log level string to zapcore.Level.
