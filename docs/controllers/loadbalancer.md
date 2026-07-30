@@ -223,13 +223,13 @@ nftables (shared across all DGs in this LB Pod)
 |----------|---------|-----------------|-------------------|
 | DistributionGroup | Create/Update/Delete | Direct (`.For()`) | None (all events) |
 | LoadBalancerEndpointSlice | Create/Update/Delete | `endpointSliceEnqueue` | OwnerReference to DistributionGroup + `spec.gatewayRef` matches this Gateway |
-| Gateway | Create/Update/Delete | `gatewayEnqueue` | Name matches controller's Gateway + lists DGs with direct `parentRefs` to this Gateway |
+| Gateway | Create/Update/Delete | `gatewayEnqueue` | Name matches controller's Gateway + discovers DGs via direct `parentRefs` and indirect L34Route `backendRefs` |
 | L34Route | Create/Update/Delete | `l34RouteEnqueue` | Checks parentRefs for this Gateway AND backendRefs for DG kind |
 
 ### Filtering Strategy Rationale
 
 - **LoadBalancerEndpointSlice mapper**: Checks namespace matches this Gateway's namespace, `spec.gatewayRef` matches this Gateway, and ownerReference points to a DistributionGroup. Enqueues the owning DG.
-- **Gateway mapper**: Only triggers if Gateway name matches this controller's Gateway. Lists all DistributionGroups and enqueues those with `spec.parentRefs` referencing this Gateway. Note: DGs linked only via L34Route (no direct `parentRefs`) are not re-reconciled by this mapper — they rely on the L34Route mapper instead.
+- **Gateway mapper**: Only triggers if Gateway name matches this controller's Gateway. Discovers DGs via both direct `spec.parentRefs` and indirectly via L34Route `backendRefs`. Deduplicates results.
 - **L34Route mapper**: Checks both `parentRefs` (Gateway match) and `backendRefs` (DG kind). Enqueues each referenced DG.
 - **All mappers enqueue broadly**: The reconcile loop makes the final decision via `belongsToGateway()`. This is simpler and more robust than pre-filtering in mappers.
 

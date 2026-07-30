@@ -86,6 +86,7 @@ const (
 	kindDistributionGroup = "DistributionGroup"
 	groupGatewayAPI       = gatewayv1.GroupName
 	kindGateway           = "Gateway"
+	defaultBackendKind    = "Service"
 )
 
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -225,7 +226,7 @@ func (c *Controller) belongsToGateway(ctx context.Context, distGroup *meridio2v1
 			}
 
 			// Default Kind to "Service" when unspecified
-			kind := "Service"
+			kind := defaultBackendKind
 			if backendRef.Kind != nil {
 				kind = string(*backendRef.Kind)
 			}
@@ -256,31 +257,62 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 		return nil
 	}
 
-	// List all DistributionGroups
+	// Deduplicate: a DG may be referenced both directly and via L34Route
+	enqueued := make(map[client.ObjectKey]struct{})
+
+	// 1. Direct: DGs with spec.parentRefs pointing to this Gateway
 	dgList := &meridio2v1alpha1.DistributionGroupList{}
 	if err := c.List(ctx, dgList); err != nil {
-		return nil
-	}
+		log.FromContext(ctx).Error(err, "Failed to list DistributionGroups in gatewayEnqueue")
+	} else {
+		for _, dg := range dgList.Items {
+			for _, parentRef := range dg.Spec.ParentRefs {
+				namespace := dg.Namespace
+				if parentRef.Namespace != nil {
+					namespace = *parentRef.Namespace
+				}
 
-	// Enqueue all DGs that reference this Gateway
-	requests := []ctrl.Request{}
-	for _, dg := range dgList.Items {
-		for _, parentRef := range dg.Spec.ParentRefs {
-			namespace := dg.Namespace
-			if parentRef.Namespace != nil {
-				namespace = *parentRef.Namespace
-			}
-
-			if parentRef.Name == c.GatewayName && namespace == c.GatewayNamespace {
-				requests = append(requests, ctrl.Request{
-					NamespacedName: client.ObjectKey{
-						Name:      dg.Name,
-						Namespace: dg.Namespace,
-					},
-				})
-				break
+				if parentRef.Name == c.GatewayName && namespace == c.GatewayNamespace {
+					enqueued[client.ObjectKey{Name: dg.Name, Namespace: dg.Namespace}] = struct{}{}
+					break
+				}
 			}
 		}
+	}
+
+	// 2. Indirect: DGs referenced by L34Routes that point to this Gateway
+	l34routeList := &meridio2v1alpha1.L34RouteList{}
+	if err := c.List(ctx, l34routeList, client.InNamespace(c.GatewayNamespace)); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list L34Routes in gatewayEnqueue, returning partial results")
+	} else {
+		for i := range l34routeList.Items {
+			route := &l34routeList.Items[i]
+			if !c.referencesGateway(route) {
+				continue
+			}
+			for _, backendRef := range route.Spec.BackendRefs {
+				group := ""
+				if backendRef.Group != nil {
+					group = string(*backendRef.Group)
+				}
+				kind := defaultBackendKind
+				if backendRef.Kind != nil {
+					kind = string(*backendRef.Kind)
+				}
+				namespace := route.Namespace
+				if backendRef.Namespace != nil {
+					namespace = string(*backendRef.Namespace)
+				}
+				if group == meridio2v1alpha1.GroupVersion.Group && kind == kindDistributionGroup {
+					enqueued[client.ObjectKey{Name: string(backendRef.Name), Namespace: namespace}] = struct{}{}
+				}
+			}
+		}
+	}
+
+	requests := make([]ctrl.Request, 0, len(enqueued))
+	for key := range enqueued {
+		requests = append(requests, ctrl.Request{NamespacedName: key})
 	}
 
 	return requests
@@ -401,7 +433,7 @@ func (c *Controller) l34RouteEnqueue(ctx context.Context, obj client.Object) []c
 		}
 
 		// Default Kind to "Service" when unspecified
-		kind := "Service"
+		kind := defaultBackendKind
 		if backendRef.Kind != nil {
 			kind = string(*backendRef.Kind)
 		}
