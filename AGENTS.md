@@ -61,6 +61,9 @@ Always use `kubebuilder create api` and `kubebuilder create webhook` to scaffold
 The e2e tests are designed to validate the solution in an isolated environment (similar to GitHub Actions CI).
 Ensure you run them against a dedicated [Kind](https://kind.sigs.k8s.io/) cluster (not your “real” dev/prod cluster).
 
+### Branch Naming
+Do not use `/` in branch names (e.g., `fix/my-feature`). The CI pipeline uses branch names as Docker image tags, and `/` is not valid in container image tags. Use hyphens instead: `fix-my-feature`.
+
 ## After Making Changes
 
 **After editing `*_types.go` or markers:**
