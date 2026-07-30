@@ -221,7 +221,8 @@ This tolerance is essential for idempotent reconciliation and makes the controll
 | `--max-table-id` | `MERIDIO_MAX_TABLE_ID` | `55000` | Maximum routing table ID |
 | `--table-id-mapping-file` | `MERIDIO_TABLE_ID_MAPPING_FILE` | `/var/run/meridio/table-id-mapping.json` | Path to persist table ID allocations (empty to disable) |
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8082` | Health probe address |
-| `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level |
+| `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
+| `--log-level-api` | `MERIDIO_LOG_LEVEL_API` | _(empty)_ | Address for dynamic log level HTTP endpoint (e.g., `127.0.0.1:9903`). Empty disables the feature. |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` | Metrics endpoint (0 = disabled) |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | HTTPS metrics |
 | `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | (empty) | Metrics TLS cert directory |

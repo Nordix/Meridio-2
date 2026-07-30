@@ -669,7 +669,8 @@ The `stateless-load-balancer` binary accepts the following flags:
 | `--nfqueue` | `MERIDIO_NFQUEUE` | `"0:3"` | Netfilter queue range used by NFQLB |
 | `--readiness-dir` | `MERIDIO_READINESS_DIR` | `/var/run/meridio` | Directory where LB readiness files are written. Empty string disables readiness signaling. |
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8081` | Address the health/ready probe endpoint binds to |
-| `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (`debug`, `info`, `error`) |
+| `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
+| `--log-level-api` | `MERIDIO_LOG_LEVEL_API` | *(empty)* | Address for dynamic log level HTTP endpoint (e.g., `127.0.0.1:9901`). Empty disables the feature. |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` (disabled) | Address the metrics endpoint binds to. Use `:8443` for HTTPS or `:8080` for HTTP. |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | Serve metrics endpoint via HTTPS |
 | `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | `""` | Directory containing the metrics server TLS certificate |

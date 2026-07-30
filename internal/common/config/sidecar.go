@@ -27,6 +27,7 @@ type SidecarConfig struct {
 	PodUID             string
 	ProbeAddr          string
 	LogLevel           string
+	LogLevelAPI        string
 	MinTableID         int
 	MaxTableID         int
 	TableIDMappingFile string
@@ -49,7 +50,9 @@ func (c *SidecarConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&c.ProbeAddr, "health-probe-bind-address", ":8082",
 		"The address the probe endpoint binds to.")
 	fs.StringVar(&c.LogLevel, "log-level", "info",
-		"Log level (debug, info, error)")
+		"Log level (debug, info, warn, error)")
+	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
+		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
 	fs.IntVar(&c.MinTableID, "min-table-id", 50000,
 		"Minimum routing table ID for source-based routing")
 	fs.IntVar(&c.MaxTableID, "max-table-id", 55000,
@@ -79,6 +82,7 @@ func (c *SidecarConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "pod-uid", "POD_UID", &c.PodUID)
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
+	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
 	bindInt(fs, "min-table-id", "MERIDIO_MIN_TABLE_ID", &c.MinTableID)
 	bindInt(fs, "max-table-id", "MERIDIO_MAX_TABLE_ID", &c.MaxTableID)
 	bindString(fs, "table-id-mapping-file", "MERIDIO_TABLE_ID_MAPPING_FILE", &c.TableIDMappingFile)
