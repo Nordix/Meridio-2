@@ -89,6 +89,29 @@ const (
 	defaultBackendKind    = "Service"
 )
 
+// resolveBackendRefDG checks if a BackendRef points to a DistributionGroup.
+// Returns the resolved ObjectKey and true if it is a DG reference, or an empty key and false otherwise.
+// Applies Gateway API defaulting: Group defaults to "" (core), Kind defaults to "Service",
+// Namespace defaults to routeNamespace.
+func resolveBackendRefDG(backendRef gatewayv1.BackendRef, routeNamespace string) (client.ObjectKey, bool) {
+	group := ""
+	if backendRef.Group != nil {
+		group = string(*backendRef.Group)
+	}
+	kind := defaultBackendKind
+	if backendRef.Kind != nil {
+		kind = string(*backendRef.Kind)
+	}
+	if group != meridio2v1alpha1.GroupVersion.Group || kind != kindDistributionGroup {
+		return client.ObjectKey{}, false
+	}
+	namespace := routeNamespace
+	if backendRef.Namespace != nil {
+		namespace = string(*backendRef.Namespace)
+	}
+	return client.ObjectKey{Name: string(backendRef.Name), Namespace: namespace}, true
+}
+
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logr := log.FromContext(ctx)
 
@@ -219,29 +242,8 @@ func (c *Controller) belongsToGateway(ctx context.Context, distGroup *meridio2v1
 
 		// Check if route references this DistributionGroup
 		for _, backendRef := range route.Spec.BackendRefs {
-			// Default Group to "" (core API group) when unspecified
-			group := ""
-			if backendRef.Group != nil {
-				group = string(*backendRef.Group)
-			}
-
-			// Default Kind to "Service" when unspecified
-			kind := defaultBackendKind
-			if backendRef.Kind != nil {
-				kind = string(*backendRef.Kind)
-			}
-
-			// Default Namespace to Route's namespace when unspecified
-			namespace := route.Namespace
-			if backendRef.Namespace != nil {
-				namespace = string(*backendRef.Namespace)
-			}
-
-			// Check if this backendRef matches our DistributionGroup
-			if group == meridio2v1alpha1.GroupVersion.Group &&
-				kind == kindDistributionGroup &&
-				string(backendRef.Name) == distGroup.Name &&
-				namespace == distGroup.Namespace {
+			key, isDG := resolveBackendRefDG(backendRef, route.Namespace)
+			if isDG && key.Name == distGroup.Name && key.Namespace == distGroup.Namespace {
 				return true, nil
 			}
 		}
@@ -291,20 +293,8 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 				continue
 			}
 			for _, backendRef := range route.Spec.BackendRefs {
-				group := ""
-				if backendRef.Group != nil {
-					group = string(*backendRef.Group)
-				}
-				kind := defaultBackendKind
-				if backendRef.Kind != nil {
-					kind = string(*backendRef.Kind)
-				}
-				namespace := route.Namespace
-				if backendRef.Namespace != nil {
-					namespace = string(*backendRef.Namespace)
-				}
-				if group == meridio2v1alpha1.GroupVersion.Group && kind == kindDistributionGroup {
-					enqueued[client.ObjectKey{Name: string(backendRef.Name), Namespace: namespace}] = struct{}{}
+				if key, isDG := resolveBackendRefDG(backendRef, route.Namespace); isDG {
+					enqueued[key] = struct{}{}
 				}
 			}
 		}
@@ -426,33 +416,8 @@ func (c *Controller) l34RouteEnqueue(ctx context.Context, obj client.Object) []c
 	// Enqueue all DistributionGroups referenced by this route
 	var requests []ctrl.Request
 	for _, backendRef := range route.Spec.BackendRefs {
-		// Default Group to "" (core API group) when unspecified
-		group := ""
-		if backendRef.Group != nil {
-			group = string(*backendRef.Group)
-		}
-
-		// Default Kind to "Service" when unspecified
-		kind := defaultBackendKind
-		if backendRef.Kind != nil {
-			kind = string(*backendRef.Kind)
-		}
-
-		// Default Namespace to Route's namespace when unspecified
-		namespace := route.Namespace
-		if backendRef.Namespace != nil {
-			namespace = string(*backendRef.Namespace)
-		}
-
-		// Check if this backendRef is a DistributionGroup
-		if group == meridio2v1alpha1.GroupVersion.Group &&
-			kind == kindDistributionGroup {
-			requests = append(requests, ctrl.Request{
-				NamespacedName: client.ObjectKey{
-					Name:      string(backendRef.Name),
-					Namespace: namespace,
-				},
-			})
+		if key, isDG := resolveBackendRefDG(backendRef, route.Namespace); isDG {
+			requests = append(requests, ctrl.Request{NamespacedName: key})
 		}
 	}
 
