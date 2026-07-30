@@ -1258,4 +1258,345 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(controller.targets).ToNot(HaveKey(distGroup.Name))
 		})
 	})
+
+	Describe("gatewayEnqueue", func() {
+		It("should enqueue DG with direct parentRef to this Gateway", func() {
+			dg := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "direct-dg",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.DistributionGroupSpec{
+					ParentRefs: []meridio2v1alpha1.ParentReference{
+						{Name: gatewayName},
+					},
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, dg)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].Name).To(Equal("direct-dg"))
+		})
+
+		It("should enqueue DG referenced indirectly via L34Route", func() {
+			group := meridio2v1alpha1.GroupVersion.Group
+			kind := kindDistributionGroup
+
+			// DG with no parentRefs (indirect only)
+			dg := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "indirect-dg",
+					Namespace: namespace,
+				},
+			}
+
+			// L34Route connecting Gateway → DG
+			l34route := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-route",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: gatewayv1.ObjectName(gatewayName)},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Group: (*gatewayv1.Group)(&group),
+								Kind:  (*gatewayv1.Kind)(&kind),
+								Name:  "indirect-dg",
+							},
+						},
+					},
+					DestinationCIDRs: []string{"20.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         1,
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, dg, l34route)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].Name).To(Equal("indirect-dg"))
+		})
+
+		It("should deduplicate DG referenced both directly and via L34Route", func() {
+			group := meridio2v1alpha1.GroupVersion.Group
+			kind := kindDistributionGroup
+
+			// DG with direct parentRef AND referenced by L34Route
+			dg := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "both-dg",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.DistributionGroupSpec{
+					ParentRefs: []meridio2v1alpha1.ParentReference{
+						{Name: gatewayName},
+					},
+				},
+			}
+
+			l34route := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-route",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: gatewayv1.ObjectName(gatewayName)},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Group: (*gatewayv1.Group)(&group),
+								Kind:  (*gatewayv1.Kind)(&kind),
+								Name:  "both-dg",
+							},
+						},
+					},
+					DestinationCIDRs: []string{"20.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         1,
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, dg, l34route)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].Name).To(Equal("both-dg"))
+		})
+
+		It("should not enqueue DGs for a different Gateway", func() {
+			dg := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "other-dg",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.DistributionGroupSpec{
+					ParentRefs: []meridio2v1alpha1.ParentReference{
+						{Name: "other-gateway"},
+					},
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, dg)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(BeEmpty())
+		})
+
+		It("should return nil for a different Gateway name", func() {
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "other-gateway",
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(BeNil())
+		})
+
+		It("should not enqueue non-DistributionGroup backendRefs from L34Routes", func() {
+			// L34Route points to this Gateway but backendRef is a Service, not a DG
+			l34route := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "service-route",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: gatewayv1.ObjectName(gatewayName)},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								// Group and Kind default to "" and "Service" respectively
+								Name: "my-service",
+							},
+						},
+					},
+					DestinationCIDRs: []string{"20.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         1,
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, l34route)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(BeEmpty())
+		})
+
+		It("should not enqueue DGs from L34Routes referencing a different Gateway", func() {
+			group := meridio2v1alpha1.GroupVersion.Group
+			kind := kindDistributionGroup
+
+			l34route := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "other-gw-route",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: "other-gateway"},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Group: (*gatewayv1.Group)(&group),
+								Kind:  (*gatewayv1.Kind)(&kind),
+								Name:  "some-dg",
+							},
+						},
+					},
+					DestinationCIDRs: []string{"20.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         1,
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, l34route)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(BeEmpty())
+		})
+
+		It("should enqueue multiple DGs from multiple L34Routes", func() {
+			group := meridio2v1alpha1.GroupVersion.Group
+			kind := kindDistributionGroup
+
+			route1 := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "route-1",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: gatewayv1.ObjectName(gatewayName)},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Group: (*gatewayv1.Group)(&group),
+								Kind:  (*gatewayv1.Kind)(&kind),
+								Name:  "dg-alpha",
+							},
+						},
+					},
+					DestinationCIDRs: []string{"20.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         1,
+				},
+			}
+
+			route2 := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "route-2",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: gatewayv1.ObjectName(gatewayName)},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Group: (*gatewayv1.Group)(&group),
+								Kind:  (*gatewayv1.Kind)(&kind),
+								Name:  "dg-beta",
+							},
+						},
+					},
+					DestinationCIDRs: []string{"30.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         2,
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, route1, route2)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(HaveLen(2))
+			names := []string{requests[0].Name, requests[1].Name}
+			Expect(names).To(ContainElements("dg-alpha", "dg-beta"))
+		})
+
+		It("should return empty when no DGs and no L34Routes exist", func() {
+			fakeClient = newFakeClient(scheme)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(BeEmpty())
+		})
+	})
 })
