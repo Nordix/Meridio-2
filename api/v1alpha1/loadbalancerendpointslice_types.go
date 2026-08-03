@@ -39,6 +39,7 @@ type LoadBalancerEndpointSliceSpec struct {
 
 	// endpoints is the list of endpoints in this slice.
 	// A Pod's addresses always reside in the same slice object (no cross-object correlation).
+	// +optional
 	// +listType=atomic
 	Endpoints []LoadBalancerEndpoint `json:"endpoints,omitempty"`
 }

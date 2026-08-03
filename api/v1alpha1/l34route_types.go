@@ -65,6 +65,7 @@ type L34RouteSpec struct {
 	//
 	// Support for weight: Extended
 	//
+	// +optional
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=1
 	BackendRefs []gatewayapiv1.BackendRef `json:"backendRefs,omitempty"`
@@ -81,6 +82,7 @@ type L34RouteSpec struct {
 
 	// Source CIDRs allowed in the L34Route.
 	// The source CIDRs should not have overlaps.
+	// +optional
 	// +kubebuilder:validation:MaxItems=100
 	// +kubebuilder:validation:items:MaxLength=50
 	// +kubebuilder:validation:XValidation:message="each sourceCIDR must be a valid CIDR",rule="self.all(c, isCIDR(c))"
@@ -93,6 +95,7 @@ type L34RouteSpec struct {
 	// - a single port, such as 3000;
 	// - a port range, such as 3000-4000;
 	// - "any", which is equivalent to port range 0-65535.
+	// +optional
 	// +kubebuilder:validation:MaxItems=20
 	// +kubebuilder:validation:items:MaxLength=11
 	// +kubebuilder:validation:XValidation:message="each sourcePort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <= 65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1]) <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))"
@@ -104,6 +107,7 @@ type L34RouteSpec struct {
 	// - a single port, such as 3000;
 	// - a port range, such as 3000-4000;
 	// - "any", which is equivalent to port range 0-65535.
+	// +optional
 	// +kubebuilder:validation:MaxItems=20
 	// +kubebuilder:validation:items:MaxLength=11
 	// +kubebuilder:validation:XValidation:message="each destinationPort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <= 65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1]) <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))"

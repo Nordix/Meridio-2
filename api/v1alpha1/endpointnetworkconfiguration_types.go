@@ -123,10 +123,14 @@ type EndpointNetworkConfigurationStatus struct {
 // The name of the resource MUST be identical to the Pod's name for
 // automatic discovery by local agents.
 type EndpointNetworkConfiguration struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   EndpointNetworkConfigurationSpec   `json:"spec,omitempty"`
+	// +optional
+	Spec EndpointNetworkConfigurationSpec `json:"spec,omitempty"`
+	// +optional
 	Status EndpointNetworkConfigurationStatus `json:"status,omitempty"`
 }
 
