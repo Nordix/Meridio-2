@@ -165,7 +165,7 @@ NBR-gw-ipv6 BGP       ---        up     2026-03-02    Established`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := parseProtocolOutput(tt.output)
+			result := parseShowProtocolsOutput(tt.output)
 			if len(result) != len(tt.expected) {
 				t.Fatalf("expected %d protocols, got %d", len(tt.expected), len(result))
 			}
@@ -220,7 +220,7 @@ Name       Proto      Table      State  Since         Info`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			protocols := parseProtocolOutput(tt.birdcOutput)
+			protocols := parseShowProtocolsOutput(tt.birdcOutput)
 			if len(protocols) != tt.expectedTotal {
 				t.Errorf("protocol count = %d, want %d", len(protocols), tt.expectedTotal)
 			}
@@ -273,7 +273,7 @@ NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Establish
 	}
 
 	for i, step := range outputs {
-		protocols := parseProtocolOutput(step.birdcOutput)
+		protocols := parseShowProtocolsOutput(step.birdcOutput)
 
 		if len(protocols) != step.expectedTotal {
 			t.Errorf("Step %d: protocol count = %d, want %d", i, len(protocols), step.expectedTotal)
@@ -345,7 +345,7 @@ IP address                Interface  State      Since         Interval  Timeout
 169.254.110.1             vlan11     Up         14:23:45.100    0.300    0.900
 169.254.111.2             vlan12     Down       14:24:01.200    1.000    0.000`
 
-		sessions := parseBfdOutput(output)
+		sessions := parseShowBfdSessionsOutput(output)
 		if len(sessions) != 2 {
 			t.Fatalf("expected 2 sessions, got %d", len(sessions))
 		}
@@ -358,7 +358,7 @@ IP address                Interface  State      Since         Interval  Timeout
 	})
 
 	t.Run("empty output", func(t *testing.T) {
-		sessions := parseBfdOutput("")
+		sessions := parseShowBfdSessionsOutput("")
 		if len(sessions) != 0 {
 			t.Errorf("expected 0 sessions, got %d", len(sessions))
 		}
@@ -368,7 +368,7 @@ IP address                Interface  State      Since         Interval  Timeout
 		output := `BIRD 3.2.0 ready.
 IP address                Interface  State      Since         Interval  Timeout`
 
-		sessions := parseBfdOutput(output)
+		sessions := parseShowBfdSessionsOutput(output)
 		if len(sessions) != 0 {
 			t.Errorf("expected 0 sessions, got %d", len(sessions))
 		}
@@ -380,7 +380,7 @@ IP address                Interface  State      Since         Interval  Timeout
 fd00:cafe:10::1           vlan11     Up         14:23:45.100    0.300    0.900
 fd00:cafe:10::2           vlan11     Down       14:24:01.200    1.000    0.000`
 
-		sessions := parseBfdOutput(output)
+		sessions := parseShowBfdSessionsOutput(output)
 		if len(sessions) != 2 {
 			t.Fatalf("expected 2 sessions, got %d", len(sessions))
 		}
@@ -399,7 +399,7 @@ IP address                Interface  State      Since         Interval  Timeout
 short
 169.254.111.2             vlan12     Down       14:24:01.200    1.000    0.000`
 
-		sessions := parseBfdOutput(output)
+		sessions := parseShowBfdSessionsOutput(output)
 		if len(sessions) != 2 {
 			t.Fatalf("expected 2 sessions (malformed skipped), got %d", len(sessions))
 		}

@@ -230,3 +230,51 @@ func TestApplyBfdState(t *testing.T) {
 		})
 	}
 }
+
+func TestProtocolStateLabel(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol bird.ProtocolStatus
+		expected string
+	}{
+		{"state only", bird.ProtocolStatus{State: bird.ProtocolStateUp}, "up"},
+		{"state with info", bird.ProtocolStatus{State: bird.ProtocolStateUp, Info: "Established"}, "up/Established"},
+		{"down with info",
+			bird.ProtocolStatus{State: bird.ProtocolStateDown, Info: "Connection closed"}, "down/Connection closed"},
+		{"start no info", bird.ProtocolStatus{State: bird.ProtocolStateStart}, "start"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, protocolStateLabel(tt.protocol))
+		})
+	}
+}
+
+func TestProtocolsEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		a, b     []bird.ProtocolStatus
+		expected bool
+	}{
+		{"both nil", nil, nil, true},
+		{"both empty", []bird.ProtocolStatus{}, []bird.ProtocolStatus{}, true},
+		{"nil vs empty", nil, []bird.ProtocolStatus{}, true},
+		{"same single", []bird.ProtocolStatus{{Name: "NBR-gw1", State: bird.ProtocolStateUp, Info: "Established"}},
+			[]bird.ProtocolStatus{{Name: "NBR-gw1", State: bird.ProtocolStateUp, Info: "Established"}}, true},
+		{"different length", []bird.ProtocolStatus{{Name: "NBR-gw1"}},
+			[]bird.ProtocolStatus{{Name: "NBR-gw1"}, {Name: "NBR-gw2"}}, false},
+		{"different name", []bird.ProtocolStatus{{Name: "NBR-gw1", State: bird.ProtocolStateUp}},
+			[]bird.ProtocolStatus{{Name: "NBR-gw2", State: bird.ProtocolStateUp}}, false},
+		{"different state", []bird.ProtocolStatus{{Name: "NBR-gw1", State: bird.ProtocolStateUp}},
+			[]bird.ProtocolStatus{{Name: "NBR-gw1", State: bird.ProtocolStateDown}}, false},
+		{"different info", []bird.ProtocolStatus{{Name: "NBR-gw1", State: bird.ProtocolStateUp, Info: "Established"}},
+			[]bird.ProtocolStatus{{Name: "NBR-gw1", State: bird.ProtocolStateUp, Info: "Connect"}}, false},
+		{"different order", []bird.ProtocolStatus{{Name: "NBR-gw1"}, {Name: "NBR-gw2"}},
+			[]bird.ProtocolStatus{{Name: "NBR-gw2"}, {Name: "NBR-gw1"}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, protocolsEqual(tt.a, tt.b))
+		})
+	}
+}

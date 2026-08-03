@@ -20,6 +20,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -249,8 +251,9 @@ func monitorConnectivity(
 		return fmt.Errorf("failed to start monitoring: %w", err)
 	}
 
-	// Build family map from GatewayRouters (refreshed on each status update)
-	var lastCount int
+	// Track previous state to detect changes
+	var lastProtocols []bird.ProtocolStatus
+	var lastFamilyMap map[string]string
 	firstUpdate := true
 
 	for {
@@ -276,12 +279,28 @@ func monitorConnectivity(
 			// After this, all protocols reflect true connectivity (Info != Established if BFD is down).
 			applyBfdState(status.Protocols, status.BfdSessions, routers, logger)
 
-			count := protocolsUp(status.Protocols)
+			familyMap := router.BuildFamilyMap(routers)
 
-			// Log when protocol up count changes
-			if firstUpdate || count != lastCount {
-				logger.Info("Gateway connectivity", "protocols", fmt.Sprintf("%d/%d up", count, len(routers)))
-				lastCount = count
+			// Log when protocols or family map change
+			if firstUpdate || !protocolsEqual(status.Protocols, lastProtocols) || !maps.Equal(familyMap, lastFamilyMap) {
+				// Build set of protocols reported by BIRD
+				birdProtocols := make(map[string]bool, len(status.Protocols))
+				kvs := make([]any, 0, len(familyMap)*2)
+				for _, p := range status.Protocols {
+					if family, ok := familyMap[p.Name]; ok {
+						kvs = append(kvs, p.Name, family+":"+protocolStateLabel(p))
+						birdProtocols[p.Name] = true
+					}
+				}
+				// Log routers configured but not yet in BIRD
+				for _, name := range slices.Sorted(maps.Keys(familyMap)) {
+					if !birdProtocols[name] {
+						kvs = append(kvs, name, familyMap[name]+":not yet configured in bird")
+					}
+				}
+				logger.Info("Gateway connectivity", kvs...)
+				lastProtocols = append([]bird.ProtocolStatus(nil), status.Protocols...)
+				lastFamilyMap = familyMap
 				firstUpdate = false
 			}
 
@@ -289,7 +308,7 @@ func monitorConnectivity(
 			if gateMgr != nil {
 				var ipv4, ipv6 bool
 				if len(routers) > 0 {
-					ipv4, ipv6 = router.ClassifyConnectivityByFamily(status.Protocols, router.BuildFamilyMap(routers))
+					ipv4, ipv6 = router.ClassifyConnectivityByFamily(status.Protocols, familyMap)
 				}
 				// When no routers exist, ipv4/ipv6 stay false — gates set to False
 				if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
@@ -321,14 +340,24 @@ func getGatewayRoutersFromCache(
 	return result, nil
 }
 
-func protocolsUp(protocols []bird.ProtocolStatus) int {
-	count := 0
-	for _, p := range protocols {
-		if p.IsEstablished() {
-			count++
+func protocolStateLabel(p bird.ProtocolStatus) string {
+	if p.Info != "" {
+		return string(p.State) + "/" + p.Info
+	}
+	return string(p.State)
+}
+
+// protocolsEqual returns true if both slices have the same protocols with the same state/info.
+func protocolsEqual(a, b []bird.ProtocolStatus) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || a[i].State != b[i].State || a[i].Info != b[i].Info {
+			return false
 		}
 	}
-	return count
+	return true
 }
 
 // applyBfdState mutates static protocol statuses based on BFD session state.
@@ -341,6 +370,10 @@ func applyBfdState(
 	routers []*meridio2v1alpha1.GatewayRouter,
 	logger logr.Logger,
 ) {
+	if len(routers) == 0 {
+		return
+	}
+
 	routerByName := make(map[string]*meridio2v1alpha1.GatewayRouter, len(routers))
 	for _, gr := range routers {
 		routerByName["NBR-"+gr.Name] = gr
