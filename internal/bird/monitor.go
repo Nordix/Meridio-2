@@ -110,25 +110,26 @@ func (b *Bird) checkStatus(ctx context.Context) MonitorStatus {
 	cmd := exec.CommandContext(ctx, "birdc", "-s", b.SocketPath, "show", "protocols", "all", `"NBR-*"`)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.V(1).Info("birdc query failed", "error", err)
+		log.V(1).Info("birdc command failed", "cmd", cmd.String(), "error", err, "output", strings.TrimSpace(string(out)))
 		return status
 	}
 
-	status.Protocols = parseProtocolOutput(string(out))
+	status.Protocols = parseShowProtocolsOutput(string(out))
 
-	bfdCmd := exec.CommandContext(ctx, "birdc", "-s", b.SocketPath, "show", "bfd", "sessions")
-	bfdOut, err := bfdCmd.CombinedOutput()
+	cmd = exec.CommandContext(ctx, "birdc", "-s", b.SocketPath, "show", "bfd", "sessions")
+	out, err = cmd.CombinedOutput()
 	if err != nil {
-		log.V(1).Info("birdc bfd query failed", "error", err)
-	} else {
-		status.BfdSessions = parseBfdOutput(string(bfdOut))
+		log.V(1).Info("birdc command failed", "cmd", cmd.String(), "error", err, "output", strings.TrimSpace(string(out)))
+		return status
 	}
+
+	status.BfdSessions = parseShowBfdSessionsOutput(string(out))
 
 	return status
 }
 
-// parseProtocolOutput parses birdc protocol output
-func parseProtocolOutput(output string) []ProtocolStatus {
+// parseShowProtocolsOutput parses birdc protocol output
+func parseShowProtocolsOutput(output string) []ProtocolStatus {
 	var protocols []ProtocolStatus
 
 	for line := range strings.SplitSeq(output, "\n") {
@@ -171,8 +172,8 @@ func (b BfdSession) IsUp() bool {
 	return b.State == "Up"
 }
 
-// parseBfdOutput parses the output of `birdc show bfd sessions`.
-func parseBfdOutput(output string) []BfdSession {
+// parseShowBfdSessionsOutput parses the output of `birdc show bfd sessions`.
+func parseShowBfdSessionsOutput(output string) []BfdSession {
 	sessions := make([]BfdSession, 0, 8)
 
 	for line := range strings.SplitSeq(output, "\n") {
