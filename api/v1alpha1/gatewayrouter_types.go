@@ -249,6 +249,7 @@ type GatewayRouter struct {
 // GatewayRouterList contains a list of GatewayRouter
 type GatewayRouterList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []GatewayRouter `json:"items"`
 }

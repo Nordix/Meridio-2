@@ -198,6 +198,7 @@ type GatewayConfiguration struct {
 // GatewayConfigurationList contains a list of GatewayConfiguration
 type GatewayConfigurationList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []GatewayConfiguration `json:"items"`
 }

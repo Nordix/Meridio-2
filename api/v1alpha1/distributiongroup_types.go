@@ -157,6 +157,7 @@ type DistributionGroup struct {
 // DistributionGroupList contains a list of DistributionGroup
 type DistributionGroupList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []DistributionGroup `json:"items"`
 }

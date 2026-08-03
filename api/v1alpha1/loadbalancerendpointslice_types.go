@@ -146,6 +146,7 @@ type LoadBalancerEndpointSlice struct {
 // LoadBalancerEndpointSliceList contains a list of LoadBalancerEndpointSlice.
 type LoadBalancerEndpointSliceList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []LoadBalancerEndpointSlice `json:"items"`
 }

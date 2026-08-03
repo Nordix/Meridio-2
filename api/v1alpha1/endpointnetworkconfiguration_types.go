@@ -139,6 +139,7 @@ type EndpointNetworkConfiguration struct {
 // EndpointNetworkConfigurationList contains a list of EndpointNetworkConfiguration
 type EndpointNetworkConfigurationList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []EndpointNetworkConfiguration `json:"items"`
 }
