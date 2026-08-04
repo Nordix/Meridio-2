@@ -25,6 +25,8 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
+const rulePriority = 32000
+
 var errInvalidIP = errors.New("the ip address is invalid")
 
 // CleanupStaleRules removes all fwmark-based policy rules and their routing tables
@@ -73,9 +75,7 @@ func createPolicyRoute(fwMark int, ip string) error {
 
 // ensureRule adds the desired rule only if it doesn't already exist.
 // Linux allows duplicate ip rules, so we check first to avoid accumulating duplicates
-// across reconciles. Priority of -1 means "unset" in vishvananda/netlink (library skips
-// FRA_PRIORITY in the netlink message, causing the kernel to auto-assign a priority).
-// We cannot match on auto-assigned priorities, so skip the comparison when unset.
+// across reconciles.
 func ensureRule(desired *netlink.Rule) error {
 	rules, err := netlink.RuleList(desired.Family)
 	if err != nil {
@@ -85,7 +85,7 @@ func ensureRule(desired *netlink.Rule) error {
 
 	for _, existing := range rules {
 		if existing.Mark == desired.Mark && existing.Table == desired.Table &&
-			(desired.Priority < 0 || existing.Priority == desired.Priority) {
+			existing.Priority == desired.Priority {
 			return nil // Already exists
 		}
 	}
@@ -123,6 +123,7 @@ func getRoute(tableID int, ip net.IP) *netlink.Route {
 
 func getRule(fwMark int, ip net.IP) *netlink.Rule {
 	rule := netlink.NewRule()
+	rule.Priority = rulePriority
 	rule.Table = fwMark
 	rule.Mark = uint32(fwMark)
 	rule.Family = netlink.FAMILY_V6
