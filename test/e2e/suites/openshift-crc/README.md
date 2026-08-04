@@ -260,6 +260,61 @@ All targets accept `KUBECTL=oc` and derive registry paths from:
 | Image registry | localhost:5001 (Kind) | Internal OpenShift registry |
 | IPv6 convergence | Immediate | ~30s after deployment (nfqlb flow programming) |
 
+### OpenShift Compatibility Notes
+
+The differences above stem from OpenShift's stricter default security posture compared to vanilla
+Kubernetes. This section explains the underlying cause for each requirement.
+
+- **Seccomp (`Unconfined` on loadbalancer container)**: The `RuntimeDefault` seccomp profile blocks
+  `NETLINK_NETFILTER` messages — specifically nftables set management (`NFT_MSG_NEWSET`) and nfqueue
+  binding (`NFQNL_CFG_CMD_BIND`). Both are required by NFQLB/nftables in the loadbalancer container.
+  Standard netlink operations (interface addresses, routes, policy rules) used by the router and
+  network-sidecar containers are **not** affected by `RuntimeDefault` — only the loadbalancer
+  container needs `Unconfined`.
+
+- **SELinux (`spc_t` on loadbalancer container)**: SELinux enforces at a separate kernel security
+  module layer, independent of seccomp. Even when seccomp allows a syscall, `container_t`'s SELinux
+  policy still lacks permissions for nfqueue bind and nftables set operations. Both seccomp **and**
+  SELinux restrictions must be relaxed together — fixing only one still results in denial from the
+  other. `spc_t` (super-privileged container) is scoped to the loadbalancer container only; the
+  router container works fine under the default SELinux type.
+
+- **Custom SCCs**: OpenShift's default `restricted-v2` SCC blocks the capabilities (`NET_ADMIN`,
+  `IPC_LOCK`, `IPC_OWNER`, `NET_BIND_SERVICE`, `NET_RAW`), unsafe sysctls, and seccomp/SELinux
+  settings above. `meridio-lb` and `meridio-sidecar` SCCs grant the minimum needed per Pod type.
+
+- **KubeletConfig for unsafe sysctls**: Declaring unsafe sysctls in a Pod spec is a two-layer gate.
+  The SCC's `allowedUnsafeSysctls` only satisfies *admission control* (whether the Pod spec is
+  accepted). The kubelet separately enforces its own allowlist at *runtime* — without a matching
+  `KubeletConfig`, the kubelet refuses to apply the sysctls even if the Pod was admitted.
+
+- **Pod-level sysctls instead of tuning CNI NAD**: OpenShift's Multus blocks the `tuning` CNI plugin
+  from setting *global* sysctls (e.g. `net.ipv4.conf.all.forwarding`) via NetworkAttachmentDefinition.
+  Per-interface sysctls via NAD are unaffected, but this suite's requirements are global, so they're
+  set via Pod `securityContext.sysctls` instead.
+
+- **Bridge CNI instead of macvlan/VLAN-subinterfaces**: The macvlan-on-host-interface and raw VLAN
+  subinterface approaches used by the Kind suites are Docker/host-networking conveniences not
+  applicable inside a single OpenShift node. Bridge CNI with a VLAN-aware bridge (`br-meridio`,
+  `br-meridio-app`) reproduces equivalent L2 adjacency using constructs OpenShift/Multus supports.
+
+- **RBAC finalizer permissions**: OpenShift enables the `OwnerReferencesPermissionEnforcement`
+  admission controller by default (optional on vanilla Kubernetes). `ctrl.SetControllerReference()`
+  sets `blockOwnerDeletion: true`, which requires explicit `/finalizers` sub-resource RBAC permissions
+  on the owner resources — `gateways/finalizers`, `distributiongroups/finalizers`, and
+  `pods/finalizers` — otherwise the controller-manager cannot set owner references on Deployments,
+  LoadBalancerEndpointSlices, and EndpointNetworkConfigurations respectively. This is patched in here
+  via `kustomization.yaml` rather than the base `config/rbac/manager-role.yaml` because vanilla
+  Kubernetes doesn't enforce the check by default; moving these rules into the base role would be a
+  cleaner long-term fix since the underlying `SetControllerReference()` calls are unconditional.
+
+- **nfnetlink_queue persistence**: Unlike some other distros, this module is not auto-loaded on
+  CoreOS/OpenShift nodes and must be explicitly persisted via `/etc/modules-load.d/`.
+
+- **Pod anti-affinity removed**: The LB Deployment template's default anti-affinity (spread across
+  nodes) is meaningless — and blocks scheduling entirely — on a single-node cluster. Since Bridge CNI
+  supports multiple LB Pods sharing the same bridge on one node, anti-affinity is safely dropped here.
+
 ---
 
 ## Known Issues / Notes
