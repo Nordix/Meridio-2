@@ -99,12 +99,6 @@ func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 	return nil
 }
 
-// updateNfQueueDestinationCIDRs is a no-op when nftables VIP management is external.
-// The LB controller manages VIP sets via internal/nftables.Manager.
-func (nfqlb *NFQueueLoadBalancer) updateNfQueueDestinationCIDRs(_ context.Context) error {
-	return nil
-}
-
 // flowList runs the nfqlb flow-list commands and returns the output.
 func (nfqlb *NFQueueLoadBalancer) flowList(ctx context.Context) ([]*nfqlbFlow, error) {
 	args := []string{
@@ -221,13 +215,12 @@ type Flow interface {
 // Instance represents a nfqlb instance instantiated with nfqlb init.
 type Instance struct {
 	*nfqlbInstanceConfig
-	name                              string
-	targets                           map[int][]string // Key: identifier ; Value: IPs
-	broken                            map[int]struct{} // identifiers in inconsistent state (partial route or activate failure)
-	offset                            int
-	mu                                sync.Mutex
-	updateNfQueueDestinationCIDRsFunc func(ctx context.Context) error
-	nfqlbPath                         string
+	name      string
+	targets   map[int][]string // Key: identifier ; Value: IPs
+	broken    map[int]struct{} // identifiers in inconsistent state (partial route or activate failure)
+	offset    int
+	mu        sync.Mutex
+	nfqlbPath string
 	// routeCreate and routeDelete are injectable for testing.
 	// When nil, the package-level createPolicyRoute/deletePolicyRoute are used.
 	routeCreate func(fwmark int, ip string) error
@@ -270,13 +263,12 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 	}
 
 	nfqlbInstance = &Instance{
-		name:                              name,
-		nfqlbInstanceConfig:               config,
-		targets:                           map[int][]string{},
-		broken:                            map[int]struct{}{},
-		updateNfQueueDestinationCIDRsFunc: nfqlb.updateNfQueueDestinationCIDRs,
-		offset:                            offset,
-		nfqlbPath:                         nfqlb.nfqlbPath,
+		name:                name,
+		nfqlbInstanceConfig: config,
+		targets:             map[int][]string{},
+		broken:              map[int]struct{}{},
+		offset:              offset,
+		nfqlbPath:           nfqlb.nfqlbPath,
 	}
 
 	//nolint:gosec
@@ -412,11 +404,6 @@ func (s *Instance) AddFlow(ctx context.Context, flowToAdd Flow) error {
 		return fmt.Errorf("failed setting nfqlb flow ; %w; %s", err, stdoutStderr)
 	}
 
-	err = s.updateNfQueueDestinationCIDRsFunc(ctx)
-	if err != nil {
-		return fmt.Errorf("failed setting nfqlb flow ; %w; %s", err, stdoutStderr)
-	}
-
 	ctrl.LoggerFrom(ctx).Info("nfqlb: flow added", "instance", s.name, "flow", flowToAdd)
 
 	return nil
@@ -441,11 +428,6 @@ func (s *Instance) DeleteFlow(ctx context.Context, flowToDelete Flow) error {
 	stdoutStderr, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed deleting nfqlb flow ; %w; %s", err, stdoutStderr)
-	}
-
-	err = s.updateNfQueueDestinationCIDRsFunc(ctx)
-	if err != nil {
-		return fmt.Errorf("failed setting nfqlb flow ; %w; %s", err, stdoutStderr)
 	}
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: flow deleted", "instance", s.name, "flow", flowToDelete)
