@@ -162,7 +162,8 @@ type L34Route struct {
 // L34RouteList contains a list of L34Route resources.
 type L34RouteList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata"`
+	// +optional
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []L34Route `json:"items"`
 }
 

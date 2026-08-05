@@ -134,7 +134,7 @@ type LoadBalancerEndpointSlice struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the endpoints and their distribution metadata.
 	// +required
@@ -147,7 +147,7 @@ type LoadBalancerEndpointSlice struct {
 type LoadBalancerEndpointSliceList struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []LoadBalancerEndpointSlice `json:"items"`
 }
 

@@ -126,12 +126,12 @@ type EndpointNetworkConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// +optional
-	Spec EndpointNetworkConfigurationSpec `json:"spec,omitempty"`
+	Spec EndpointNetworkConfigurationSpec `json:"spec,omitzero"`
 	// +optional
-	Status EndpointNetworkConfigurationStatus `json:"status,omitempty"`
+	Status EndpointNetworkConfigurationStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -140,7 +140,7 @@ type EndpointNetworkConfiguration struct {
 type EndpointNetworkConfigurationList struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []EndpointNetworkConfiguration `json:"items"`
 }
 
