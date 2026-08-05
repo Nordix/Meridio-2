@@ -467,7 +467,7 @@ OCP_IMAGES ?= controller-manager stateless-load-balancer router network-sidecar 
 endif
 
 .PHONY: crc-registry-login
-crc-registry-login: ## [CRC-only] Trust CRC registry CA and docker login (needs sudo).
+crc-registry-login: ## Trust CRC registry CA and docker login (needs sudo).
 	@echo "Extracting CRC registry CA..."
 	@$(KUBECTL) get secret -n openshift-ingress-operator router-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/crc-ca.crt
 	@$(KUBECTL) get secret -n openshift-ingress router-certs-default -o jsonpath='{.data.tls\.crt}' | base64 -d >> /tmp/crc-ca.crt
@@ -494,6 +494,9 @@ push-images-openshift-crc: ## Tag and push all images to CRC internal registry (
 		docker push $(OCP_PUSH_REGISTRY)/$$img:$(VERSION); \
 	done
 	@echo "All images pushed to $(OCP_PUSH_REGISTRY)"
+
+.PHONY: openshift-crc
+openshift-crc: deploy-openshift-crc test-openshift-crc ## Deploy and test openshift-crc suite.
 
 .PHONY: deploy-openshift-crc
 deploy-openshift-crc: kustomize cert-manager push-images-openshift-crc ## Deploy openshift-crc topology (requires CRC prerequisites + pushed images).
@@ -522,6 +525,12 @@ deploy-openshift-crc:
 	echo "VPN gateway ready"
 	$(call deploy-suite,$(OCP_NAMESPACE),$(shell pwd)/suites/openshift-crc,ocp,sllbr-gw-ocp,$(shell pwd)/suites/openshift-crc/lb-deployment.yaml)
 	@echo "OpenShift CRC suite deployed successfully"
+
+.PHONY: test-openshift-crc
+test-openshift-crc: ## Run e2e tests for openshift-crc suite.
+	cd $(PROJECT_ROOT)/test/e2e && \
+	E2E_VPN_GATEWAY_EXEC="$(KUBECTL) exec -n $(OCP_NAMESPACE) vpn-gateway --" \
+	go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="OpenShift CRC" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-openshift-crc
 undeploy-openshift-crc: ## Undeploy openshift-crc topology.

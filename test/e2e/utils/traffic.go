@@ -6,12 +6,31 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// E2EVPNGatewayExecEnv is the environment variable used to select how commands
+// are executed against the VPN gateway. When unset, defaults to "docker exec
+// vpn-gateway" (Kind suites, where the VPN gateway runs as a Docker container
+// on the host). Set to "kubectl exec -n <namespace> vpn-gateway --" (or the
+// "oc" equivalent) for suites where the VPN gateway runs as a Pod inside the
+// cluster (e.g., the OpenShift CRC suite).
+const E2EVPNGatewayExecEnv = "E2E_VPN_GATEWAY_EXEC"
+
+// vpnGatewayExecPrefix returns the shell command prefix used to run a command
+// against the VPN gateway (Docker container or in-cluster Pod), honoring
+// E2EVPNGatewayExecEnv when set.
+func vpnGatewayExecPrefix() string {
+	if prefix := os.Getenv(E2EVPNGatewayExecEnv); prefix != "" {
+		return prefix
+	}
+	return "docker exec vpn-gateway"
+}
 
 // SendTraffic sends traffic from the VPN gateway container to the given VIP:port.
 // Returns a map of target hostname → connection count, and the number of lost connections.
@@ -27,8 +46,8 @@ func SendTraffic(vip string, port int, protocol string, nconn int) (map[string]i
 	}
 
 	cmdStr := fmt.Sprintf(
-		"docker exec vpn-gateway ctraffic %s -address %s -nconn %d -timeout 10s -stats all",
-		protoFlag, addr, nconn,
+		"%s ctraffic %s -address %s -nconn %d -timeout 10s -stats all",
+		vpnGatewayExecPrefix(), protoFlag, addr, nconn,
 	)
 	cmd := exec.Command("/bin/sh", "-c", cmdStr)
 	out, err := cmd.CombinedOutput()
@@ -45,7 +64,7 @@ func Ping(vip string) error {
 	if strings.Contains(vip, ":") {
 		pingCmd = "ping6"
 	}
-	cmdStr := fmt.Sprintf("docker exec vpn-gateway %s -c 3 -W 2 %s", pingCmd, vip)
+	cmdStr := fmt.Sprintf("%s %s -c 3 -W 2 %s", vpnGatewayExecPrefix(), pingCmd, vip)
 	cmd := exec.Command("/bin/sh", "-c", cmdStr)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -68,7 +87,7 @@ func PingLargePacket(vip string, size int) error {
 		// IPv6 always has DF equivalent (no fragmentation by routers)
 		sizeFlag = fmt.Sprintf("-s %d", size)
 	}
-	cmdStr := fmt.Sprintf("docker exec vpn-gateway %s %s -c 3 -W 5 %s", pingCmd, sizeFlag, vip)
+	cmdStr := fmt.Sprintf("%s %s %s -c 3 -W 5 %s", vpnGatewayExecPrefix(), pingCmd, sizeFlag, vip)
 	cmd := exec.Command("/bin/sh", "-c", cmdStr)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -87,7 +106,7 @@ func VerifyPMTU(vip string, size int) error {
 
 	// Flush PMTU cache so the oversized packet is actually sent on the wire
 	// (otherwise the kernel rejects it locally from a previous PMTU discovery)
-	flushCmd := fmt.Sprintf("docker exec vpn-gateway ip route flush cache %s", vip)
+	flushCmd := fmt.Sprintf("%s ip route flush cache %s", vpnGatewayExecPrefix(), vip)
 	_ = exec.Command("/bin/sh", "-c", flushCmd).Run()
 
 	// Build tcpdump filter for ICMP unreachable (type 3) from the VIP
@@ -100,8 +119,8 @@ func VerifyPMTU(vip string, size int) error {
 
 	// Start tcpdump in background, capture for up to 10 seconds
 	tcpdumpCmd := fmt.Sprintf(
-		"docker exec vpn-gateway timeout 10 tcpdump -c 1 -nn -l '%s' 2>/dev/null",
-		tcpdumpFilter,
+		"%s timeout 10 tcpdump -c 1 -nn -l '%s' 2>/dev/null",
+		vpnGatewayExecPrefix(), tcpdumpFilter,
 	)
 	tcpdump := exec.Command("/bin/sh", "-c", tcpdumpCmd)
 	tcpdumpOut := &strings.Builder{}
@@ -121,7 +140,7 @@ func VerifyPMTU(vip string, size int) error {
 		pingCmd = "ping6"
 		sizeFlag = fmt.Sprintf("-s %d", size)
 	}
-	pingCmdStr := fmt.Sprintf("docker exec vpn-gateway %s %s -c 3 -W 3 %s", pingCmd, sizeFlag, vip)
+	pingCmdStr := fmt.Sprintf("%s %s %s -c 3 -W 3 %s", vpnGatewayExecPrefix(), pingCmd, sizeFlag, vip)
 	cmd := exec.Command("/bin/sh", "-c", pingCmdStr)
 	pingOut, pingErr := cmd.CombinedOutput()
 
