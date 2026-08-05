@@ -60,16 +60,15 @@ func (m *mockExec) run(_ context.Context, args ...string) ([]byte, error) {
 // newTestInstance creates an Instance with mock routing and exec for testing.
 func newTestInstance(name string, offset, maxTargets int, routing *mockRouting, executor *mockExec) *Instance {
 	return &Instance{
-		nfqlbInstanceConfig:               &nfqlbInstanceConfig{maxTargets: maxTargets},
-		name:                              name,
-		targets:                           map[int][]string{},
-		broken:                            map[int]struct{}{},
-		offset:                            offset,
-		nfqlbPath:                         "nfqlb",
-		updateNfQueueDestinationCIDRsFunc: func(_ context.Context) error { return nil },
-		routeCreate:                       routing.create,
-		routeDelete:                       routing.delete,
-		execCmd:                           executor.run,
+		nfqlbInstanceConfig: &nfqlbInstanceConfig{maxTargets: maxTargets},
+		name:                name,
+		targets:             map[int][]string{},
+		broken:              map[int]struct{}{},
+		offset:              offset,
+		nfqlbPath:           "nfqlb",
+		routeCreate:         routing.create,
+		routeDelete:         routing.delete,
+		execCmd:             executor.run,
 	}
 }
 
