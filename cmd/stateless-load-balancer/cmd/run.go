@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	"fmt"
 
-	"github.com/google/nftables"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -136,42 +135,6 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		}
 	}()
 
-	// Initialize nftables
-	nftConn := &nftables.Conn{}
-	nftTable := nftConn.AddTable(&nftables.Table{
-		Name:   "meridio",
-		Family: nftables.TableFamilyINet,
-	})
-	if err := nftConn.Flush(); err != nil {
-		setupLog.Error(err, "failed to create nftables table")
-		return err
-	}
-
-	nftChain := nftConn.AddChain(&nftables.Chain{
-		Name:     "prerouting",
-		Table:    nftTable,
-		Type:     nftables.ChainTypeFilter,
-		Hooknum:  nftables.ChainHookPrerouting,
-		Priority: nftables.ChainPriorityFilter,
-	})
-	if err := nftConn.Flush(); err != nil {
-		setupLog.Error(err, "failed to create nftables chain")
-		return err
-	}
-
-	setupLog.Info("nftables initialized", "table", nftTable.Name, "chain", nftChain.Name)
-
-	// Cleanup nftables on shutdown
-	defer func() {
-		setupLog.Info("Cleaning up nftables")
-		conn := &nftables.Conn{}
-		conn.FlushTable(nftTable)
-		conn.DelTable(nftTable)
-		if err := conn.Flush(); err != nil {
-			setupLog.Error(err, "failed to cleanup nftables")
-		}
-	}()
-
 	// Metrics options
 	metricsServerOptions := metricsserver.Options{
 		BindAddress:   cfg.MetricsAddr,
@@ -212,9 +175,6 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		GatewayNamespace: cfg.GatewayNamespace,
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
 		Readiness:        readiness.NewManager(cfg.ReadinessDir),
-		NFTConn:          nftConn,
-		NFTTable:         nftTable,
-		NFTChain:         nftChain,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to setup controller")
 		return err

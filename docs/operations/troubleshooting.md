@@ -334,11 +334,6 @@ kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nft list ruleset
 
 Example output:
 ```
-table inet meridio {
-	chain prerouting {
-		type filter hook prerouting priority filter; policy accept;
-	}
-}
 table inet meridio-lb {
 	set ipv4-vips {
 		type ipv4_addr
