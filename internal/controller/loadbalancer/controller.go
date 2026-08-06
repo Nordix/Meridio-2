@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/google/nftables"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -62,9 +61,6 @@ type Controller struct {
 	GatewayNamespace  string
 	NFQLB             nfqlbManager
 	Readiness         *readiness.Manager
-	NFTConn           *nftables.Conn
-	NFTTable          *nftables.Table
-	NFTChain          *nftables.Chain
 	NftManagerFactory func(queueNum, queueTotal uint16) (nftablesManager, error)
 
 	mu          sync.Mutex
