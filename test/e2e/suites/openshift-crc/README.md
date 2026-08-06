@@ -162,7 +162,7 @@ deploys whatever is currently published on nordix, not your local changes.
 
 ### Validate
 
-Wait ~30 seconds after deployment for BGP convergence and nfqlb flow programming, then:
+Wait at least 1-2 minutes after deployment completes before running validation commands, then:
 
 ```bash
 NS=meridio-2
@@ -202,19 +202,23 @@ Expected results:
 
 ### Automated test run
 
-The manual validation steps above are also available as an automated Ginkgo suite, following the
-same `deploy → test → undeploy` pattern used by the Kind-based suites:
+The manual validation steps above are also available as an automated Ginkgo suite:
 
 ```bash
-# Deploy + run the e2e test suite (readiness checks + IPv4/IPv6 TCP/UDP traffic)
-make -C test/e2e openshift-crc KUBECTL=oc
+# 1. Deploy the topology
+make -C test/e2e deploy-openshift-crc KUBECTL=oc
 
-# Or run the tests only, against an already-deployed suite (e.g., after `deploy-openshift-crc`)
+# 2. Wait at least 1-2 minutes, then run the tests
 make -C test/e2e test-openshift-crc KUBECTL=oc
 
 # Teardown
 make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 ```
+
+**Run `test-openshift-crc` as a separate step, with a gap after deployment finishes — do not
+run it back-to-back with `deploy-openshift-crc` in the same invocation.** Waiting a minute or
+two between deployment and testing has been observed to reduce intermittent IPv6 traffic
+failures more consistently than retrying the test itself.
 
 `test-openshift-crc` runs the `OpenShift CRC` Ginkgo suite (`--focus="OpenShift CRC"`), covering:
 - Gateway Accepted/Programmed, status.addresses (dual-stack VIPs), LB Pods deployed
@@ -227,9 +231,9 @@ container on the host. `test-openshift-crc` accounts for this by setting `E2E_VP
 `$(KUBECTL) exec -n $(OCP_NAMESPACE) vpn-gateway --` so the shared traffic helpers
 (`test/e2e/utils/traffic.go`) run against the Pod instead of `docker exec`.
 
-`openshift-crc` and `test-openshift-crc` are intentionally not part of the `ipv4`/`dual-stack`
-aggregate Makefile targets (`test-ipv4`, `test-dual-stack`), since this suite requires a separate
-CRC cluster and cannot run alongside the Kind-based suites in the same invocation.
+`test-openshift-crc` is intentionally not part of the `ipv4`/`dual-stack` aggregate Makefile
+targets (`test-ipv4`, `test-dual-stack`), since this suite requires a separate CRC cluster and
+cannot run alongside the Kind-based suites in the same invocation.
 
 ---
 
@@ -240,7 +244,6 @@ CRC cluster and cannot run alongside the Kind-based suites in the same invocatio
 | `crc-registry-login` | Trust CRC registry CA + docker login (needs sudo) |
 | `push-images-openshift-crc` | Create namespace + ImageStreams, build vpn-gateway, tag+push all 6 images |
 | `deploy-openshift-crc` | Full deployment (cert-manager, SCCs, controller-manager, VPN gateway, topology, wait for Ready) |
-| `openshift-crc` | Deploy and run the e2e test suite (`deploy-openshift-crc` + `test-openshift-crc`) |
 | `test-openshift-crc` | Run the `OpenShift CRC` Ginkgo suite against an already-deployed topology |
 | `undeploy-openshift-crc` | Delete webhook config, SCCs, and namespace (removes everything) |
 

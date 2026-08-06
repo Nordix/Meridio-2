@@ -495,9 +495,6 @@ push-images-openshift-crc: ## Tag and push all images to CRC internal registry (
 	done
 	@echo "All images pushed to $(OCP_PUSH_REGISTRY)"
 
-.PHONY: openshift-crc
-openshift-crc: deploy-openshift-crc test-openshift-crc ## Deploy and test openshift-crc suite.
-
 .PHONY: deploy-openshift-crc
 deploy-openshift-crc: kustomize cert-manager push-images-openshift-crc ## Deploy openshift-crc topology (requires CRC prerequisites + pushed images).
 ifneq ($(OCP_USE_NORDIX),true)
