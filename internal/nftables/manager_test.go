@@ -22,13 +22,14 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
+	"github.com/nordix/meridio-2/internal/nfqlb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
 func TestNewManager(t *testing.T) {
-	mgr, err := NewManager(0, 4, 4998, 4999)
+	mgr, err := NewManager(0, 4, uint32(nfqlb.DefaultFwmarkBase), uint32(nfqlb.DefaultFwmarkBase+1))
 	assert.NoError(t, err)
 	assert.NotNil(t, mgr)
 	assert.Equal(t, "meridio-lb", mgr.tableName)

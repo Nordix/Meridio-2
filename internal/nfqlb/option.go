@@ -33,11 +33,11 @@ func WithQLength(qlength uint) Option {
 	}
 }
 
-// WithStartingOffset sets the starting offset for the fowarding mark
-// to avoid collisions with existing routing tables.
-func WithStartingOffset(startingOffset int) Option {
+// WithFwmarkBase sets the base fwmark value.
+// Layout: +0=nolb, +1=notargets, +2..=NFQLB instance offsets.
+func WithFwmarkBase(fwmarkBase int) Option {
 	return func(c *nfqlbConfig) {
-		c.startingOffset = startingOffset
+		c.fwmarkBase = fwmarkBase
 	}
 }
 

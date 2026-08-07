@@ -44,12 +44,18 @@ nfqlb init --shm=<name> --M=<m> --N=<n> --ownfw=0
                           │  │  nfqlb flowlb (single process)                    │  │
                           │  │  ├─ Reads shared memory instances                  │  │
                           │  │  ├─ Maglev hash → selects target                  │  │
-                          │  │  └─ Sets fwmark on packet                         │  │
+                          │  │  ├─ Sets fwmark on packet                         │  │
+                          │  │  ├─ No flow match → fwmark 5000 (nolb)            │  │
+                          │  │  └─ No targets    → fwmark 5001 (notargets)       │  │
+                          │  │                                                     │  │
+                          │  │  nftables drop-accounting (prerouting, prio+1)     │  │
+                          │  │  ├─ fwmark 5000 → counter + drop                  │  │
+                          │  │  └─ fwmark 5001 → counter + drop                  │  │
                           │  │                                                     │  │
                           │  │  Policy routing (ip rule / ip route)               │  │
-                          │  │  ├─ fwmark 5000 → table 5000 → via target-1       │  │
-                          │  │  ├─ fwmark 5001 → table 5001 → via target-2  ─────┼──┼──► net1 (macvlan)
-                          │  │  └─ fwmark 5002 → table 5002 → via target-3       │  │    to targets
+                          │  │  ├─ fwmark 5002 → table 5002 → via target-1       │  │
+                          │  │  ├─ fwmark 5003 → table 5003 → via target-2  ─────┼──┼──► net1 (macvlan)
+                          │  │  └─ fwmark 5004 → table 5004 → via target-3       │  │    to targets
                           │  │                                                     │  │
                           │  │  LoadBalancer Controller                           │  │
                           │  │  ├─ Watches DistributionGroups, L34Routes,         │  │
@@ -92,7 +98,7 @@ The controller mirrors the Kubernetes Service/kube-proxy architectural pattern:
 - **Reconcile loop is authoritative**: Mappers enqueue broadly, reconcile decides via `belongsToGateway()`. Multiple Gateways coexist without interference.
 - **Idempotent reconciliation**: Safe to run multiple times. `RouteReplace` and `ensureRule` are idempotent kernel operations.
 - **DistributionGroup as primary resource**: Mirrors kube-proxy/Service pattern (see ADR-001). Each DG maps 1:1 with an NFQLB shared-memory instance.
-- **Stateless on restart**: `CleanupStaleRules` at startup removes all fwmark rules >= `startingOffset`, then the first reconcile rebuilds state from LoadBalancerEndpointSlices. No persistent storage required.
+- **Stateless on restart**: `CleanupStaleRules` at startup removes all policy routing fwmark rules >= `fwmarkBase+2` (per-target marks), then the first reconcile rebuilds state from LoadBalancerEndpointSlices. No persistent storage required. The drop-accounting marks (nolb/notargets at `fwmarkBase+0/+1`) are managed by nftables, not policy routing.
 
 ## Resource Relationships
 
@@ -167,7 +173,7 @@ nftables (shared across all DGs in this LB Pod)
   - `--ownfw=0`: disabled (no fwmark reserved for LB's own traffic); hardcoded constant
   - **M** (Maglev table size): `maxEndpoints × 100`
   - **N** (max endpoints): from `DistributionGroup.Spec.Maglev.MaxEndpoints` (default: 102)
-  - **Offset**: dynamically allocated contiguous range starting from `startingOffset` (default 5000)
+  - **Offset**: dynamically allocated contiguous range starting from `fwmarkBase+2` (default 5002 with `--fwmark-base=5000`)
 - Skip if instance already exists (idempotent)
 - Track in `controller.instances` map
 
@@ -246,7 +252,7 @@ internal/nfqlb/
 ├── offset.go      # getOffset() dynamic allocation
 ├── validate.go    # Input validation for all CLI arguments
 ├── config.go      # nfqlbConfig, nfqlbInstanceConfig
-├── option.go      # WithQueue, WithQLength, WithMaxTargets, WithNfqlbPath, WithStartingOffset
+├── option.go      # WithQueue, WithQLength, WithMaxTargets, WithNfqlbPath, WithFwmarkBase
 └── const.go       # Constants and defaults
 ```
 
@@ -300,7 +306,7 @@ Where:
 
 ### Allocation Algorithm (`getOffset()`)
 
-1. Start searching from `startingOffset` (default: 5000)
+1. Start searching from `fwmarkBase+2` (default: 5002 with `--fwmark-base=5000`)
 2. For each existing instance, check if candidate range `[offset, offset+maxTargets-1]` overlaps with `[instance.offset, instance.offset+instance.maxTargets-1]`
 3. If overlap found, advance past that instance's range (`offset = instance.offset + instance.maxTargets`) and restart the search
 4. First non-overlapping position wins
@@ -401,9 +407,9 @@ ip route del default via <target-ip> table <fwmark>   (ignore ESRCH — already 
 
 **Solution: Clean slate approach**
 
-1. `CleanupStaleRules(startingOffset)` called in `NFQueueLoadBalancer.Start()`
+1. `CleanupStaleRules(fwmarkBase+2)` called in `NFQueueLoadBalancer.Start()`
 2. Scans all ip rules in kernel (both IPv4 and IPv6 via `FAMILY_ALL`)
-3. Removes any rule with `Mark >= startingOffset`
+3. Removes any rule with `Mark >= fwmarkBase+2`
 4. Deletes the routing table entry for each removed rule
 5. After cleanup, in-memory state and kernel state are both empty
 6. First reconcile cycle rebuilds everything from LoadBalancerEndpointSlices (source of truth)

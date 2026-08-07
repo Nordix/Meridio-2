@@ -53,10 +53,13 @@ func New(options ...Option) (*NFQueueLoadBalancer, error) {
 		opt(config)
 	}
 
-	// startingOffset must be >= 3: fwmark 0 is reserved (means "no mark"),
-	// and we need two values below startingOffset for drop accounting.
-	if config.startingOffset < 3 {
-		return nil, fmt.Errorf("startingOffset must be >= 3 (got %d): fwmark 0 is reserved and 2 slots are needed for drop accounting", config.startingOffset)
+	// fwmarkBase must be >= 1: fwmark 0 is reserved (means "no mark").
+	// Layout: fwmarkBase+0=nolb, fwmarkBase+1=notargets, fwmarkBase+2..=instance offsets.
+	if config.fwmarkBase < 1 {
+		return nil, fmt.Errorf("fwmarkBase must be >= 1 (got %d): fwmark 0 is reserved", config.fwmarkBase)
+	}
+	if config.fwmarkBase > MaxOffset-1 {
+		return nil, fmt.Errorf("fwmarkBase must be <= %d (got %d): fwmarkBase+0 (nolb) and fwmarkBase+1 (notargets) must fit within the upper limit of %d", MaxOffset-1, config.fwmarkBase, MaxOffset)
 	}
 
 	// Validate queue format to prevent command injection
@@ -73,12 +76,17 @@ func New(options ...Option) (*NFQueueLoadBalancer, error) {
 
 // NoLBFwmark returns the fwmark value used when no flow matches.
 func (nfqlb *NFQueueLoadBalancer) NoLBFwmark() int {
-	return nfqlb.startingOffset - 2
+	return nfqlb.fwmarkBase
 }
 
 // NoTargetsFwmark returns the fwmark value used when no targets are active.
 func (nfqlb *NFQueueLoadBalancer) NoTargetsFwmark() int {
-	return nfqlb.startingOffset - 1
+	return nfqlb.fwmarkBase + 1
+}
+
+// startingOffset returns the offset where NFQLB instances begin allocating fwmarks.
+func (nfqlb *NFQueueLoadBalancer) startingOffset() int {
+	return nfqlb.fwmarkBase + 2
 }
 
 // Start nfqlb process in 'flowlb' mode supporting multiple shared mem lbs at once
@@ -90,7 +98,7 @@ func (nfqlb *NFQueueLoadBalancer) NoTargetsFwmark() int {
 // is alive and vice versa, thus there's no need for a Stop() function.
 func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 	// Clean up stale policy rules/routes from a previous instance (container restart)
-	if err := CleanupStaleRules(nfqlb.startingOffset); err != nil {
+	if err := CleanupStaleRules(nfqlb.startingOffset()); err != nil {
 		nfqlb.logger.Error(err, "failed to cleanup stale rules at startup")
 	}
 
@@ -275,7 +283,7 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 		opt(config)
 	}
 
-	offset, err := getOffset(nfqlb.startingOffset, nfqlb.instances, config.maxTargets)
+	offset, err := getOffset(nfqlb.startingOffset(), nfqlb.instances, config.maxTargets)
 	if err != nil {
 		return nil, err
 	}

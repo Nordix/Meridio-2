@@ -156,8 +156,8 @@ one address in any of the Gateway's configured subnets.
 **Why this matters for the LoadBalancer controller:**
 
 The LoadBalancer controller uses **dynamic ID offsets per DistributionGroup** to differentiate target IP routes:
-- Each DistributionGroup gets a contiguous fwmark range of size `maxEndpoints`, allocated dynamically starting at offset 5000
-- Routes are created with fwmarks: `fwmark = offset + maglev_id`
+- Each DistributionGroup gets a contiguous fwmark range of size `maxEndpoints`, allocated dynamically starting at `fwmarkBase+2` (default 5002 with `--fwmark-base=5000`)
+- Routes are created with fwmarks: `fwmark = dgOffset + maglev_id`, where `dgOffset` is the per-DG base allocated by `getOffset()` (first DG gets `fwmarkBase+2`, next gets `fwmarkBase+2+maxEndpoints`, etc.)
 - When NFQLB marks a packet based on distribution decision, the fwmark determines which route (and thus which endpoint) receives the packet
 - Changing `maxEndpoints` would:
   - Cause Maglev hash table reshuffle, potentially reassigning IDs for many endpoints

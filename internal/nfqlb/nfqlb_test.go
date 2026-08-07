@@ -96,10 +96,10 @@ var _ = Describe("Options", func() {
 		Expect(cfg.qlength).To(Equal(uint(2048)))
 	})
 
-	It("should apply WithStartingOffset", func() {
+	It("should apply WithFwmarkBase", func() {
 		cfg := newNFQLBConfig()
-		WithStartingOffset(10000)(cfg)
-		Expect(cfg.startingOffset).To(Equal(10000))
+		WithFwmarkBase(10000)(cfg)
+		Expect(cfg.fwmarkBase).To(Equal(10000))
 	})
 
 	It("should apply WithNFQLBPath", func() {
@@ -116,23 +116,23 @@ var _ = Describe("Options", func() {
 })
 
 var _ = Describe("NoLBFwmark / NoTargetsFwmark", func() {
-	It("should derive from startingOffset with default config", func() {
+	It("should derive from fwmarkBase with default config", func() {
 		lb, err := New()
 		Expect(err).ToNot(HaveOccurred())
-		// Contract: NoLBFwmark = startingOffset - 2, NoTargetsFwmark = startingOffset - 1
-		Expect(lb.NoLBFwmark()).To(Equal(defaultStartingOffset - 2))
-		Expect(lb.NoTargetsFwmark()).To(Equal(defaultStartingOffset - 1))
+		// Contract: NoLBFwmark = fwmarkBase, NoTargetsFwmark = fwmarkBase + 1
+		Expect(lb.NoLBFwmark()).To(Equal(DefaultFwmarkBase))
+		Expect(lb.NoTargetsFwmark()).To(Equal(DefaultFwmarkBase + 1))
 	})
 
-	It("should derive from custom startingOffset", func() {
-		lb, err := New(WithStartingOffset(100))
+	It("should derive from custom fwmarkBase", func() {
+		lb, err := New(WithFwmarkBase(100))
 		Expect(err).ToNot(HaveOccurred())
-		Expect(lb.NoLBFwmark()).To(Equal(98))
-		Expect(lb.NoTargetsFwmark()).To(Equal(99))
+		Expect(lb.NoLBFwmark()).To(Equal(100))
+		Expect(lb.NoTargetsFwmark()).To(Equal(101))
 	})
 
 	It("should always place NoLBFwmark below NoTargetsFwmark", func() {
-		lb, err := New(WithStartingOffset(3))
+		lb, err := New(WithFwmarkBase(1))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(lb.NoLBFwmark()).To(Equal(1))
 		Expect(lb.NoTargetsFwmark()).To(Equal(2))
@@ -140,17 +140,36 @@ var _ = Describe("NoLBFwmark / NoTargetsFwmark", func() {
 	})
 
 	It("should never return fwmark 0 (reserved)", func() {
-		// Minimum valid startingOffset is 3, which yields NoLBFwmark=1
-		lb, err := New(WithStartingOffset(3))
+		lb, err := New(WithFwmarkBase(1))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(lb.NoLBFwmark()).To(BeNumerically(">", 0))
 		Expect(lb.NoTargetsFwmark()).To(BeNumerically(">", 0))
 	})
 
-	It("should reject startingOffset < 3 (would produce fwmark 0)", func() {
-		_, err := New(WithStartingOffset(2))
+	It("should reject fwmarkBase < 1 (would produce fwmark 0)", func() {
+		_, err := New(WithFwmarkBase(0))
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("startingOffset must be >= 3"))
+		Expect(err.Error()).To(ContainSubstring("fwmarkBase must be >= 1"))
+	})
+
+	It("should reject fwmarkBase >= MaxOffset", func() {
+		_, err := New(WithFwmarkBase(MaxOffset))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("fwmarkBase must be <="))
+	})
+
+	It("should reject fwmarkBase above MaxOffset", func() {
+		_, err := New(WithFwmarkBase(MaxOffset + 1))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("fwmarkBase must be <="))
+	})
+
+	It("should accept fwmarkBase just below MaxOffset", func() {
+		lb, err := New(WithFwmarkBase(MaxOffset - 1))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(lb.fwmarkBase).To(Equal(MaxOffset - 1))
+		Expect(lb.NoLBFwmark()).To(Equal(MaxOffset - 1))
+		Expect(lb.NoTargetsFwmark()).To(Equal(MaxOffset))
 	})
 })
 
@@ -159,18 +178,24 @@ var _ = Describe("New", func() {
 		lb, err := New()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(lb).ToNot(BeNil())
-		Expect(lb.queue).To(Equal(defaultQueue))
+		Expect(lb.queue).To(Equal(DefaultQueue))
 		Expect(lb.qlength).To(Equal(uint(defaultQLength)))
-		Expect(lb.startingOffset).To(Equal(defaultStartingOffset))
+		Expect(lb.fwmarkBase).To(Equal(DefaultFwmarkBase))
+		Expect(lb.NoLBFwmark()).To(Equal(DefaultFwmarkBase))
+		Expect(lb.NoTargetsFwmark()).To(Equal(DefaultFwmarkBase + 1))
+		Expect(lb.startingOffset()).To(Equal(DefaultFwmarkBase + 2))
 		Expect(lb.instances).To(BeEmpty())
 	})
 
 	It("should apply options", func() {
-		lb, err := New(WithQueue("2:5"), WithQLength(512), WithStartingOffset(8000))
+		lb, err := New(WithQueue("2:5"), WithQLength(512), WithFwmarkBase(8000))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(lb.queue).To(Equal("2:5"))
 		Expect(lb.qlength).To(Equal(uint(512)))
-		Expect(lb.startingOffset).To(Equal(8000))
+		Expect(lb.fwmarkBase).To(Equal(8000))
+		Expect(lb.NoLBFwmark()).To(Equal(8000))
+		Expect(lb.NoTargetsFwmark()).To(Equal(8001))
+		Expect(lb.startingOffset()).To(Equal(8002))
 	})
 
 	It("should reject invalid queue format", func() {

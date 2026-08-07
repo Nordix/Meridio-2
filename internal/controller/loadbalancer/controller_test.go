@@ -89,14 +89,14 @@ func newTestLBEPS(dg *meridio2v1alpha1.DistributionGroup, endpoints []meridio2v1
 
 // mockNFQLB mocks the NFQueueLoadBalancer for testing.
 type mockNFQLB struct {
-	instances      map[string]*mockNFQLBInstance
-	startingOffset int
+	instances  map[string]*mockNFQLBInstance
+	fwmarkBase int
 }
 
 func newMockNFQLB() *mockNFQLB {
 	return &mockNFQLB{
-		instances:      make(map[string]*mockNFQLBInstance),
-		startingOffset: 5000,
+		instances:  make(map[string]*mockNFQLBInstance),
+		fwmarkBase: nfqlb.DefaultFwmarkBase,
 	}
 }
 
@@ -116,7 +116,7 @@ func (m *mockNFQLB) DeleteInstance(_ context.Context, name string) error {
 }
 
 func (m *mockNFQLB) DropFwmarks() (nolb, notargets int) {
-	return m.startingOffset - 2, m.startingOffset - 1
+	return m.fwmarkBase, m.fwmarkBase + 1
 }
 
 // mockNFQLBInstance mocks a single NFQLB instance (per DistributionGroup).
@@ -177,14 +177,14 @@ var _ = Describe("LoadBalancer Controller", func() {
 			GatewayNamespace: namespace,
 			NFQLB:            mockNfqlb,
 			Readiness:        readiness.NewManager(""),
-			NftManagerFactory: func(queueNum, queueTotal uint16) (nftablesManager, error) {
+			NftManagerFactory: func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error) {
 				return newMockNftablesManager(), nil
 			},
 		}
 
 		// Initialize shared nftManager
 		var err error
-		controller.nftManager, err = controller.NftManagerFactory(0, 4)
+		controller.nftManager, err = controller.NftManagerFactory(0, 4, uint32(nfqlb.DefaultFwmarkBase), uint32(nfqlb.DefaultFwmarkBase+1))
 		Expect(err).ToNot(HaveOccurred())
 	})
 
