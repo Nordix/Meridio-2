@@ -17,7 +17,10 @@ limitations under the License.
 package config
 
 import (
+	"strconv"
+
 	"github.com/nordix/meridio-2/internal/common/readiness"
+	"github.com/nordix/meridio-2/internal/nfqlb"
 	"github.com/spf13/pflag"
 )
 
@@ -26,6 +29,7 @@ type LoadBalancerConfig struct {
 	GatewayName      string
 	GatewayNamespace string
 	NFQueue          string
+	FwmarkBase       int
 	ReadinessDir     string
 	ProbeAddr        string
 	LogLevel         string
@@ -44,8 +48,13 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Name of the Gateway this LB belongs to")
 	fs.StringVar(&c.GatewayNamespace, "gateway-namespace", "",
 		"Namespace of the Gateway")
-	fs.StringVar(&c.NFQueue, "nfqueue", "0:3",
-		"Netfilter queue(s) to be used by NFQLB")
+	fs.StringVar(&c.NFQueue, "nfqueue", nfqlb.DefaultQueue,
+		"Netfilter queue(s) to be used by NFQLB. Single queue: \"2\", range: \"0:3\" (4 queues starting at 0)")
+	fs.IntVar(&c.FwmarkBase, "fwmark-base", nfqlb.DefaultFwmarkBase,
+		"Base fwmark value for packet marking and policy routing.\n"+
+			"Layout: +0=no-flow drop mark, +1=no-targets drop mark, +2..=per-target policy routing marks.\n"+
+			"Must be >= 1 (fwmark 0 is reserved by the kernel to mean 'no mark')\n"+
+			"Currently there's a hard upper limit of "+strconv.Itoa(nfqlb.MaxOffset)+" for all fwmarks")
 	fs.StringVar(&c.ReadinessDir, "readiness-dir", readiness.DefaultReadinessDir,
 		"Directory where LB readiness files are written. Empty string disables readiness signaling.")
 	fs.StringVar(&c.ProbeAddr, "health-probe-bind-address", ":8081",
@@ -72,6 +81,7 @@ func (c *LoadBalancerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "gateway-name", "MERIDIO_GATEWAY_NAME", &c.GatewayName)
 	bindString(fs, "gateway-namespace", "MERIDIO_GATEWAY_NAMESPACE", &c.GatewayNamespace)
 	bindString(fs, "nfqueue", "MERIDIO_NFQUEUE", &c.NFQueue)
+	bindInt(fs, "fwmark-base", "MERIDIO_FWMARK_BASE", &c.FwmarkBase)
 	bindString(fs, "readiness-dir", "MERIDIO_READINESS_DIR", &c.ReadinessDir)
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)

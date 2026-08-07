@@ -17,18 +17,18 @@ limitations under the License.
 package nfqlb
 
 type nfqlbConfig struct {
-	queue          string
-	qlength        uint
-	startingOffset int
-	nfqlbPath      string
+	queue      string
+	qlength    uint
+	fwmarkBase int
+	nfqlbPath  string
 }
 
 func newNFQLBConfig() *nfqlbConfig {
 	return &nfqlbConfig{
-		queue:          defaultQueue,
-		qlength:        defaultQLength,
-		startingOffset: defaultStartingOffset,
-		nfqlbPath:      nfqlbCmd,
+		queue:      DefaultQueue,
+		qlength:    defaultQLength,
+		fwmarkBase: DefaultFwmarkBase,
+		nfqlbPath:  nfqlbCmd,
 	}
 }
 

@@ -111,7 +111,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	}
 
 	// Initialize NFQLB
-	nfqlbInstance, err := nfqlb.New(nfqlb.WithQueue(cfg.NFQueue))
+	nfqlbInstance, err := nfqlb.New(nfqlb.WithQueue(cfg.NFQueue), nfqlb.WithFwmarkBase(cfg.FwmarkBase))
 	if err != nil {
 		setupLog.Error(err, "failed to create NFQLB instance")
 		return err

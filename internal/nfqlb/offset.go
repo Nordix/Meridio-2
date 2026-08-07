@@ -22,16 +22,12 @@ import (
 
 var errIdentifierOffset = errors.New("unable to generate identifier offset: fwmark range exhausted")
 
-// maxOffset is the upper bound for fwmark/routing table IDs to prevent
-// unbounded allocation. Supports ~950 DGs with maxTargets=100.
-const maxOffset = 100000
-
 func getOffset(startingOffset int, instances map[string]*Instance, maxTarget int) (int, error) {
 	offset := startingOffset
 
 search:
 	for {
-		if offset+maxTarget > maxOffset {
+		if offset+maxTarget > MaxOffset {
 			return 0, errIdentifierOffset
 		}
 

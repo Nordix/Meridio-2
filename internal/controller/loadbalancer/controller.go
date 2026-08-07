@@ -61,7 +61,7 @@ type Controller struct {
 	GatewayNamespace  string
 	NFQLB             nfqlbManager
 	Readiness         *readiness.Manager
-	NftManagerFactory func(queueNum, queueTotal uint16) (nftablesManager, error)
+	NftManagerFactory func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error)
 
 	mu          sync.Mutex
 	instances   map[string]nfqlbInstance                         // key: DistributionGroup name
@@ -307,12 +307,11 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	// Initialize shared nftables manager
 	var err error
+	nolb, notargets := c.NFQLB.DropFwmarks()
 	if c.NftManagerFactory != nil {
-		c.nftManager, err = c.NftManagerFactory(0, 4)
+		c.nftManager, err = c.NftManagerFactory(0, 4, uint32(nolb), uint32(notargets))
 	} else {
-		nolb, notargets := c.NFQLB.DropFwmarks()
-		c.nftManager, err = nftablesmanager.NewManager(0, 4,
-			uint32(nolb), uint32(notargets))
+		c.nftManager, err = nftablesmanager.NewManager(0, 4, uint32(nolb), uint32(notargets))
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create nftables manager: %w", err)
