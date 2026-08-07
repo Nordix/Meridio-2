@@ -136,7 +136,7 @@ type ContainerArgs struct {
 
 	// resources specifies the CPU and memory requests and limits for this container.
 	// +optional
-	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources corev1.ResourceRequirements `json:"resources,omitzero"`
 
 	// enforceResources controls whether the controller manages this container's resources.
 	// If true, the controller enforces the resources value on every reconcile.
@@ -198,6 +198,7 @@ type GatewayConfiguration struct {
 // GatewayConfigurationList contains a list of GatewayConfiguration
 type GatewayConfigurationList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []GatewayConfiguration `json:"items"`
 }

@@ -39,6 +39,7 @@ type LoadBalancerEndpointSliceSpec struct {
 
 	// endpoints is the list of endpoints in this slice.
 	// A Pod's addresses always reside in the same slice object (no cross-object correlation).
+	// +optional
 	// +listType=atomic
 	Endpoints []LoadBalancerEndpoint `json:"endpoints,omitempty"`
 }
@@ -133,7 +134,7 @@ type LoadBalancerEndpointSlice struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the endpoints and their distribution metadata.
 	// +required
@@ -145,7 +146,8 @@ type LoadBalancerEndpointSlice struct {
 // LoadBalancerEndpointSliceList contains a list of LoadBalancerEndpointSlice.
 type LoadBalancerEndpointSliceList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	// +optional
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []LoadBalancerEndpointSlice `json:"items"`
 }
 

@@ -140,16 +140,16 @@ type DistributionGroup struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// Spec defines the behavior of a DistributionGroup.
 	// +optional
-	Spec DistributionGroupSpec `json:"spec,omitempty"`
+	Spec DistributionGroupSpec `json:"spec,omitzero"`
 
 	// Most recently observed status of the DistributionGroup.
 	// Populated by the system. Read-only.
 	// +optional
-	Status DistributionGroupStatus `json:"status,omitempty"`
+	Status DistributionGroupStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -157,7 +157,8 @@ type DistributionGroup struct {
 // DistributionGroupList contains a list of DistributionGroup
 type DistributionGroupList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	// +optional
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []DistributionGroup `json:"items"`
 }
 
