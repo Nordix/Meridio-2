@@ -69,7 +69,7 @@ type InternalSubnet struct {
 	// cidr is the subnet CIDR for this network segment (e.g. "192.168.100.0/24").
 	// Must not overlap with CIDRs in other InternalSubnets. Default routes (0.0.0.0/0,
 	// ::/0) and IPv6 link-local addresses (fe80::/10) are not allowed.
-	// +kubebuilder:validation:MaxLength=43
+	// +kubebuilder:validation:MaxLength=64
 	// +kubebuilder:validation:XValidation:rule=isCIDR(self),message="Must be a valid CIDR notation!"
 	CIDR string `json:"cidr"`
 }

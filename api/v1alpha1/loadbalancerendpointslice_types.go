@@ -101,7 +101,7 @@ type EndpointTarget struct {
 type EndpointAddress struct {
 	// ip is the IP address of the endpoint.
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=45
+	// +kubebuilder:validation:MaxLength=64
 	IP string `json:"ip"`
 
 	// family is the IP address family.
