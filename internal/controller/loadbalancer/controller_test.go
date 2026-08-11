@@ -1205,6 +1205,37 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(requests[0].Name).To(Equal("distgroup-1"))
 			Expect(requests[1].Name).To(Equal("distgroup-2"))
 		})
+
+		It("should not enqueue a DG backendRef whose explicit namespace differs from GatewayNamespace", func() {
+			group := meridio2v1alpha1.GroupVersion.Group
+			kind := kindDistributionGroup
+			otherNs := gatewayv1.Namespace("other-ns")
+
+			l34route := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-route",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: gatewayv1.ObjectName(gatewayName)},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Group:     (*gatewayv1.Group)(&group),
+								Kind:      (*gatewayv1.Kind)(&kind),
+								Name:      "same-name-dg",
+								Namespace: &otherNs,
+							},
+						},
+					},
+				},
+			}
+
+			requests := controller.l34RouteEnqueue(ctx, l34route)
+			Expect(requests).To(BeEmpty())
+		})
 	})
 
 	Describe("Instance cleanup on deletion", func() {
@@ -1253,7 +1284,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			// Reconcile with non-existent DistributionGroup
 			result, err := controller.Reconcile(ctx, reconcile.Request{
-				NamespacedName: client.ObjectKey{Name: distGroup.Name},
+				NamespacedName: client.ObjectKey{Name: distGroup.Name, Namespace: namespace},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -1294,6 +1325,42 @@ var _ = Describe("LoadBalancer Controller", func() {
 			requests := controller.gatewayEnqueue(ctx, gateway)
 			Expect(requests).To(HaveLen(1))
 			Expect(requests[0].Name).To(Equal("direct-dg"))
+		})
+
+		It("should not enqueue a same-named DistributionGroup residing in a different namespace", func() {
+			// Note: the manager's real cache is already namespace-scoped
+			// (cache.Options.DefaultNamespaces), so this can't happen against a real
+			// cluster. The fake client used here isn't scoped, so this test verifies
+			// the explicit client.InNamespace(c.GatewayNamespace) guard directly,
+			// independent of that cache-level protection.
+			//
+			// The DG lives in "other-ns" but its parentRef explicitly targets
+			// c.GatewayNamespace ("default"), so the parentRef-namespace check alone
+			// would not exclude it — only scoping the List call does.
+			dgOtherNs := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "direct-dg",
+					Namespace: "other-ns",
+				},
+				Spec: meridio2v1alpha1.DistributionGroupSpec{
+					ParentRefs: []meridio2v1alpha1.ParentReference{
+						{Name: gatewayName, Namespace: ptr.To(namespace)},
+					},
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, dgOtherNs)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(BeEmpty())
 		})
 
 		It("should enqueue DG referenced indirectly via L34Route", func() {
@@ -1605,6 +1672,82 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
 			Expect(requests).To(BeEmpty())
+		})
+
+		It("should not enqueue a DG backendRef whose explicit namespace differs from GatewayNamespace", func() {
+			group := meridio2v1alpha1.GroupVersion.Group
+			kind := kindDistributionGroup
+			otherNs := gatewayv1.Namespace("other-ns")
+
+			// Same name as a DG that could legitimately exist in GatewayNamespace,
+			// to mirror the destructive-cleanup scenario this guard prevents.
+			l34route := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cross-ns-route",
+					Namespace: namespace,
+				},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{
+						{Name: gatewayv1.ObjectName(gatewayName)},
+					},
+					BackendRefs: []gatewayv1.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Group:     (*gatewayv1.Group)(&group),
+								Kind:      (*gatewayv1.Kind)(&kind),
+								Name:      "test-distgroup",
+								Namespace: &otherNs,
+							},
+						},
+					},
+					DestinationCIDRs: []string{"20.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         1,
+				},
+			}
+
+			fakeClient = newFakeClient(scheme, l34route)
+			controller.Client = fakeClient
+
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      gatewayName,
+					Namespace: namespace,
+				},
+			}
+
+			requests := controller.gatewayEnqueue(ctx, gateway)
+			Expect(requests).To(BeEmpty())
+		})
+	})
+
+	Describe("Reconcile namespace guard", func() {
+		It("should ignore requests outside GatewayNamespace without touching internal state", func() {
+			// A DG with the same name is actively managed in GatewayNamespace.
+			// A request for the same name in a different namespace must be
+			// rejected before it can trigger NotFound-driven cleanup.
+			mockInstance := &mockNFQLBInstance{
+				name:  "test-distgroup",
+				flows: make(map[string]nfqlb.Flow),
+			}
+			controller.instances = map[string]nfqlbInstance{"test-distgroup": mockInstance}
+			controller.flows = map[string]map[string]*meridio2v1alpha1.L34Route{"test-distgroup": {}}
+			controller.targets = map[string]map[int]struct{}{"test-distgroup": {}}
+
+			fakeClient = newFakeClient(scheme)
+			controller.Client = fakeClient
+
+			result, err := controller.Reconcile(ctx, reconcile.Request{
+				NamespacedName: client.ObjectKey{Name: "test-distgroup", Namespace: "other-ns"},
+			})
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			// State for the same-named DG in GatewayNamespace must remain intact.
+			Expect(controller.instances).To(HaveKey("test-distgroup"))
+			Expect(controller.flows).To(HaveKey("test-distgroup"))
+			Expect(controller.targets).To(HaveKey("test-distgroup"))
 		})
 	})
 })
