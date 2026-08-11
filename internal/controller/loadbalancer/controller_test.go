@@ -1327,7 +1327,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(requests[0].Name).To(Equal("direct-dg"))
 		})
 
-		It("should not enqueue a same-named DistributionGroup residing in a different namespace", func() {
+		It("should not enqueue a DG with direct parentRef when the DG resides in a different namespace", func() {
 			// Note: the manager's real cache is already namespace-scoped
 			// (cache.Options.DefaultNamespaces), so this can't happen against a real
 			// cluster. The fake client used here isn't scoped, so this test verifies
