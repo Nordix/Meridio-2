@@ -17,14 +17,9 @@ limitations under the License.
 package nfqlb
 
 const (
-	ownfw          = 0
-	nfqlbCmd       = "nfqlb"
-	tableName      = "table-nfqlb"
-	chainName      = "nfqlb"
-	localChainName = "nfqlb-local"
-	ipv4VIPSetName = "ipv4-vips"
-	ipv6VIPSetName = "ipv6-vips"
-	maxPortRange   = "0-65535"
+	ownfw        = 0
+	nfqlbCmd     = "nfqlb"
+	maxPortRange = "0-65535"
 
 	defaultQueue          = "0:3"
 	defaultQLength        = 1024
@@ -32,4 +27,6 @@ const (
 	defaultMaxTargets     = 100
 
 	maglevMMultiplier = 100
+
+	rulePriority = 32000
 )

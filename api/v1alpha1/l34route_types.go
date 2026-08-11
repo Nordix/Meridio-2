@@ -75,7 +75,7 @@ type L34RouteSpec struct {
 	// The destination CIDRs should not have overlaps.
 	// Each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
 	// +kubebuilder:validation:MaxItems=100
-	// +kubebuilder:validation:items:MaxLength=50
+	// +kubebuilder:validation:items:MaxLength=64
 	// +kubebuilder:validation:XValidation:message="each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR",rule="self.all(c, isCIDR(c) && (cidr(c).prefixLength() == 32 || cidr(c).prefixLength() == 128))"
 	//nolint:tagliatelle
 	DestinationCIDRs []string `json:"destinationCIDRs"`
@@ -84,7 +84,7 @@ type L34RouteSpec struct {
 	// The source CIDRs should not have overlaps.
 	// +optional
 	// +kubebuilder:validation:MaxItems=100
-	// +kubebuilder:validation:items:MaxLength=50
+	// +kubebuilder:validation:items:MaxLength=64
 	// +kubebuilder:validation:XValidation:message="each sourceCIDR must be a valid CIDR",rule="self.all(c, isCIDR(c))"
 	//nolint:tagliatelle
 	SourceCIDRs []string `json:"sourceCIDRs,omitempty"`

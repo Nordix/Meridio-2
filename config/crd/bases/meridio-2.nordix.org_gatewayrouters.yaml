@@ -41,6 +41,7 @@ spec:
             properties:
               address:
                 description: Address of the Gateway Router
+                maxLength: 64
                 type: string
                 x-kubernetes-validations:
                 - message: Must be an ip address

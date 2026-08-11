@@ -90,7 +90,7 @@ spec:
                         cidr is the subnet CIDR for this network segment (e.g. "192.168.100.0/24").
                         Must not overlap with CIDRs in other InternalSubnets. Default routes (0.0.0.0/0,
                         ::/0) and IPv6 link-local addresses (fe80::/10) are not allowed.
-                      maxLength: 43
+                      maxLength: 64
                       type: string
                       x-kubernetes-validations:
                       - message: Must be a valid CIDR notation!

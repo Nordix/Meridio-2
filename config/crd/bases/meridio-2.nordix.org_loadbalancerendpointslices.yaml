@@ -97,7 +97,7 @@ spec:
                             type: string
                           ip:
                             description: ip is the IP address of the endpoint.
-                            maxLength: 45
+                            maxLength: 64
                             minLength: 1
                             type: string
                         required:

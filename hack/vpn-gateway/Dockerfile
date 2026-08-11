@@ -16,9 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
-RUN wget https://gitlab.nic.cz/labs/bird/-/archive/v3.1.2/bird-v3.1.2.tar.gz \
-    && tar -xzf bird-v3.1.2.tar.gz \
-    && cd bird-v3.1.2 \
+RUN wget https://github.com/CZ-NIC/bird/archive/refs/tags/v3.1.2.tar.gz \
+    && tar -xzf v3.1.2.tar.gz \
+    && cd bird-3.1.2 \
     && autoreconf -i \
     && ./configure \
     && make -j$(nproc) \

@@ -25,8 +25,6 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-const rulePriority = 32000
-
 var errInvalidIP = errors.New("the ip address is invalid")
 
 // CleanupStaleRules removes all fwmark-based policy rules and their routing tables
