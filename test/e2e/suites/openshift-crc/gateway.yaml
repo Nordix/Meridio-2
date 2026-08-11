@@ -37,4 +37,4 @@ spec:
   - attachmentType: NAD
     cidr: "fd00:cafe:1100::/64"
   horizontalScaling:
-    replicas: 1
+    replicas: 2

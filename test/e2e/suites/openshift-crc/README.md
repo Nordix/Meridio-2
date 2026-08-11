@@ -18,7 +18,7 @@ All components run inside the cluster using bridge CNI networks:
 │  CRC Node (single)                                                       │
 │                                                                          │
 │  ┌───────────────────┐  bridge br-meridio (VLAN 100) ┌──────────────────┐│
-│  │  VPN Gateway Pod  │◄──── BGP peering ──────────►  │  LB Pod (SLLBR)  ││
+│  │  VPN Gateway Pod  │◄──── BGP peering ──────────►  │  LB Pods (x2)    ││
 │  │  (BIRD, ctraffic) │   169.254.100.0/24            │  router + nfqlb  ││
 │  │  169.254.100.150  │   fd00:cafe:100::/64          │  169.254.100.X   ││
 │  └───────────────────┘                               └────────┬─────────┘│

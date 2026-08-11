@@ -32,6 +32,11 @@ import (
 	"github.com/nordix/meridio-2/test/utils"
 )
 
+// openshiftCRCLBReplicas is the expected LB Pod replica count for the
+// OpenShift CRC suite, set via GatewayConfiguration.spec.horizontalScaling.replicas
+// in suites/openshift-crc/gateway.yaml.
+const openshiftCRCLBReplicas = 2
+
 // openshiftCRCTestCase describes the OpenShift CRC dual-stack suite topology.
 // Traffic assertions run against the VPN gateway Pod (not a Docker container,
 // unlike the Kind-based suites) via E2EVPNGatewayExecEnv, which the
@@ -92,7 +97,11 @@ var _ = Describe("OpenShift CRC", Label("openshift-crc"), Ordered, func() {
 					"-o", "jsonpath={.items[*].status.phase}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring("Running"))
+				phases := strings.Fields(strings.TrimSpace(out))
+				g.Expect(phases).To(HaveLen(openshiftCRCLBReplicas))
+				for _, phase := range phases {
+					g.Expect(phase).To(Equal("Running"))
+				}
 			}).Should(Succeed())
 		})
 
@@ -160,7 +169,7 @@ var _ = Describe("OpenShift CRC", Label("openshift-crc"), Ordered, func() {
 				}
 				err = utils.ParseJSON(out, &result)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(result.Items).NotTo(BeEmpty())
+				g.Expect(result.Items).To(HaveLen(openshiftCRCLBReplicas))
 
 				for _, pod := range result.Items {
 					gateTypes := []string{}
