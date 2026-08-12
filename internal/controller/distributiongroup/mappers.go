@@ -92,6 +92,14 @@ func (r *DistributionGroupReconciler) mapL34RouteToDistributionGroup(ctx context
 
 	requests := make([]ctrl.Request, 0, len(dgKeys))
 	for key := range dgKeys {
+		// Guard against enqueueing DistributionGroups outside this controller's
+		// watched namespace. An explicit backendRef.Namespace is not validated
+		// anywhere in the admission path, so a resolved key may point outside our
+		// scope. When r.Namespace is empty the controller watches cluster-wide, so
+		// no restriction applies.
+		if r.Namespace != "" && key.Namespace != r.Namespace {
+			continue
+		}
 		requests = append(requests, ctrl.Request{NamespacedName: key})
 	}
 	return requests

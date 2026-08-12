@@ -111,6 +111,20 @@ func resolveBackendRefDG(backendRef gatewayv1.BackendRef, routeNamespace string)
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logr := log.FromContext(ctx)
 
+	// Defense-in-depth: this controller's cache and all its internal state
+	// (c.instances/c.targets/c.flows, keyed by name only) are scoped to a single
+	// namespace. A request for any other namespace cannot be a legitimate
+	// DistributionGroup for this Gateway (namespaces are immutable in Kubernetes,
+	// so this can only indicate a mis-constructed request, e.g. from an unvalidated
+	// cross-namespace backendRef). Reject it before the Get call below, since a
+	// NotFound here is treated as "deleted" and triggers destructive cleanup keyed
+	// by name only, which could tear down an unrelated same-named DG in our namespace.
+	if req.Namespace != c.GatewayNamespace {
+		logr.V(1).Info("Ignoring reconcile request outside Gateway namespace",
+			"requestNamespace", req.Namespace, "gatewayNamespace", c.GatewayNamespace)
+		return ctrl.Result{}, nil
+	}
+
 	// Get DistributionGroup
 	distGroup := &meridio2v1alpha1.DistributionGroup{}
 	if err := c.Get(ctx, req.NamespacedName, distGroup); err != nil {
@@ -260,7 +274,7 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 
 	// 1. Direct: DGs with spec.parentRefs pointing to this Gateway
 	dgList := &meridio2v1alpha1.DistributionGroupList{}
-	if err := c.List(ctx, dgList); err != nil {
+	if err := c.List(ctx, dgList, client.InNamespace(c.GatewayNamespace)); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to list DistributionGroups in gatewayEnqueue")
 	} else {
 		for _, dg := range dgList.Items {
@@ -289,7 +303,7 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 				continue
 			}
 			for _, backendRef := range route.Spec.BackendRefs {
-				if key, isDG := resolveBackendRefDG(backendRef, route.Namespace); isDG {
+				if key, isDG := resolveBackendRefDG(backendRef, route.Namespace); isDG && key.Namespace == c.GatewayNamespace {
 					enqueued[key] = struct{}{}
 				}
 			}
@@ -413,7 +427,7 @@ func (c *Controller) l34RouteEnqueue(ctx context.Context, obj client.Object) []c
 	// Enqueue all DistributionGroups referenced by this route
 	var requests []ctrl.Request
 	for _, backendRef := range route.Spec.BackendRefs {
-		if key, isDG := resolveBackendRefDG(backendRef, route.Namespace); isDG {
+		if key, isDG := resolveBackendRefDG(backendRef, route.Namespace); isDG && key.Namespace == c.GatewayNamespace {
 			requests = append(requests, ctrl.Request{NamespacedName: key})
 		}
 	}
