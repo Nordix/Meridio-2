@@ -535,3 +535,7 @@ cmd/network-sidecar/
 internal/common/config/
 └── sidecar.go             # SidecarConfig with CLI flags + env binding
 ```
+
+## See Also
+
+- [EndpointNetworkConfiguration controller documentation](endpointnetworkconfiguration.md)
