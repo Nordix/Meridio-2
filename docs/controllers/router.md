@@ -51,7 +51,7 @@ Secret (same namespace as GatewayRouter)
 
 Policy routes are applied before BIRD reconfiguration to minimize the misrouting window. The blackhole fallback table (4097) catches VIP-sourced traffic while BGP routes converge.
 
-**Cross-controller race**: A race exists between the controller manager exposing VIPs to application Pods (via EndpointNetworkConfiguration) and router controllers processing the same VIP change. An app Pod could start sourcing traffic from a new VIP before any router has set up policy rules for it. A potential defense-in-depth improvement would be static blackhole safety rules tied to the internal network interface, catching VIP-sourced traffic that hasn't been fully plumbed yet regardless of reconcile timing across controllers.
+**Cross-controller race**: A race exists between the controller manager exposing VIPs to application Pods (via EndpointNetworkConfiguration) and router controllers processing the same VIP change. An app Pod could start sourcing traffic from a new VIP before any router has set up policy rules for it. This is noted in [EndpointNetworkConfiguration controller documentation](endpointnetworkconfiguration.md) as well. A potential defense-in-depth improvement would be static blackhole safety rules tied to the internal network interface, catching VIP-sourced traffic that hasn't been fully plumbed yet regardless of reconcile timing across controllers.
 
 ### Watch Strategy
 
