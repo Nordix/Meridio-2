@@ -30,6 +30,7 @@ WHEREABOUTS_VERSION ?= v0.8.0
 # Suites
 SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
 SUITES_DS ?= dual-stack-simple
+SUITES_IPV6 ?= separate-appnetwork-v6
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
 GINKGO_FLAGS ?=
@@ -224,6 +225,27 @@ test-separate-appnetwork-v4: ## Run e2e tests for separate-appnetwork-v4 suite.
 undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
 	@NS=e2e-separate-appnetwork-v4; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v4 --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#################################################################################
+##@ Suite: separate-appnetwork-v6
+################################################################################
+
+.PHONY: separate-appnetwork-v6
+separate-appnetwork-v6: deploy-separate-appnetwork-v6 test-separate-appnetwork-v6 ## Deploy and test separate-appnetwork-v6 suite.
+
+.PHONY: deploy-separate-appnetwork-v6
+deploy-separate-appnetwork-v6: cluster ## Deploy separate-appnetwork-v6 topology.
+	$(call deploy-suite,e2e-separate-appnetwork-v6,$(shell pwd)/suites/separate-appnetwork-v6,separate-appnet-v6,sllbr-gw-v6a1 sllbr-gw-v6a2)
+
+.PHONY: test-separate-appnetwork-v6
+test-separate-appnetwork-v6: ## Run e2e tests for separate-appnetwork-v6 suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network IPv6" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-separate-appnetwork-v6
+undeploy-separate-appnetwork-v6: ## Undeploy separate-appnetwork-v6 topology.
+	@NS=e2e-separate-appnetwork-v6; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v6 --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ##############################################################################
@@ -440,6 +462,25 @@ test-dual-stack: ## Run all dual-stack e2e tests in parallel.
 .PHONY: undeploy-dual-stack
 undeploy-dual-stack: ## Undeploy all dual-stack suites.
 	@for suite in $(SUITES_DS); do $(MAKE) undeploy-$$suite; done
+
+################################################################################
+##@ All IPv6 suites
+################################################################################
+
+.PHONY: ipv6
+ipv6: deploy-ipv6 test-ipv6 ## Deploy and test all IPv6 suites.
+
+.PHONY: deploy-ipv6
+deploy-ipv6: ## Deploy all IPv6 suites.
+	@for suite in $(SUITES_IPV6); do $(MAKE) deploy-$$suite || exit 1; done
+
+.PHONY: test-ipv6
+test-ipv6: ## Run all IPv6 e2e tests in parallel.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=ipv6 $(GINKGO_FLAGS)
+
+.PHONY: undeploy-ipv6
+undeploy-ipv6: ## Undeploy all IPv6 suites.
+	@for suite in $(SUITES_IPV6); do $(MAKE) undeploy-$$suite; done
 
 ################################################################################
 ##@ Suite: openshift-crc

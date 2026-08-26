@@ -1,0 +1,84 @@
+---
+# gw-v6a1 router (VLAN 1300, ASN 64522, IPv6-only)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-v6a1-router-v6
+spec:
+  gatewayRef:
+    name: gw-v6a1
+  interface: "vlan-1300"
+  address: "fd00:cafe:70::150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64522
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-v6a1
+spec:
+  parentRefs:
+  - name: gw-v6a1
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-v6a1
+  destinationCIDRs:
+  - "fd00:cafe:7::1/128"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100
+---
+# gw-v6a2 router (VLAN 1400, ASN 64523, IPv6-only)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-v6a2-router-v6
+spec:
+  gatewayRef:
+    name: gw-v6a2
+  interface: "vlan-1400"
+  address: "fd00:cafe:71::150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64523
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-v6a2
+spec:
+  parentRefs:
+  - name: gw-v6a2
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-v6a2
+  destinationCIDRs:
+  - "fd00:cafe:7::2/128"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100
