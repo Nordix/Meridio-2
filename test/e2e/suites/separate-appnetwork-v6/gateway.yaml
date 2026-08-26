@@ -1,0 +1,88 @@
+---
+# Gateway V6A1 on VLAN 1300 with app-net-v6a1 (IPv6-only)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-v6a1
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-v6a1
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-v6a1
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-separate-appnetwork-v6
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-1300
+      namespace: e2e-separate-appnetwork-v6
+      interface: vlan-1300
+  - type: NAD
+    nad:
+      name: app-net-v6a1
+      namespace: e2e-separate-appnetwork-v6
+      interface: net-v6a1
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "fd00:cafe:170::/64"
+  horizontalScaling:
+    replicas: 2
+---
+# Gateway V6A2 on VLAN 1400 with app-net-v6a2 (IPv6-only)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-v6a2
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-v6a2
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-v6a2
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-separate-appnetwork-v6
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-1400
+      namespace: e2e-separate-appnetwork-v6
+      interface: vlan-1400
+  - type: NAD
+    nad:
+      name: app-net-v6a2
+      namespace: e2e-separate-appnetwork-v6
+      interface: net-v6a2
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "fd00:cafe:170::/64"
+  horizontalScaling:
+    replicas: 2
