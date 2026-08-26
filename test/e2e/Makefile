@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
 SUITES_DS ?= dual-stack-simple
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
@@ -206,24 +206,24 @@ undeploy-ipv4-simple: ## Undeploy ipv4-simple topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 #################################################################################
-##@ Suite: separate-appnetwork
+##@ Suite: separate-appnetwork-v4
 ################################################################################
 
-.PHONY: separate-appnetwork
-separate-appnetwork: deploy-separate-appnetwork test-separate-appnetwork ## Deploy and test separate-appnetwork suite.
+.PHONY: separate-appnetwork-v4
+separate-appnetwork-v4: deploy-separate-appnetwork-v4 test-separate-appnetwork-v4 ## Deploy and test separate-appnetwork-v4 suite.
 
-.PHONY: deploy-separate-appnetwork
-deploy-separate-appnetwork: cluster ## Deploy separate-appnetwork topology.
-	$(call deploy-suite,e2e-separate-appnetwork,$(shell pwd)/suites/separate-appnetwork,separate-appnet,sllbr-gw-a1 sllbr-gw-a2)
+.PHONY: deploy-separate-appnetwork-v4
+deploy-separate-appnetwork-v4: cluster ## Deploy separate-appnetwork-v4 topology.
+	$(call deploy-suite,e2e-separate-appnetwork-v4,$(shell pwd)/suites/separate-appnetwork-v4,separate-appnet-v4,sllbr-gw-a1 sllbr-gw-a2)
 
-.PHONY: test-separate-appnetwork
-test-separate-appnetwork: ## Run e2e tests for separate-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network" $(GINKGO_FLAGS)
+.PHONY: test-separate-appnetwork-v4
+test-separate-appnetwork-v4: ## Run e2e tests for separate-appnetwork-v4 suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network IPv4" $(GINKGO_FLAGS)
 
-.PHONY: undeploy-separate-appnetwork
-undeploy-separate-appnetwork: ## Undeploy separate-appnetwork topology.
-	@NS=e2e-separate-appnetwork; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet --ignore-not-found=true; \
+.PHONY: undeploy-separate-appnetwork-v4
+undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
+	@NS=e2e-separate-appnetwork-v4; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v4 --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ##############################################################################

@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: e2e-separate-appnetwork
+namespace: e2e-separate-appnetwork-v4
 
 resources:
 - ../../../../config/default
@@ -11,11 +11,11 @@ images:
   newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
   newTag: latest
 
-nameSuffix: -separate-appnet
+nameSuffix: -separate-appnet-v4
 
 labels:
 - pairs:
-    e2e-suite: separate-appnet
+    e2e-suite: separate-appnet-v4
 
 patches:
 - patch: |-
@@ -24,27 +24,27 @@ patches:
     metadata:
       name: not-important
       annotations:
-        cert-manager.io/inject-ca-from: e2e-separate-appnetwork/meridio-2-serving-cert-separate-appnet
+        cert-manager.io/inject-ca-from: e2e-separate-appnetwork-v4/meridio-2-serving-cert-separate-appnet-v4
     webhooks:
     - name: vl34route-v1alpha1.kb.io
       namespaceSelector:
         matchLabels:
-          e2e-suite: separate-appnet
+          e2e-suite: separate-appnet-v4
       clientConfig:
         service:
-          name: meridio-2-webhook-service-separate-appnet
-          namespace: e2e-separate-appnetwork
+          name: meridio-2-webhook-service-separate-appnet-v4
+          namespace: e2e-separate-appnetwork-v4
   target:
     kind: ValidatingWebhookConfiguration
 - patch: |-
     - op: replace
       path: /spec/dnsNames
       value:
-      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnetwork.svc
-      - meridio-2-webhook-service-separate-appnet.e2e-separate-appnetwork.svc.cluster.local
+      - meridio-2-webhook-service-separate-appnet-v4.e2e-separate-appnetwork-v4.svc
+      - meridio-2-webhook-service-separate-appnet-v4.e2e-separate-appnetwork-v4.svc.cluster.local
     - op: replace
       path: /spec/secretName
-      value: webhook-server-cert-separate-appnet
+      value: webhook-server-cert-separate-appnet-v4
   target:
     group: cert-manager.io
     kind: Certificate
@@ -61,7 +61,7 @@ patches:
           - name: manager
             env:
             - name: MERIDIO_LB_SERVICE_ACCOUNT
-              value: meridio-2-stateless-load-balancer-separate-appnet
+              value: meridio-2-stateless-load-balancer-separate-appnet-v4
             - name: MERIDIO_LOG_LEVEL
               value: info
             - name: MERIDIO_LOG_LEVEL_API
@@ -69,7 +69,7 @@ patches:
           volumes:
           - name: webhook-certs
             secret:
-              secretName: webhook-server-cert-separate-appnet
+              secretName: webhook-server-cert-separate-appnet-v4
   target:
     kind: Deployment
     labelSelector: control-plane=controller-manager

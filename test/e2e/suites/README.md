@@ -65,9 +65,9 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 
 | VLAN ID | Suite | Gateway | External Subnet (IPv4) | External Subnet (IPv6) | Internal Subnet (IPv4) | Internal Subnet (IPv6) | VIP(s) | Local ASN | Remote ASN |
 |---------|-------|---------|----------------------|----------------------|----------------------|----------------------|--------|-----------|------------|
-| 100 | separate-appnetwork | gw-a1 | `169.254.10.0/24` | — | `169.111.10.0/24` | — | `10.0.0.1/32` | 64512 | 4200000000 |
+| 100 | separate-appnetwork-v4 | gw-a1 | `169.254.10.0/24` | — | `169.111.10.0/24` | — | `10.0.0.1/32` | 64512 | 4200000000 |
 | 100 | dual-stack | gw-ds | `169.254.10.0/24` | `fd00:cafe:10::/64` | `169.111.10.0/24` | `fd00:cafe:110::/64` | `10.0.0.1/32`, `fd00:cafe:1::1/128` | 64512 | 4200000000 |
-| 200 | separate-appnetwork | gw-a2 | `169.254.11.0/24` | — | `169.111.10.0/24` | — | `10.0.0.2/32` | 64513 | 4200000000 |
+| 200 | separate-appnetwork-v4 | gw-a2 | `169.254.11.0/24` | — | `169.111.10.0/24` | — | `10.0.0.2/32` | 64513 | 4200000000 |
 | 300 | shared-appnetwork | gw-b1 | `169.254.20.0/24` | — | `169.111.20.0/24` | — | `20.0.0.1/32` | 64514 | 4200000000 |
 | 400 | shared-appnetwork | gw-b2 | `169.254.21.0/24` | — | `169.111.20.0/24` | — | `20.0.0.2/32` | 64515 | 4200000000 |
 | 500 | sctp-multihoming | sctp-gw1 | `169.254.30.0/24` | — | `169.111.30.0/24` | — | `30.0.0.1/32` | 64516 | 4200000000 |
@@ -182,7 +182,7 @@ ipRanges:
 
 ### 5. Namespace naming
 
-Use `e2e-{suite-name}` (e.g., `e2e-dual-stack`, `e2e-separate-appnetwork`).
+Use `e2e-{suite-name}` (e.g., `e2e-dual-stack`, `e2e-separate-appnetwork-v4`).
 
 ## Maintaining This Document
 
@@ -197,6 +197,6 @@ Update this README whenever you add, remove, or modify a test suite. Specificall
 - The VPN gateway's remote ASN is always `4200000000`
 - All BGP sessions use port `10179` (both local and remote)
 - BFD is enabled on all sessions with 300ms intervals and multiplier 3 (or 5 for SCTP)
-- The `separate-appnetwork` and `dual-stack` suites share VLAN 100 — they cannot run simultaneously
+- The `separate-appnetwork-v4` and `dual-stack` suites share VLAN 100 — they cannot run simultaneously
 - Suites sharing the same VLAN are mutually exclusive (deploy only one at a time)
 - The `separate-static-appnetwork` suite uses static routing with BFD. LB pod IPs are limited to `.1`-`.10` per VLAN (max 10 replicas per gateway) to match the gateway's pre-configured static routes.
