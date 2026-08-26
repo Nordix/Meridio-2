@@ -35,8 +35,8 @@ type suiteTestCase struct {
 
 var testCases = []suiteTestCase{
 	{
-		name:           "Separate App Network",
-		namespace:      "e2e-separate-appnetwork",
+		name:           "Separate App Network IPv4",
+		namespace:      "e2e-separate-appnetwork-v4",
 		targetApp:      "target-a",
 		targetReplicas: 2,
 		gateways: []gwTestCase{
@@ -356,8 +356,8 @@ var _ = Describe("E2E Test Suites", Label("ipv4"), func() {
 						switch suite.name {
 						case "Shared App Network":
 							suiteDir = "shared-appnetwork"
-						case "Separate App Network":
-							suiteDir = "separate-appnetwork"
+						case "Separate App Network IPv4":
+							suiteDir = "separate-appnetwork-v4"
 						case "Separate Static App Network":
 							suiteDir = "separate-static-appnetwork"
 						default:

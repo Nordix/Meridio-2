@@ -1,5 +1,5 @@
 ---
-# IPv4 router (VLAN 100, ASN 64512) - reuses separate-appnetwork gw-a1 slot
+# IPv4 router (VLAN 100, ASN 64512) - reuses separate-appnetwork-v4 gw-a1 slot
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
@@ -21,7 +21,7 @@ spec:
       minRx: 300ms
       multiplier: 3
 ---
-# IPv6 router (VLAN 100, ASN 64512) - reuses separate-appnetwork gw-a1 slot
+# IPv6 router (VLAN 100, ASN 64512) - reuses separate-appnetwork-v4 gw-a1 slot
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:

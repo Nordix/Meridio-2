@@ -27,7 +27,7 @@ spec:
       ]
   }'
 ---
-# VLAN 100 NAD for dual-stack BGP peering (reuses separate-appnetwork VLAN)
+# VLAN 100 NAD for dual-stack BGP peering (reuses separate-appnetwork-v4 VLAN)
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
