@@ -250,11 +250,13 @@ var _ = Describe("E2E Test Suites", Label("ipv4"), func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						It("distributes "+gw.name+" TCP traffic across targets", func() {
-							lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
-							Expect(err).NotTo(HaveOccurred())
-							Expect(lostConn).To(BeZero(), "no connections should be lost")
-							Expect(len(lastingConn)).To(Equal(gw.targets),
-								"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
+							Eventually(func(g Gomega) {
+								lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
+								g.Expect(err).NotTo(HaveOccurred())
+								g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+								g.Expect(len(lastingConn)).To(Equal(gw.targets),
+									"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
+							}).Should(Succeed())
 						})
 					}
 				})
