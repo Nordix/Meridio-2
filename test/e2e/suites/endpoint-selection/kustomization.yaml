@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: e2e-pod-cache-label
+namespace: e2e-endpoint-selection
 
 resources:
 - ../../../../config/default
@@ -11,11 +11,11 @@ images:
   newName: registry.nordix.org/cloud-native/meridio-2/controller-manager
   newTag: latest
 
-nameSuffix: -pod-cache-label
+nameSuffix: -endpoint-selection
 
 labels:
 - pairs:
-    e2e-suite: pod-cache-label
+    e2e-suite: endpoint-selection
 
 patches:
 - patch: |-
@@ -24,27 +24,27 @@ patches:
     metadata:
       name: not-important
       annotations:
-        cert-manager.io/inject-ca-from: e2e-pod-cache-label/meridio-2-serving-cert-pod-cache-label
+        cert-manager.io/inject-ca-from: e2e-endpoint-selection/meridio-2-serving-cert-endpoint-selection
     webhooks:
     - name: vl34route-v1alpha1.kb.io
       namespaceSelector:
         matchLabels:
-          e2e-suite: pod-cache-label
+          e2e-suite: endpoint-selection
       clientConfig:
         service:
-          name: meridio-2-webhook-service-pod-cache-label
-          namespace: e2e-pod-cache-label
+          name: meridio-2-webhook-service-endpoint-selection
+          namespace: e2e-endpoint-selection
   target:
     kind: ValidatingWebhookConfiguration
 - patch: |-
     - op: replace
       path: /spec/dnsNames
       value:
-      - meridio-2-webhook-service-pod-cache-label.e2e-pod-cache-label.svc
-      - meridio-2-webhook-service-pod-cache-label.e2e-pod-cache-label.svc.cluster.local
+      - meridio-2-webhook-service-endpoint-selection.e2e-endpoint-selection.svc
+      - meridio-2-webhook-service-endpoint-selection.e2e-endpoint-selection.svc.cluster.local
     - op: replace
       path: /spec/secretName
-      value: webhook-server-cert-pod-cache-label
+      value: webhook-server-cert-endpoint-selection
   target:
     group: cert-manager.io
     kind: Certificate
@@ -61,13 +61,13 @@ patches:
           - name: manager
             env:
             - name: MERIDIO_LB_SERVICE_ACCOUNT
-              value: meridio-2-stateless-load-balancer-pod-cache-label
+              value: meridio-2-stateless-load-balancer-endpoint-selection
             - name: MERIDIO_POD_CACHE_LABEL
               value: "meridio-2.nordix.org/managed=true"
           volumes:
           - name: webhook-certs
             secret:
-              secretName: webhook-server-cert-pod-cache-label
+              secretName: webhook-server-cert-endpoint-selection
   target:
     kind: Deployment
     labelSelector: control-plane=controller-manager

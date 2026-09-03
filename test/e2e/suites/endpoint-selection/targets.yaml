@@ -1,21 +1,20 @@
----
 # Target WITH the cache label — should get an ENC
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: target-labeled
   labels:
-    app: target-pcl
+    app: target-eps
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: target-pcl
+      app: target-eps
       variant: labeled
   template:
     metadata:
       labels:
-        app: target-pcl
+        app: target-eps
         variant: labeled
         meridio-2.nordix.org/managed: "true"
       annotations:
@@ -68,17 +67,17 @@ kind: Deployment
 metadata:
   name: target-unlabeled
   labels:
-    app: target-pcl
+    app: target-eps
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: target-pcl
+      app: target-eps
       variant: unlabeled
   template:
     metadata:
       labels:
-        app: target-pcl
+        app: target-eps
         variant: unlabeled
         # NOTE: intentionally missing meridio-2.nordix.org/managed label
       annotations:

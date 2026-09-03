@@ -1,4 +1,3 @@
----
 # Sysctl tuning NAD
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
@@ -56,7 +55,7 @@ spec:
   config: |
     {
       "cniVersion": "1.0.0",
-      "name": "app-net-pcl",
+      "name": "app-net-eps",
       "plugins": [
         {
           "type": "macvlan",
