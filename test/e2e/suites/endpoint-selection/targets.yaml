@@ -6,7 +6,7 @@ metadata:
   labels:
     app: target-eps
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: target-eps
@@ -28,8 +28,20 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - |
+          touch /tmp/ready ;
           screen -d -m bash -c "./ctraffic -server -address [::]:5000" ;
           trap 'exit 0' TERM; sleep infinity & wait
+        # File-existence readiness probe: the container creates /tmp/ready at
+        # startup so the Pod becomes Ready on its own (no external step). The
+        # e2e test flips readiness by removing/recreating /tmp/ready via
+        # kubectl exec. The short period + failureThreshold:1 makes the flip
+        # take effect within ~1-2s.
+        readinessProbe:
+          exec:
+            command: ["test", "-f", "/tmp/ready"]
+          periodSeconds: 1
+          failureThreshold: 1
+          successThreshold: 1
         securityContext:
           runAsNonRoot: true
           capabilities:

@@ -48,6 +48,18 @@ var _ = Describe("Endpoint Selection", Ordered, Label("ipv4"), func() {
 		vip         = "50.0.0.1"
 		cacheLabel  = "meridio-2.nordix.org/managed"
 		cacheLabelV = "true"
+		// labeledSelector discovers the labeled target Pods for the
+		// readiness-flip cases. It is scoped to variant=labeled because the
+		// unlabeled deployment also carries app=target-eps.
+		labeledSelector = "app=target-eps,variant=labeled"
+		// readyFile is the file-existence readiness marker checked by the
+		// target container's readiness probe. Removing it makes the Pod
+		// not-Ready; recreating it makes it Ready again.
+		readyFile = "/tmp/ready"
+		// nconn is the connection count for each SendTraffic run. High enough
+		// that both of the 2 Maglev backends reliably appear in the per-target
+		// distribution (the "both backends appear" property is statistical).
+		nconn = 100
 	)
 
 	SetDefaultEventuallyTimeout(2 * time.Minute)
@@ -184,13 +196,140 @@ var _ = Describe("Endpoint Selection", Ordered, Label("ipv4"), func() {
 			Should(Succeed(), "VIP should be reachable from VPN gateway")
 	})
 
-	It("distributes TCP traffic only to labeled target", func() {
-		lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", 50)
+	It("distributes TCP traffic only to labeled targets", func() {
+		// With replicas: 2 on the labeled deployment, traffic is distributed
+		// across the (ready) labeled Pods only. The unlabeled Pod is excluded
+		// by the pod-cache-label filter and must never receive traffic.
+		labeled := listLabeledPodNames(clientset, namespace, labeledSelector)
+		Expect(len(labeled)).To(BeNumerically(">=", 2),
+			"expected at least 2 labeled target Pods, got: %v", labeled)
+
+		labeledSet := map[string]struct{}{}
+		for _, name := range labeled {
+			labeledSet[name] = struct{}{}
+		}
+
+		lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", nconn)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(lostConn).To(BeZero(), "no connections should be lost")
-		Expect(lastingConn).To(HaveLen(1),
-			"traffic should reach exactly 1 target (labeled only), got: %v", lastingConn)
-		Expect(lastingConn).To(HaveKey(labeledPodName),
-			"traffic should only reach the labeled Pod %q, got: %v", labeledPodName, lastingConn)
+		Expect(lastingConn).NotTo(BeEmpty(), "traffic should reach at least one labeled target")
+		for host := range lastingConn {
+			Expect(labeledSet).To(HaveKey(host),
+				"traffic reached non-labeled target %q, got: %v", host, lastingConn)
+		}
+	})
+
+	// Readiness -> traffic distribution.
+	//
+	// A target Pod's PodReady condition (driven by the file-existence readiness
+	// probe) is mirrored into LoadBalancerEndpointSlice.spec.endpoints[].ready
+	// by the DistributionGroup controller; the LB controller skips !Ready
+	// endpoints when reconciling nfqlb targets. Flipping readiness therefore
+	// (de)activates traffic to that Pod. We assert this end to end using
+	// converge-by-probing: wrap fresh, short SendTraffic runs in Eventually
+	// (converge) and Consistently (stable) so we never measure a run that
+	// straddles the flip.
+
+	Context("readiness controls traffic distribution", func() {
+		var pickedPod string
+
+		It("stops sending traffic to a not-ready target", func() {
+			labeled := listLabeledPodNames(clientset, namespace, labeledSelector)
+			Expect(len(labeled)).To(BeNumerically(">=", 2),
+				"expected at least 2 labeled target Pods, got: %v", labeled)
+			pickedPod = labeled[0]
+
+			By(fmt.Sprintf("making labeled target %q not-ready", pickedPod))
+			setTargetReady(namespace, pickedPod, false)
+
+			// Optional confirmation that P leaves PodReady; the traffic
+			// convergence below already proves the effect end to end.
+			Eventually(func() bool {
+				return e2eutils.IsPodReady(clientset, namespace, pickedPod)
+			}).WithTimeout(30 * time.Second).WithPolling(1 * time.Second).
+				Should(BeFalse(), "picked Pod %q should become not-Ready", pickedPod)
+
+			By("converging: fresh traffic runs should stop reaching the not-ready Pod")
+			Eventually(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", nconn)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero())
+				g.Expect(lastingConn).NotTo(HaveKey(pickedPod),
+					"traffic still reaching not-ready Pod %q, got: %v", pickedPod, lastingConn)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+
+			By("verifying the not-ready Pod stays absent while the other Pod(s) still serve")
+			Consistently(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", nconn)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				g.Expect(lastingConn).NotTo(HaveKey(pickedPod),
+					"not-ready Pod %q should receive no traffic, got: %v", pickedPod, lastingConn)
+				g.Expect(lastingConn).NotTo(BeEmpty(),
+					"other ready Pod(s) should still receive traffic, got: %v", lastingConn)
+			}).WithTimeout(15 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+		})
+
+		It("resumes sending traffic to a restored target", func() {
+			Expect(pickedPod).NotTo(BeEmpty(), "flip to not-ready must run first (Ordered)")
+
+			By(fmt.Sprintf("making labeled target %q ready again", pickedPod))
+			setTargetReady(namespace, pickedPod, true)
+			waitPodReady(clientset, namespace, pickedPod)
+
+			By("converging: fresh traffic runs should reach the restored Pod again")
+			Eventually(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", nconn)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero())
+				g.Expect(lastingConn).To(HaveKey(pickedPod),
+					"traffic should reach restored Pod %q again, got: %v", pickedPod, lastingConn)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+		})
+	})
+
+	// Leave a clean state even on mid-sequence failure: unconditionally
+	// recreate the readiness file on all labeled target Pods.
+	AfterAll(func() {
+		for _, name := range listLabeledPodNames(clientset, namespace, labeledSelector) {
+			// Best-effort: the Pod may already be ready or gone.
+			cmd := exec.Command("kubectl", "exec", "-n", namespace, name,
+				"-c", "example-target", "--", "sh", "-c", "touch "+readyFile)
+			_, _ = utils.Run(cmd)
+		}
 	})
 })
+
+// listLabeledPodNames returns the names of Pods matching selector in namespace.
+func listLabeledPodNames(clientset *kubernetes.Clientset, namespace, selector string) []string {
+	pods, err := clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	names := make([]string, 0, len(pods.Items))
+	for _, pod := range pods.Items {
+		names = append(names, pod.Name)
+	}
+	return names
+}
+
+// setTargetReady flips the readiness file on the target container via a single
+// unconditional kubectl exec (touch to make ready, rm -f to make not-ready).
+func setTargetReady(namespace, podName string, ready bool) {
+	op := "touch"
+	if !ready {
+		op = "rm -f"
+	}
+	cmd := exec.Command("kubectl", "exec", "-n", namespace, podName,
+		"-c", "example-target", "--", "sh", "-c", op+" /tmp/ready")
+	out, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "kubectl exec failed: %s", out)
+}
+
+// waitPodReady waits until the named Pod reports the PodReady condition.
+func waitPodReady(clientset *kubernetes.Clientset, namespace, podName string) {
+	Eventually(func() bool {
+		return e2eutils.IsPodReady(clientset, namespace, podName)
+	}).WithTimeout(60 * time.Second).WithPolling(1 * time.Second).
+		Should(BeTrue(), "Pod %q should become Ready", podName)
+}
