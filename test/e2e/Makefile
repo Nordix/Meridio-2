@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple endpoint-selection tcp-ao
 SUITES_DS ?= dual-stack-simple
 SUITES_IPV6 ?= separate-appnetwork-v6
 
@@ -367,24 +367,24 @@ test-resiliency: ## Run process recovery tests.
 undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
 
 ################################################################################
-##@ Suite: pod-cache-label
+##@ Suite: endpoint-selection
 ################################################################################
 
-.PHONY: pod-cache-label
-pod-cache-label: deploy-pod-cache-label test-pod-cache-label ## Deploy and test pod-cache-label suite.
+.PHONY: endpoint-selection
+endpoint-selection: deploy-endpoint-selection test-endpoint-selection ## Deploy and test endpoint-selection suite.
 
-.PHONY: deploy-pod-cache-label
-deploy-pod-cache-label: cluster ## Deploy pod-cache-label topology.
-	$(call deploy-suite,e2e-pod-cache-label,$(shell pwd)/suites/pod-cache-label,pod-cache-label,sllbr-gw-pcl)
+.PHONY: deploy-endpoint-selection
+deploy-endpoint-selection: cluster ## Deploy endpoint-selection topology.
+	$(call deploy-suite,e2e-endpoint-selection,$(shell pwd)/suites/endpoint-selection,endpoint-selection,sllbr-gw-eps)
 
-.PHONY: test-pod-cache-label
-test-pod-cache-label: ## Run e2e tests for pod-cache-label suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Pod Cache Label" $(GINKGO_FLAGS)
+.PHONY: test-endpoint-selection
+test-endpoint-selection: ## Run e2e tests for endpoint-selection suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Endpoint Selection" $(GINKGO_FLAGS)
 
-.PHONY: undeploy-pod-cache-label
-undeploy-pod-cache-label: ## Undeploy pod-cache-label topology.
-	@NS=e2e-pod-cache-label; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-pod-cache-label --ignore-not-found=true; \
+.PHONY: undeploy-endpoint-selection
+undeploy-endpoint-selection: ## Undeploy endpoint-selection topology.
+	@NS=e2e-endpoint-selection; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-endpoint-selection --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 #################################################################################

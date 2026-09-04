@@ -1,11 +1,10 @@
----
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
-  name: gw-router-pcl
+  name: gw-router-eps
 spec:
   gatewayRef:
-    name: gw-pcl
+    name: gw-eps
   interface: "vlan-800"
   address: "169.254.50.150"
   protocol: "BGP"
@@ -23,12 +22,12 @@ spec:
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
 metadata:
-  name: route-pcl
+  name: route-eps
 spec:
   parentRefs:
-  - name: gw-pcl
+  - name: gw-eps
   backendRefs:
-  - name: dg-pcl
+  - name: dg-eps
     group: meridio-2.nordix.org
     kind: DistributionGroup
   destinationCIDRs:

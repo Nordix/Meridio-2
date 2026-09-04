@@ -29,7 +29,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	e2eutils "github.com/nordix/meridio-2/test/e2e/utils"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -62,7 +61,7 @@ var _ = Describe("Resiliency", Label("ipv4"), Serial, Ordered, func() {
 		sllbPod = pods.Items[0].Name
 
 		// Verify the LB Pod is Ready before starting tests
-		Expect(isPodReady(clientset, namespace, sllbPod)).To(BeTrue(),
+		Expect(e2eutils.IsPodReady(clientset, namespace, sllbPod)).To(BeTrue(),
 			"LB Pod %s should be Ready before test starts", sllbPod)
 
 		// Verify baseline traffic via the single LB Pod
@@ -72,7 +71,7 @@ var _ = Describe("Resiliency", Label("ipv4"), Serial, Ordered, func() {
 
 	It("recovers after NFQLB process kill", func() {
 		By("confirming Pod is Ready and traffic works before disruption")
-		Expect(isPodReady(clientset, namespace, sllbPod)).To(BeTrue())
+		Expect(e2eutils.IsPodReady(clientset, namespace, sllbPod)).To(BeTrue())
 		Expect(e2eutils.Ping(vip)).To(Succeed())
 
 		By("getting current restart count")
@@ -94,7 +93,7 @@ var _ = Describe("Resiliency", Label("ipv4"), Serial, Ordered, func() {
 		notReadySeen := false
 		for i := 0; i < 3; i++ {
 			time.Sleep(3 * time.Second)
-			if !isPodReady(clientset, namespace, sllbPod) {
+			if !e2eutils.IsPodReady(clientset, namespace, sllbPod) {
 				notReadySeen = true
 				break
 			}
@@ -112,7 +111,7 @@ var _ = Describe("Resiliency", Label("ipv4"), Serial, Ordered, func() {
 
 		By("waiting for Pod to become Ready again")
 		Eventually(func() bool {
-			return isPodReady(clientset, namespace, sllbPod)
+			return e2eutils.IsPodReady(clientset, namespace, sllbPod)
 		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
 			Should(BeTrue())
 
@@ -134,17 +133,4 @@ func getContainerRestarts(clientset *kubernetes.Clientset, namespace, podName, c
 		}
 	}
 	return -1
-}
-
-func isPodReady(clientset *kubernetes.Clientset, namespace, podName string) bool {
-	pod, err := clientset.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
-	if err != nil {
-		return false
-	}
-	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
 }

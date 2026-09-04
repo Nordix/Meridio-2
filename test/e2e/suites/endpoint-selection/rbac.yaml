@@ -1,15 +1,14 @@
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: meridio-2-network-sidecar
-  namespace: e2e-pod-cache-label
+  namespace: e2e-endpoint-selection
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: meridio-2-network-sidecar
-  namespace: e2e-pod-cache-label
+  namespace: e2e-endpoint-selection
 rules:
 - apiGroups: ["meridio-2.nordix.org"]
   resources: ["endpointnetworkconfigurations"]
@@ -22,7 +21,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: meridio-2-network-sidecar
-  namespace: e2e-pod-cache-label
+  namespace: e2e-endpoint-selection
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -30,4 +29,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: meridio-2-network-sidecar
-  namespace: e2e-pod-cache-label
+  namespace: e2e-endpoint-selection
