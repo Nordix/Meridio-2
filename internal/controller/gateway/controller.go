@@ -31,6 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 )
 
 // GatewayReconciler reconciles a Gateway object
@@ -87,7 +89,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		//
 		// Gateway API strongly discourages changing gatewayClassName, so we don't
 		// over-invest in this edge case.
-		if isGatewayAcceptedByController(&gw, r.ControllerName) {
+		if gatewayutil.IsGatewayAcceptedByController(&gw, r.ControllerName) {
 			log.Info("Gateway no longer managed by this controller, resetting Accepted status",
 				"gatewayClass", gw.Spec.GatewayClassName)
 

@@ -47,6 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -55,10 +56,12 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/log"
+	"github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/prerequisites"
 	"github.com/nordix/meridio-2/internal/controller/distributiongroup"
 	"github.com/nordix/meridio-2/internal/controller/endpointnetworkconfiguration"
 	"github.com/nordix/meridio-2/internal/controller/gateway"
+	mgrmetrics "github.com/nordix/meridio-2/internal/metrics"
 	webhookv1alpha1 "github.com/nordix/meridio-2/internal/webhook/v1alpha1"
 )
 
@@ -150,6 +153,10 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 		return fmt.Errorf("register controllers: %w", err)
 	}
 
+	if err := registerMetricsCollectors(mgr, cfg); err != nil {
+		return fmt.Errorf("register metrics collectors: %w", err)
+	}
+
 	appCfg := Config{
 		Namespace:      cfg.Namespace,
 		ControllerName: cfg.ControllerName,
@@ -203,6 +210,9 @@ func validate(cfg *config.ManagerConfig) error {
 func validateConfig(cfg *config.ManagerConfig) error {
 	if cfg.CertWaitTimeout > time.Minute {
 		return fmt.Errorf("cert-wait-timeout cannot exceed 1 minute (got %s)", cfg.CertWaitTimeout)
+	}
+	if err := metrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+		return fmt.Errorf("metrics-prefix: %w", err)
 	}
 	return nil
 }
@@ -370,6 +380,47 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 		Namespace:      cfg.Namespace,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("controller EndpointNetworkConfiguration: %w", err)
+	}
+
+	return nil
+}
+
+// registerMetricsCollectors registers the controller-manager's custom Prometheus collectors
+// (see internal/metrics) against controller-runtime's metrics.Registry, when metrics are enabled
+// (--metrics-bind-address != "0").
+//
+// This MUST run synchronously before mgr.Start(cfg) — not in a goroutine, not after:
+// controller-runtime brings the metrics HTTP server up very early (before caches, before leader
+// election), so registration deferred past mgr.Start could let a scrape hit /metrics before the
+// collectors exist, returning an incomplete set with no error. This is the registration half of
+// the startup-timing story CacheSyncWaiter (internal/metrics) handles on the scrape side.
+//
+// It also establishes a cross-package invariant the collectors' sync-gate relies on: every type
+// a collector reads — DistributionGroup, Gateway, L34Route, LoadBalancerEndpointSlice — is
+// watched by a built-in reconciler registered above, whose .For/.Owns/.Watches calls put the
+// informers into the cache tracker before mgr.Start() syncs them, so the collectors' up-front
+// WaitForCacheSync (which waits only on already-tracked informers) covers them. A collector
+// reading an un-watched type would not hang or read stale data (its first List/Get lazily
+// registers and syncs that informer, bounded by collectTimeout), but that inline sync lands
+// after the gate passed — reintroducing the partial snapshot the gate intends to prevent. Such
+// a collector should weigh adding a watch so its types are covered by the gate too.
+func registerMetricsCollectors(mgr ctrl.Manager, cfg *config.ManagerConfig) error {
+	if !metrics.Enabled(cfg.MetricsAddr) {
+		return nil
+	}
+
+	gatewayCollector := mgrmetrics.NewGatewayCollector(
+		mgr.GetClient(), mgr.GetCache(), cfg.MetricsCollectTimeout, cfg.Namespace, cfg.ControllerName, cfg.MetricsPrefix,
+	)
+	dgCollector := mgrmetrics.NewDistributionGroupCollector(
+		mgr.GetClient(), mgr.GetCache(), cfg.MetricsCollectTimeout, cfg.Namespace, cfg.ControllerName, cfg.MetricsPrefix,
+	)
+
+	if err := ctrlmetrics.Registry.Register(gatewayCollector); err != nil {
+		return fmt.Errorf("register GatewayCollector: %w", err)
+	}
+	if err := ctrlmetrics.Registry.Register(dgCollector); err != nil {
+		return fmt.Errorf("register DistributionGroupCollector: %w", err)
 	}
 
 	return nil

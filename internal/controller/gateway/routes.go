@@ -117,7 +117,7 @@ func (r *GatewayReconciler) updateAddressesFromRoutes(ctx context.Context, gw *g
 }
 
 // routeReferencesGateway checks if L34Route references the Gateway
-// TODO: Move to internal/common/gatewayapi package - similar logic exists in DistributionGroup controller
+// TODO: Move to internal/common/gatewayutil package - similar logic exists in DistributionGroup controller
 func routeReferencesGateway(route *meridio2v1alpha1.L34Route, gw *gatewayv1.Gateway) bool {
 	for _, parentRef := range route.Spec.ParentRefs {
 		// Check if parentRef is a Gateway
