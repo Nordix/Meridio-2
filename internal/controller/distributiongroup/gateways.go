@@ -18,10 +18,8 @@ package distributiongroup
 
 import (
 	"context"
-	"strings"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -29,11 +27,25 @@ import (
 
 // listReferencedGateways returns all Gateways referenced by the DistributionGroup (direct + indirect via L34Routes)
 func (r *DistributionGroupReconciler) listReferencedGateways(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup) ([]gatewayv1.Gateway, error) {
+	return ListReferencedGateways(ctx, r.Client, r.Namespace, dg)
+}
+
+// ListReferencedGateways returns all Gateways referenced by the DistributionGroup (direct
+// parentRefs + indirect via L34Route backendRefs). namespace scopes the L34Route List to a
+// single namespace (mirrors the reconciler's r.Namespace); pass "" to watch all namespaces.
+//
+// Exported so that other consumers reading the same association (e.g. the controller-manager
+// metrics collectors in internal/metrics) can reuse the exact resolution semantics used by
+// reconciliation, rather than reimplementing parentRef/L34Route walking and risking the two
+// paths diverging on what counts as "referenced".
+func ListReferencedGateways(
+	ctx context.Context, c client.Client, namespace string, dg *meridio2v1alpha1.DistributionGroup,
+) ([]gatewayv1.Gateway, error) {
 	gatewayMap := make(map[string]*gatewayv1.Gateway)
 
 	// Find Gateways from DG.spec.parentRefs
 	for _, parentRef := range dg.Spec.ParentRefs {
-		gw, err := r.getGatewayFromParentRef(ctx, parentRef, dg.Namespace)
+		gw, err := getGatewayFromParentRef(ctx, c, parentRef, dg.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -43,7 +55,7 @@ func (r *DistributionGroupReconciler) listReferencedGateways(ctx context.Context
 	}
 
 	// Find L34Routes referencing this DG
-	routes, err := r.listRoutesReferencingDG(ctx, dg)
+	routes, err := listRoutesReferencingDG(ctx, c, namespace, dg)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +63,7 @@ func (r *DistributionGroupReconciler) listReferencedGateways(ctx context.Context
 	// Find Gateways from L34Route.spec.parentRefs
 	for _, route := range routes {
 		for _, parentRef := range route.Spec.ParentRefs {
-			gw, err := r.getGatewayFromGatewayAPIParentRef(ctx, parentRef, route.Namespace)
+			gw, err := getGatewayFromGatewayAPIParentRef(ctx, c, parentRef, route.Namespace)
 			if err != nil {
 				return nil, err
 			}
@@ -70,7 +82,7 @@ func (r *DistributionGroupReconciler) listReferencedGateways(ctx context.Context
 }
 
 // getGatewayFromParentRef fetches a Gateway from a ParentReference
-func (r *DistributionGroupReconciler) getGatewayFromParentRef(ctx context.Context, ref meridio2v1alpha1.ParentReference, localNs string) (*gatewayv1.Gateway, error) {
+func getGatewayFromParentRef(ctx context.Context, c client.Client, ref meridio2v1alpha1.ParentReference, localNs string) (*gatewayv1.Gateway, error) {
 	// Verify parentRef is a Gateway (DG API enforces this via CEL, but be defensive)
 	group := gatewayv1.GroupName
 	if ref.Group != nil {
@@ -90,7 +102,7 @@ func (r *DistributionGroupReconciler) getGatewayFromParentRef(ctx context.Contex
 	}
 
 	var gw gatewayv1.Gateway
-	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref.Name}, &gw); err != nil {
+	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref.Name}, &gw); err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
 
@@ -98,41 +110,18 @@ func (r *DistributionGroupReconciler) getGatewayFromParentRef(ctx context.Contex
 }
 
 // getGatewayFromGatewayAPIParentRef fetches a Gateway from Gateway API ParentReference
-func (r *DistributionGroupReconciler) getGatewayFromGatewayAPIParentRef(ctx context.Context, ref gatewayv1.ParentReference, localNs string) (*gatewayv1.Gateway, error) {
+func getGatewayFromGatewayAPIParentRef(ctx context.Context, c client.Client, ref gatewayv1.ParentReference, localNs string) (*gatewayv1.Gateway, error) {
 	ns := localNs
 	if ref.Namespace != nil {
 		ns = string(*ref.Namespace)
 	}
 
 	var gw gatewayv1.Gateway
-	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: string(ref.Name)}, &gw); err != nil {
+	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: string(ref.Name)}, &gw); err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
 
 	return &gw, nil
-}
-
-// isGatewayAccepted checks if Gateway has Accepted=True condition set by this controller
-// TODO(gateway-controller): Move to internal/common/gateway package when Gateway controller is implemented.
-// This logic should be shared between Gateway and DistributionGroup controllers to ensure
-// consistent Gateway acceptance checking. The Gateway controller will set the Accepted condition,
-// and both controllers need to interpret it the same way.
-//
-// This check allows the DG controller to filter Gateways without watching GatewayClass objects.
-// By checking the Accepted condition (set by the Gateway controller), we avoid the complexity of:
-// - Watching GatewayClass resources
-// - Resolving Gateway.spec.gatewayClassName references
-// - Checking GatewayClass.spec.controllerName matches
-// Instead, we rely on the Gateway controller to mark relevant Gateways as Accepted.
-func (r *DistributionGroupReconciler) isGatewayAccepted(gw *gatewayv1.Gateway) bool {
-	for _, cond := range gw.Status.Conditions {
-		if cond.Type == string(gatewayv1.GatewayConditionAccepted) &&
-			cond.Status == metav1.ConditionTrue &&
-			strings.HasSuffix(cond.Message, r.ControllerName) {
-			return true
-		}
-	}
-	return false
 }
 
 // getNetworkContexts extracts network context from GatewayConfigurations

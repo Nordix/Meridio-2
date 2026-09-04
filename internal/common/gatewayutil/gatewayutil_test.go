@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package gateway
+package gatewayutil
 
 import (
 	"testing"
@@ -32,12 +32,12 @@ func TestIsGatewayAcceptedByController(t *testing.T) {
 					{
 						Type:    string(gatewayv1.GatewayConditionAccepted),
 						Status:  metav1.ConditionTrue,
-						Message: "Gateway accepted by test-controller",
+						Message: GatewayAcceptedMessagePrefix + "test-controller",
 					},
 				},
 			},
 		}
-		assert.True(t, isGatewayAcceptedByController(gw, "test-controller"))
+		assert.True(t, IsGatewayAcceptedByController(gw, "test-controller"))
 	})
 
 	t.Run("AcceptedByDifferentController", func(t *testing.T) {
@@ -47,12 +47,33 @@ func TestIsGatewayAcceptedByController(t *testing.T) {
 					{
 						Type:    string(gatewayv1.GatewayConditionAccepted),
 						Status:  metav1.ConditionTrue,
-						Message: "Gateway accepted by other-controller",
+						Message: GatewayAcceptedMessagePrefix + "other-controller",
 					},
 				},
 			},
 		}
-		assert.False(t, isGatewayAcceptedByController(gw, "test-controller"))
+		assert.False(t, IsGatewayAcceptedByController(gw, "test-controller"))
+	})
+
+	// Regression test: controllerName must be matched as the exact remainder after
+	// GatewayAcceptedMessagePrefix, not merely as a bare suffix of the whole message. Before this was
+	// anchored to the prefix, a shorter controller name that happened to be a suffix of a
+	// longer, different one (e.g. "org/gateway-controller" is a suffix of
+	// "meridio-2.nordix.org/gateway-controller") would false-positive match.
+	t.Run("ShorterControllerNameSuffixOfDifferentController_NotAccepted", func(t *testing.T) {
+		gw := &gatewayv1.Gateway{
+			Status: gatewayv1.GatewayStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(gatewayv1.GatewayConditionAccepted),
+						Status:  metav1.ConditionTrue,
+						Message: GatewayAcceptedMessagePrefix + "meridio-2.nordix.org/gateway-controller",
+					},
+				},
+			},
+		}
+		assert.False(t, IsGatewayAcceptedByController(gw, "org/gateway-controller"))
+		assert.True(t, IsGatewayAcceptedByController(gw, "meridio-2.nordix.org/gateway-controller"))
 	})
 
 	t.Run("NotAccepted", func(t *testing.T) {
@@ -66,32 +87,15 @@ func TestIsGatewayAcceptedByController(t *testing.T) {
 				},
 			},
 		}
-		assert.False(t, isGatewayAcceptedByController(gw, "test-controller"))
+		assert.False(t, IsGatewayAcceptedByController(gw, "test-controller"))
 	})
 
 	t.Run("NoConditions", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{}
-		assert.False(t, isGatewayAcceptedByController(gw, "test-controller"))
-	})
-}
-
-func TestFindAcceptedConditionIndex(t *testing.T) {
-	t.Run("FoundAtIndex0", func(t *testing.T) {
-		gw := &gatewayv1.Gateway{
-			Status: gatewayv1.GatewayStatus{
-				Conditions: []metav1.Condition{
-					{
-						Type:    string(gatewayv1.GatewayConditionAccepted),
-						Status:  metav1.ConditionTrue,
-						Message: "Gateway accepted by test-controller",
-					},
-				},
-			},
-		}
-		assert.Equal(t, 0, findAcceptedConditionIndex(gw, "test-controller"))
+		assert.False(t, IsGatewayAcceptedByController(gw, "test-controller"))
 	})
 
-	t.Run("FoundAtIndex1", func(t *testing.T) {
+	t.Run("FoundNotAtIndex0", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
 			Status: gatewayv1.GatewayStatus{
 				Conditions: []metav1.Condition{
@@ -102,46 +106,46 @@ func TestFindAcceptedConditionIndex(t *testing.T) {
 					{
 						Type:    string(gatewayv1.GatewayConditionAccepted),
 						Status:  metav1.ConditionTrue,
-						Message: "Gateway accepted by test-controller",
+						Message: GatewayAcceptedMessagePrefix + "test-controller",
 					},
 				},
 			},
 		}
-		assert.Equal(t, 1, findAcceptedConditionIndex(gw, "test-controller"))
+		assert.True(t, IsGatewayAcceptedByController(gw, "test-controller"))
 	})
+}
 
-	t.Run("NotFound_DifferentController", func(t *testing.T) {
+func TestIsGatewayProgrammed(t *testing.T) {
+	t.Run("ProgrammedTrue", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
 			Status: gatewayv1.GatewayStatus{
 				Conditions: []metav1.Condition{
 					{
-						Type:    string(gatewayv1.GatewayConditionAccepted),
-						Status:  metav1.ConditionTrue,
-						Message: "Gateway accepted by other-controller",
+						Type:   string(gatewayv1.GatewayConditionProgrammed),
+						Status: metav1.ConditionTrue,
 					},
 				},
 			},
 		}
-		assert.Equal(t, -1, findAcceptedConditionIndex(gw, "test-controller"))
+		assert.True(t, IsGatewayProgrammed(gw))
 	})
 
-	t.Run("NotFound_StatusFalse", func(t *testing.T) {
+	t.Run("ProgrammedFalse", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
 			Status: gatewayv1.GatewayStatus{
 				Conditions: []metav1.Condition{
 					{
-						Type:    string(gatewayv1.GatewayConditionAccepted),
-						Status:  metav1.ConditionFalse,
-						Message: "Gateway accepted by test-controller",
+						Type:   string(gatewayv1.GatewayConditionProgrammed),
+						Status: metav1.ConditionFalse,
 					},
 				},
 			},
 		}
-		assert.Equal(t, -1, findAcceptedConditionIndex(gw, "test-controller"))
+		assert.False(t, IsGatewayProgrammed(gw))
 	})
 
-	t.Run("NotFound_NoConditions", func(t *testing.T) {
+	t.Run("NoConditions", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{}
-		assert.Equal(t, -1, findAcceptedConditionIndex(gw, "test-controller"))
+		assert.False(t, IsGatewayProgrammed(gw))
 	})
 }
