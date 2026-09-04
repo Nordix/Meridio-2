@@ -23,6 +23,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/metrics"
 )
 
 func TestValidate_InvalidPodCacheLabel(t *testing.T) {
@@ -55,6 +56,7 @@ func TestValidate_InvalidPodCacheLabel(t *testing.T) {
 func TestValidate_CertWaitTimeoutExceedsMax(t *testing.T) {
 	cfg := &config.ManagerConfig{
 		CertWaitTimeout: 2 * time.Minute,
+		MetricsPrefix:   metrics.DefaultPrefix,
 	}
 	err := validateConfig(cfg)
 	if err == nil {
@@ -65,6 +67,27 @@ func TestValidate_CertWaitTimeoutExceedsMax(t *testing.T) {
 func TestValidate_CertWaitTimeoutValid(t *testing.T) {
 	cfg := &config.ManagerConfig{
 		CertWaitTimeout: 30 * time.Second,
+		MetricsPrefix:   metrics.DefaultPrefix,
+	}
+	err := validateConfig(cfg)
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidate_MetricsPrefixInvalid(t *testing.T) {
+	cfg := &config.ManagerConfig{
+		MetricsPrefix: "0invalid",
+	}
+	err := validateConfig(cfg)
+	if err == nil {
+		t.Error("expected metrics-prefix error, got nil")
+	}
+}
+
+func TestValidate_MetricsPrefixValid(t *testing.T) {
+	cfg := &config.ManagerConfig{
+		MetricsPrefix: metrics.DefaultPrefix,
 	}
 	err := validateConfig(cfg)
 	if err != nil {
@@ -95,5 +118,20 @@ func TestNewCommand_CreatesCommand(t *testing.T) {
 	}
 	if cmd.Flags().Lookup("controller-name") == nil {
 		t.Error("expected --controller-name flag to be registered")
+	}
+}
+
+// TestRegisterMetricsCollectors_DisabledIsNoOp confirms registerMetricsCollectors returns
+// immediately without touching mgr when metrics are disabled (--metrics-bind-address "0"), the
+// project-wide sentinel for "metrics off". This is checked with mgr left nil: if the disabled
+// gate were ever removed or reordered after a call that dereferences mgr, this test would panic
+// rather than silently pass, which is a stronger signal than passing a non-nil mgr and merely
+// asserting "no error".
+func TestRegisterMetricsCollectors_DisabledIsNoOp(t *testing.T) {
+	cfg := &config.ManagerConfig{MetricsAddr: "0"}
+
+	err := registerMetricsCollectors(nil, cfg)
+	if err != nil {
+		t.Errorf("expected no error when metrics disabled, got: %v", err)
 	}
 }
