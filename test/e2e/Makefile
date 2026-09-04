@@ -367,6 +367,23 @@ test-resiliency: ## Run process recovery tests.
 undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
 
 ################################################################################
+##@ Suite: bgp
+################################################################################
+
+.PHONY: bgp
+bgp: deploy-bgp test-bgp ## Deploy and test BGP VIP advertisement suite.
+
+.PHONY: deploy-bgp
+deploy-bgp: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+
+.PHONY: test-bgp
+test-bgp: ## Run BGP VIP advertisement tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="E2E BGP VIP Advertisement" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-bgp
+undeploy-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+
+################################################################################
 ##@ Suite: pod-cache-label
 ################################################################################
 
