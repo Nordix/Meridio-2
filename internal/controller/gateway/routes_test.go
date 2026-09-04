@@ -26,6 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 )
 
 func TestRouteReferencesGateway(t *testing.T) {
@@ -106,7 +108,7 @@ func TestMapL34RouteToGateway(t *testing.T) {
 					{
 						Type:    string(gatewayv1.GatewayConditionAccepted),
 						Status:  metav1.ConditionTrue,
-						Message: "Gateway accepted by " + testControllerName,
+						Message: gatewayutil.GatewayAcceptedMessagePrefix + testControllerName,
 					},
 				},
 			},

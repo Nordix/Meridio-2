@@ -26,6 +26,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 )
 
 // mapPodToDistributionGroup maps Pod changes to DistributionGroup reconciliation requests
@@ -73,7 +75,7 @@ func (r *DistributionGroupReconciler) mapGatewayToDistributionGroup(ctx context.
 
 	// Filter early: only process Gateways accepted by this controller
 	// This avoids unnecessary reconciliation loops for irrelevant Gateways
-	if !r.isGatewayAccepted(gw) {
+	if !gatewayutil.IsGatewayAcceptedByController(gw, r.ControllerName) {
 		return nil
 	}
 
@@ -126,7 +128,7 @@ func (r *DistributionGroupReconciler) mapGatewayConfigToDistributionGroup(ctx co
 				string(ref.Kind) == kindGatewayConfiguration &&
 				ref.Name == gwConfig.Name {
 				// Only include Gateways accepted by this controller
-				if r.isGatewayAccepted(&gw) {
+				if gatewayutil.IsGatewayAcceptedByController(&gw, r.ControllerName) {
 					gatewayKeys = append(gatewayKeys, client.ObjectKeyFromObject(&gw))
 				}
 			}

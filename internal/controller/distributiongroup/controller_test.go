@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 )
 
 const (
@@ -145,7 +147,7 @@ func tcNewGateway(accepted bool) *gatewayv1.Gateway {
 			Type:    string(gatewayv1.GatewayConditionAccepted),
 			Status:  metav1.ConditionTrue,
 			Reason:  "Accepted",
-			Message: "Managed by " + tcControllerName,
+			Message: gatewayutil.GatewayAcceptedMessagePrefix + tcControllerName,
 		}}
 	}
 	return gw
