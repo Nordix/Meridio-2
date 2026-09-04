@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+
+	"github.com/nordix/meridio-2/internal/common/metrics"
 )
 
 // ManagerConfig holds configuration for the controller manager
@@ -41,6 +43,10 @@ type ManagerConfig struct {
 	// Security
 	SecureMetrics bool
 	EnableHTTP2   bool
+
+	// Metrics
+	MetricsPrefix         string
+	MetricsCollectTimeout time.Duration
 
 	// Logging
 	LogLevel    string
@@ -95,6 +101,19 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"If set, the metrics endpoint is served securely via HTTPS.")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	fs.StringVar(&c.MetricsPrefix, "metrics-prefix", metrics.DefaultPrefix,
+		"Prefix for custom Meridio-2 metric names. Must start with a lowercase letter and contain only "+
+			"lowercase letters, digits, and underscores. Maximum 10 characters.")
+	fs.DurationVar(&c.MetricsCollectTimeout, "metrics-collect-timeout", 5*time.Second,
+		"Maximum time a single metrics scrape will wait for the informer cache to finish its initial "+
+			"sync before reporting a collection error. Kept deliberately shorter than Prometheus's own "+
+			"default scrape_timeout (10s): prometheus/client_golang's Gather has no way to be "+
+			"cancelled by the scraper disconnecting, so this timeout is the only thing that can make "+
+			"a not-yet-synced-cache scrape fail with our specific, actionable error instead of a "+
+			"generic timeout on Prometheus's side. Setting this equal to or above the scrape's "+
+			"scrape_timeout risks losing that race most of the time (Prometheus's clock starts before "+
+			"ours does), which is why raising it further is discouraged rather than recommended for "+
+			"large clusters — prefer leaving it below whatever scrape_timeout is configured.")
 	fs.StringVar(&c.LogLevel, "log-level", "info",
 		"Log level (debug, info, warn, error)")
 	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
@@ -142,6 +161,8 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindBool(fs, "enable-webhooks", "MERIDIO_ENABLE_WEBHOOKS", &c.EnableWebhooks)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
+	bindString(fs, "metrics-prefix", "MERIDIO_METRICS_PREFIX", &c.MetricsPrefix)
+	bindDuration(fs, "metrics-collect-timeout", "MERIDIO_METRICS_COLLECT_TIMEOUT", &c.MetricsCollectTimeout)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
 	bindInt(fs, "max-endpoints-per-slice", "MERIDIO_MAX_ENDPOINTS_PER_SLICE", &c.MaxEndpointsPerSlice)
