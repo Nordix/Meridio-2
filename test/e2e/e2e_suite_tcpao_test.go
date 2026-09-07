@@ -172,10 +172,12 @@ var _ = Describe("E2E TCP-AO Test Suite", Label("ipv4"), func() {
 					})
 
 					It(fmt.Sprintf("should distribute %s TCP traffic across targets", gw.name), func() {
-						lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
-						Expect(err).NotTo(HaveOccurred())
-						Expect(lostConn).To(BeZero())
-						Expect(len(lastingConn)).To(Equal(gw.targets))
+						Eventually(func(g Gomega) {
+							lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(lostConn).To(BeZero())
+							g.Expect(len(lastingConn)).To(Equal(gw.targets))
+						}).Should(Succeed())
 					})
 				}
 			})

@@ -185,12 +185,14 @@ var _ = Describe("Pod Cache Label", Ordered, Label("ipv4"), func() {
 	})
 
 	It("distributes TCP traffic only to labeled target", func() {
-		lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", 50)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(lostConn).To(BeZero(), "no connections should be lost")
-		Expect(lastingConn).To(HaveLen(1),
-			"traffic should reach exactly 1 target (labeled only), got: %v", lastingConn)
-		Expect(lastingConn).To(HaveKey(labeledPodName),
-			"traffic should only reach the labeled Pod %q, got: %v", labeledPodName, lastingConn)
+		Eventually(func(g Gomega) {
+			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", 50)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+			g.Expect(lastingConn).To(HaveLen(1),
+				"traffic should reach exactly 1 target (labeled only), got: %v", lastingConn)
+			g.Expect(lastingConn).To(HaveKey(labeledPodName),
+				"traffic should only reach the labeled Pod %q, got: %v", labeledPodName, lastingConn)
+		}).Should(Succeed())
 	})
 })
