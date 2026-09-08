@@ -35,11 +35,14 @@ spec:
         # File-based readiness: pod is Ready while /tmp/ready exists. E2E tests
         # can flip a running pod to NotReady (without a rollout) by removing the
         # file via kubectl exec, then restore it by re-creating the file.
+        # periodSeconds: 2 + failureThreshold: 3 (the default, set explicitly)
+        # give ~6s to detect NotReady and ~2s to recover — well within the
+        # tests' Eventually timeouts.
         readinessProbe:
           exec:
             command: ["cat", "/tmp/ready"]
           periodSeconds: 2
-          failureThreshold: 1
+          failureThreshold: 3
         securityContext:
           runAsNonRoot: true
           capabilities:
