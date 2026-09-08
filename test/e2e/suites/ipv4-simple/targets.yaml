@@ -28,9 +28,18 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - |
+          touch /tmp/ready ;
           screen -d -m bash -c "./ctraffic -server -address [::]:5000" ;
           screen -d -m bash -c "./ctraffic -server -udp -address [::]:5001" ;
           trap 'exit 0' TERM; sleep infinity & wait
+        # File-based readiness: pod is Ready while /tmp/ready exists. E2E tests
+        # can flip a running pod to NotReady (without a rollout) by removing the
+        # file via kubectl exec, then restore it by re-creating the file.
+        readinessProbe:
+          exec:
+            command: ["cat", "/tmp/ready"]
+          periodSeconds: 2
+          failureThreshold: 1
         securityContext:
           runAsNonRoot: true
           capabilities:
