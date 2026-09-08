@@ -367,6 +367,23 @@ test-resiliency: ## Run process recovery tests.
 undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
 
 ################################################################################
+##@ Suite: traffic-exclusion
+################################################################################
+
+.PHONY: traffic-exclusion
+traffic-exclusion: deploy-traffic-exclusion test-traffic-exclusion ## Deploy and test traffic-exclusion suite.
+
+.PHONY: deploy-traffic-exclusion
+deploy-traffic-exclusion: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+
+.PHONY: test-traffic-exclusion
+test-traffic-exclusion: ## Run NotReady target traffic exclusion tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Traffic Exclusion" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-traffic-exclusion
+undeploy-traffic-exclusion: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+
+################################################################################
 ##@ Suite: pod-cache-label
 ################################################################################
 
