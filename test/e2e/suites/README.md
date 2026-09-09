@@ -63,23 +63,23 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 
 ## VLAN & ASN Allocation Table
 
-| VLAN ID | Suite | Gateway | External Subnet (IPv4) | External Subnet (IPv6) | Internal Subnet (IPv4) | Internal Subnet (IPv6) | VIP(s) | Local ASN | Remote ASN |
-|---------|-------|---------|----------------------|----------------------|----------------------|----------------------|--------|-----------|------------|
-| 100 | separate-appnetwork-v4 | gw-a1 | `169.254.10.0/24` | — | `169.111.10.0/24` | — | `10.0.0.1/32` | 64512 | 4200000000 |
-| 100 | dual-stack | gw-ds | `169.254.10.0/24` | `fd00:cafe:10::/64` | `169.111.10.0/24` | `fd00:cafe:110::/64` | `10.0.0.1/32`, `fd00:cafe:1::1/128` | 64512 | 4200000000 |
-| 200 | separate-appnetwork-v4 | gw-a2 | `169.254.11.0/24` | — | `169.111.10.0/24` | — | `10.0.0.2/32` | 64513 | 4200000000 |
-| 300 | shared-appnetwork | gw-b1 | `169.254.20.0/24` | — | `169.111.20.0/24` | — | `20.0.0.1/32` | 64514 | 4200000000 |
-| 400 | shared-appnetwork | gw-b2 | `169.254.21.0/24` | — | `169.111.20.0/24` | — | `20.0.0.2/32` | 64515 | 4200000000 |
-| 500 | sctp-multihoming | sctp-gw1 | `169.254.30.0/24` | — | `169.111.30.0/24` | — | `30.0.0.1/32` | 64516 | 4200000000 |
-| 600 | sctp-multihoming | sctp-gw2 | `169.254.31.0/24` | — | `169.111.30.0/24` | — | `30.0.0.2/32` | 64517 | 4200000000 |
-| 700 | ipv4-simple | gw-m1 | `169.254.40.0/24` | — | `169.111.40.0/24` | — | `40.0.0.1/32` | 64518 | 4200000000 |
-| 800 | pod-cache-label | gw-pcl | `169.254.50.0/24` | — | `169.111.50.0/24` | — | `50.0.0.1/32` | 64519 | 4200000000 |
-| 900 | tcp-ao | gw-t1 | `169.254.60.0/24` | — | `169.111.60.0/24` | — | `60.0.0.1/32` | 64520 | 4200000000 |
-| 1000 | tcp-ao | gw-t2 | `169.254.61.0/24` | — | `169.111.60.0/24` | — | `60.0.0.2/32` | 64521 | 4200000000 |
-| 1100 | separate-static-appnetwork | gw-a1 | `169.254.110.0/24` | — | `169.111.110.0/24` | — | `110.0.0.1/32` | — (static+BFD) | — |
-| 1200 | separate-static-appnetwork | gw-a2 | `169.254.111.0/24` | — | `169.111.110.0/24` | — | `110.0.0.2/32` | — (static+BFD) | — |
-| 1300 | separate-appnetwork-v6 | gw-v6a1 | — | `fd00:cafe:70::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::1/128` | 64522 | 4200000000 |
-| 1400 | separate-appnetwork-v6 | gw-v6a2 | — | `fd00:cafe:71::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::2/128` | 64523 | 4200000000 |
+| VLAN ID | Suite | IP Family | Gateway | External Subnet (IPv4) | External Subnet (IPv6) | Internal Subnet (IPv4) | Internal Subnet (IPv6) | VIP(s) | Local ASN | Remote ASN |
+|---------|-------|-----------|---------|----------------------|----------------------|----------------------|----------------------|--------|-----------|------------|
+| 100 | separate-appnetwork-v4 | IPv4 | gw-a1 | `169.254.10.0/24` | — | `169.111.10.0/24` | — | `10.0.0.1/32` | 64512 | 4200000000 |
+| 100 | dual-stack | dual-stack | gw-ds | `169.254.10.0/24` | `fd00:cafe:10::/64` | `169.111.10.0/24` | `fd00:cafe:110::/64` | `10.0.0.1/32`, `fd00:cafe:1::1/128` | 64512 | 4200000000 |
+| 200 | separate-appnetwork-v4 | IPv4 | gw-a2 | `169.254.11.0/24` | — | `169.111.10.0/24` | — | `10.0.0.2/32` | 64513 | 4200000000 |
+| 300 | shared-appnetwork | IPv4 | gw-b1 | `169.254.20.0/24` | — | `169.111.20.0/24` | — | `20.0.0.1/32` | 64514 | 4200000000 |
+| 400 | shared-appnetwork | IPv4 | gw-b2 | `169.254.21.0/24` | — | `169.111.20.0/24` | — | `20.0.0.2/32` | 64515 | 4200000000 |
+| 500 | sctp-multihoming | IPv4 | sctp-gw1 | `169.254.30.0/24` | — | `169.111.30.0/24` | — | `30.0.0.1/32` | 64516 | 4200000000 |
+| 600 | sctp-multihoming | IPv4 | sctp-gw2 | `169.254.31.0/24` | — | `169.111.30.0/24` | — | `30.0.0.2/32` | 64517 | 4200000000 |
+| 700 | ipv4-simple | IPv4 | gw-m1 | `169.254.40.0/24` | — | `169.111.40.0/24` | — | `40.0.0.1/32` | 64518 | 4200000000 |
+| 800 | pod-cache-label | IPv4 | gw-pcl | `169.254.50.0/24` | — | `169.111.50.0/24` | — | `50.0.0.1/32` | 64519 | 4200000000 |
+| 900 | tcp-ao | IPv4 | gw-t1 | `169.254.60.0/24` | — | `169.111.60.0/24` | — | `60.0.0.1/32` | 64520 | 4200000000 |
+| 1000 | tcp-ao | IPv4 | gw-t2 | `169.254.61.0/24` | — | `169.111.60.0/24` | — | `60.0.0.2/32` | 64521 | 4200000000 |
+| 1100 | separate-static-appnetwork | IPv4 | gw-a1 | `169.254.110.0/24` | — | `169.111.110.0/24` | — | `110.0.0.1/32` | — (static+BFD) | — |
+| 1200 | separate-static-appnetwork | IPv4 | gw-a2 | `169.254.111.0/24` | — | `169.111.110.0/24` | — | `110.0.0.2/32` | — (static+BFD) | — |
+| 1300 | separate-appnetwork-v6 | IPv6 | gw-v6a1 | — | `fd00:cafe:70::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::1/128` | 64522 | 4200000000 |
+| 1400 | separate-appnetwork-v6 | IPv6 | gw-v6a2 | — | `fd00:cafe:71::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::2/128` | 64523 | 4200000000 |
 
 **Next available:** VLAN 1500, ASN 64524, external `169.254.80.0/24` / `fd00:cafe:80::/64`, internal `169.111.80.0/24` / `fd00:cafe:180::/64`, VIP `80.0.0.1/32` / `fd00:cafe:8::1/128`
 
@@ -100,6 +100,16 @@ For dual-stack suites, additionally:
 - External IPv6: `fd00:cafe:{X}::/64` where X is a new unique identifier
 - Internal IPv6: `fd00:cafe:1{X}0::/64` (MUST differ from external)
 - VIP IPv6: `fd00:cafe:{Z}::{N}/128`
+
+Also record the suite's **IP Family** in the allocation table — one of `IPv4`,
+`IPv6`, or `dual-stack` — matching which address families the suite exercises.
+
+**VLAN IDs may be reused across suites of a different IP Family.** A VLAN ID is
+only unique per IP family, so the same VLAN can host one IPv4 suite, one IPv6
+suite, and one dual-stack suite. For example, VLAN 100 is shared by
+`separate-appnetwork-v4` (IPv4) and `dual-stack` (dual-stack); a pure-IPv6 suite
+could reuse VLAN 100 as well. Suites that share a VLAN ID are mutually exclusive
+and cannot be deployed simultaneously (see Notes).
 
 ### 2. Register on the VPN gateway
 
@@ -189,7 +199,7 @@ Use `e2e-{suite-name}` (e.g., `e2e-dual-stack`, `e2e-separate-appnetwork-v4`).
 ## Maintaining This Document
 
 Update this README whenever you add, remove, or modify a test suite. Specifically:
-- Add new rows to the VLAN & ASN Allocation Table
+- Add new rows to the VLAN & ASN Allocation Table (including the suite's IP Family)
 - Update the "Next available" line
 - Document any new addressing patterns or conventions introduced
 
@@ -199,6 +209,6 @@ Update this README whenever you add, remove, or modify a test suite. Specificall
 - The VPN gateway's remote ASN is always `4200000000`
 - All BGP sessions use port `10179` (both local and remote)
 - BFD is enabled on all sessions with 300ms intervals and multiplier 3 (or 5 for SCTP)
-- The `separate-appnetwork-v4` and `dual-stack` suites share VLAN 100 — they cannot run simultaneously
-- Suites sharing the same VLAN are mutually exclusive (deploy only one at a time)
+- A VLAN ID is unique only per IP Family: the same VLAN ID may be reused by suites of a different IP Family (e.g. one IPv4, one IPv6, and one dual-stack suite could all use VLAN 100)
+- Suites sharing the same VLAN ID are mutually exclusive (deploy only one at a time), regardless of IP Family
 - The `separate-static-appnetwork` suite uses static routing with BFD. LB pod IPs are limited to `.1`-`.10` per VLAN (max 10 replicas per gateway) to match the gateway's pre-configured static routes.
