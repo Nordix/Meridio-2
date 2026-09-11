@@ -228,6 +228,36 @@ undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 #################################################################################
+##@ Suite: bfd-detection
+################################################################################
+
+# Reuses the separate-appnetwork-v4 topology and re-patches its two
+# GatewayRouters (via the suites/bfd-detection overlay) so one keeps BFD and the
+# other has it removed, to compare BGP-down detection time (hold time vs BFD).
+# Because it mutates separate-appnetwork-v4 in place, it is mutually exclusive
+# with the separate-appnetwork-v4 traffic tests. The test's AfterAll restores
+# the original routing; undeploy-bfd-detection also reverts it.
+
+.PHONY: bfd-detection
+bfd-detection: deploy-bfd-detection test-bfd-detection ## Deploy and test bfd-detection suite.
+
+.PHONY: deploy-bfd-detection
+deploy-bfd-detection: deploy-separate-appnetwork-v4 ## Deploy separate-appnetwork-v4 and patch routers for BFD detection.
+	@echo "Applying bfd-detection overlay (BFD on gw-a1-router-v4, removed from gw-a2-router-v4)..."
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone $(shell pwd)/suites/bfd-detection | \
+		$(KUBECTL) apply -n e2e-separate-appnetwork-v4 -f -
+
+.PHONY: test-bfd-detection
+test-bfd-detection: ## Run e2e tests for bfd-detection suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="BFD Detection" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-bfd-detection
+undeploy-bfd-detection: ## Revert the bfd-detection patch and undeploy separate-appnetwork-v4.
+	@echo "Reverting bfd-detection overlay to base separate-appnetwork-v4 routing..."
+	@$(KUBECTL) apply -n e2e-separate-appnetwork-v4 -f $(shell pwd)/suites/separate-appnetwork-v4/routing.yaml --ignore-not-found=true 2>/dev/null || true
+	$(MAKE) undeploy-separate-appnetwork-v4
+
+#################################################################################
 ##@ Suite: separate-appnetwork-v6
 ################################################################################
 
