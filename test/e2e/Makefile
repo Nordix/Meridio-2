@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao bfd-detection
 SUITES_DS ?= dual-stack-simple
 SUITES_IPV6 ?= separate-appnetwork-v6
 
@@ -225,6 +225,32 @@ test-separate-appnetwork-v4: ## Run e2e tests for separate-appnetwork-v4 suite.
 undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
 	@NS=e2e-separate-appnetwork-v4; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v4 --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#################################################################################
+##@ Suite: bfd-detection
+################################################################################
+
+# Standalone single-gateway suite (VLAN 1500, gw-bfd). The GatewayRouter starts
+# with BFD enabled; the test compares BGP-down detection time with BFD (~0.9s)
+# against the BGP hold timer (~15s) by patching the router at runtime, and
+# restores BFD afterwards.
+
+.PHONY: bfd-detection
+bfd-detection: deploy-bfd-detection test-bfd-detection ## Deploy and test bfd-detection suite.
+
+.PHONY: deploy-bfd-detection
+deploy-bfd-detection: cluster ## Deploy bfd-detection topology.
+	$(call deploy-suite,e2e-bfd-detection,$(shell pwd)/suites/bfd-detection,bfd-detection,sllbr-gw-bfd)
+
+.PHONY: test-bfd-detection
+test-bfd-detection: ## Run e2e tests for bfd-detection suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="BFD Detection" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-bfd-detection
+undeploy-bfd-detection: ## Undeploy bfd-detection topology.
+	@NS=e2e-bfd-detection; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-bfd-detection --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 #################################################################################
