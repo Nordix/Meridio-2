@@ -56,7 +56,7 @@ RUN groupadd --gid $UID $USER \
 WORKDIR $HOME
 
 # Install ctraffic
-ADD https://github.com/Nordix/ctraffic/releases/download/v1.7.0/ctraffic.gz ctraffic.gz
+ADD https://github.com/Nordix/ctraffic/releases/download/v1.10.1/ctraffic.gz ctraffic.gz
 RUN gunzip ctraffic.gz && chmod a+x ctraffic
 
 # Install mconnect
