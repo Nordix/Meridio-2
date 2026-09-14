@@ -114,28 +114,36 @@ The CRD-level default for `maxEndpoints` has been removed. When the `maglev` blo
 
 When a Node becomes unreachable, the DG controller does not independently detect this. Endpoint removal (and Maglev ID reallocation) is deferred until Kubernetes evicts and deletes the Pod. With default tolerations this takes ~5m40s. Applications can control this via Pod `tolerationSeconds` for `node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable` taints (e.g., 30s for faster eviction). This is intentional: relying on Kubernetes Pod lifecycle prevents premature Maglev ID reallocation that could occur if the node is temporarily unreachable rather than permanently failed.
 
+**23. Direct and indirect Gateway references are treated as equivalent association sources** *(architectural constraint)*
+
+A DistributionGroup can be associated with a Gateway two ways: directly via `DistributionGroup.spec.parentRefs`, or indirectly via an L34Route whose `backendRefs` point at the DG and whose `parentRefs` point at the Gateway. The DG controller resolves the union of both, deduplicated by object key, then keeps only Gateways with an `Accepted=True` condition set by this controller. Neither source is privileged over the other.
+
+This equal handling is a deliberate design decision, chosen primarily to keep the architecture extensible toward supporting multiple Gateway associations per DG in the future, rather than baking in special validation for the direct `parentRefs` path that would later have to be unwound.
+
+The implicit consequence is that an "invalid" direct `parentRef` is silently ignored rather than rejected: a `parentRef` naming a non-existent Gateway is dropped during resolution, and one naming a Gateway that is not Accepted by this controller is dropped by the Accepted filter. In either case the DG still functions if it has a valid indirect association — the unusable direct `parentRef` simply contributes nothing, and produces no error, event, or status condition. The one case where a stray `parentRef` changes behavior is when it resolves to an accepted Gateway *different* from the one reached indirectly: the DG then references more than one accepted Gateway and is frozen with `Ready=False`, reason `MultipleGateways` (single-Gateway restriction). If it resolves to the same Gateway, deduplication collapses them and the redundant `parentRef` is harmless.
+
 ## Deployment / Operations
 
-**23. ~~No runtime log level change~~ (Resolved)**
+**24. ~~No runtime log level change~~ (Resolved)**
 
 Log level can now be changed at runtime via an opt-in HTTP endpoint. Set `--log-level-api` / `MERIDIO_LOG_LEVEL_API` to a loopback address (e.g., `127.0.0.1:9901`) to enable the feature. The endpoint exposes GET/PUT on `/log/level` and is restricted to localhost only. Changes are ephemeral (reset on container restart). When the env var is empty (default), the feature is disabled and log level remains static as before.
 
-**24. ~~No cert-wait-timeout~~ (Resolved)**
+**25. ~~No cert-wait-timeout~~ (Resolved)**
 
 The controller-manager now waits for TLS certificates before starting (default: 10s, maximum: 1m, configurable via `--cert-wait-timeout`). This avoids unnecessary restart cycles when deployed simultaneously with cert-manager.
 
-**25. Minimum Kubernetes version 1.31** *(architectural constraint)*
+**26. Minimum Kubernetes version 1.31** *(architectural constraint)*
 
 Required by CEL CIDR/IP validation libraries used in CRD validation rules (`isCIDR()`, `cidr().prefixLength()`, `ip().family()`). For MVP, some CEL validations have been temporarily removed to allow running on older Kubernetes versions where test environments with 1.31+ were not available. This is a temporary workaround — the full CEL validations must be restored for production use.
 
-**26. Upgrades not verified**
+**27. Upgrades not verified**
 
 No upgrade path has been tested or documented. In-place upgrades of the controller-manager, LB Pods, or sidecar containers should be treated as untested. CRD schema changes, controller behavior changes between versions may cause disruption.
 
-**27. Scaling not extensively verified**
+**28. Scaling not extensively verified**
 
 Basic functionality has been tested with a small number of Gateways, DistributionGroups, and application Pods. Behavior at scale (many Gateways, large numbers of endpoints per DG, high Pod churn) has not been systematically verified. Dynamic scaling of LB Deployment replicas (via `GatewayConfiguration.spec.horizontalScaling` or HPA) has also not been extensively tested. Scaling may work but is best-effort for the MVP.
 
-**28. ~~Controller-manager multi-replica deployment not verified~~ (Resolved)**
+**29. ~~Controller-manager multi-replica deployment not verified~~ (Resolved)**
 
 Leader election is enabled by default in the deployment manifest (`--leader-elect`). Leader election tuning parameters are exposed (`--leader-elect-lease-duration`, `--leader-elect-renew-deadline`, `--leader-elect-retry-period`, `--leader-elect-release-on-cancel`). Pod tolerations for `node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable` are set to 30 seconds (reduced from default 300s) for faster failover on node failure. Multi-replica deployment with leader election has been verified.
