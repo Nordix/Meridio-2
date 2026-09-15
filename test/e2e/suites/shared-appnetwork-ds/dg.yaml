@@ -1,0 +1,26 @@
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-bds1
+spec:
+  selector:
+    matchLabels:
+      app: target-bds
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-bds1
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-bds2
+spec:
+  selector:
+    matchLabels:
+      app: target-bds
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-bds2

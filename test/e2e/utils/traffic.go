@@ -4,6 +4,7 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -56,6 +57,90 @@ func SendTraffic(vip string, port int, protocol string, nconn int) (map[string]i
 	}
 
 	return parseCtrafficOutput(out)
+}
+
+// TrafficHandle represents a ctraffic run launched in the background by
+// StartTraffic. Call Wait to block until the run finishes and obtain its stats.
+type TrafficHandle struct {
+	cmd *exec.Cmd
+	out *bytes.Buffer
+}
+
+// StartTraffic launches ctraffic in the background against the given VIP:port,
+// holding nconn connections open for the given duration. Because it is
+// non-blocking, the caller can trigger an action (e.g. scaling endpoints)
+// while traffic is in flight, then call Wait to measure how the in-flight
+// connections were affected.
+//
+// It uses ctraffic's continuous-traffic/monitor mode (v1.10.x), which reports
+// lost connections and disturbances over the run window. The -retries option
+// keeps a short scale-induced blip from aborting the run prematurely while
+// still surfacing it in the stats.
+func StartTraffic(vip string, port int, protocol string, nconn int, duration time.Duration, retries int) (*TrafficHandle, error) {
+	addr := fmt.Sprintf("%s:%d", vip, port)
+	if strings.Contains(vip, ":") {
+		addr = fmt.Sprintf("[%s]:%d", vip, port) // IPv6
+	}
+
+	protoFlag := ""
+	if protocol == "udp" {
+		protoFlag = "-udp"
+	}
+
+	cmdStr := fmt.Sprintf(
+		"%s ctraffic %s -address %s -nconn %d -timeout %s -monitor -stats all -retries %d",
+		vpnGatewayExecPrefix(), protoFlag, addr, nconn, duration.String(), retries,
+	)
+	cmd := exec.Command("/bin/sh", "-c", cmdStr)
+
+	out := &bytes.Buffer{}
+	cmd.Stdout = out
+	cmd.Stderr = out
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start ctraffic: %w", err)
+	}
+
+	return &TrafficHandle{cmd: cmd, out: out}, nil
+}
+
+// Wait blocks until the background ctraffic run started by StartTraffic
+// finishes, then returns a map of target hostname → connection count and the
+// number of lost connections. A non-zero lost count does not by itself return
+// an error; callers decide whether the loss is within an acceptable bound.
+func (h *TrafficHandle) Wait() (map[string]int, int, error) {
+	waitErr := h.cmd.Wait()
+
+	// In -monitor mode ctraffic prints human-readable interval lines before the
+	// final JSON stats object. Extract the JSON object (first '{' .. last '}')
+	// so parseCtrafficOutput sees only valid JSON, matching non-monitor output.
+	raw := h.out.Bytes()
+	jsonBytes := extractJSONObject(raw)
+
+	// ctraffic exits non-zero on "too many reconnects" but still prints the
+	// final JSON stats block; parse first and only surface the wait error if
+	// the output could not be parsed.
+	hosts, lost, parseErr := parseCtrafficOutput(jsonBytes)
+	if parseErr != nil {
+		if waitErr != nil {
+			return nil, 0, fmt.Errorf("ctraffic failed: %w\noutput: %s", waitErr, h.out.String())
+		}
+		return nil, 0, parseErr
+	}
+
+	return hosts, lost, nil
+}
+
+// extractJSONObject returns the substring from the first '{' to the last '}'
+// (inclusive) in b, or b unchanged if no such bounds are found. This strips
+// any leading -monitor interval lines that precede the JSON stats object.
+func extractJSONObject(b []byte) []byte {
+	start := bytes.IndexByte(b, '{')
+	end := bytes.LastIndexByte(b, '}')
+	if start < 0 || end < 0 || end < start {
+		return b
+	}
+	return b[start : end+1]
 }
 
 // Ping sends ICMP echo from the VPN gateway to the given VIP.
