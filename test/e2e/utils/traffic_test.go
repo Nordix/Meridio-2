@@ -48,6 +48,16 @@ Table master4:
 	Internal route handling values: 0L 4G 0S id 1
 `
 
+// Exact /32 present, but locally-originated (static/blackhole) — must NOT count
+// as advertised via BGP.
+const showRouteStaticVIP = `BIRD 3.1.2 ready.
+Table master4:
+10.0.0.1/32          blackhole [DEFAULT4 07:31:28.285] * (110)
+	preference: 110
+	source: static
+	Internal route handling values: 0L 4G 0S id 1
+`
+
 func TestExactPrefixBlock_Present(t *testing.T) {
 	block, found := exactPrefixBlock(showRoutePresentVIP, "10.0.0.1/32")
 	if !found {
@@ -98,5 +108,17 @@ func TestParseVPNGatewayRouteNextHops(t *testing.T) {
 		if nextHops[i] != want[i] {
 			t.Errorf("next-hop[%d]: expected %s, got %s", i, want[i], nextHops[i])
 		}
+	}
+}
+
+func TestRouteIsBGPSourced(t *testing.T) {
+	if !routeIsBGPSourced(showRoutePresentVIP, "10.0.0.1/32") {
+		t.Errorf("BGP-learned VIP should count as advertised")
+	}
+	if routeIsBGPSourced(showRouteStaticVIP, "10.0.0.1/32") {
+		t.Errorf("static/blackhole route for the VIP must NOT count as advertised")
+	}
+	if routeIsBGPSourced(showRouteAbsentVIP, "10.0.0.1/32") {
+		t.Errorf("absent VIP must NOT count as advertised")
 	}
 }

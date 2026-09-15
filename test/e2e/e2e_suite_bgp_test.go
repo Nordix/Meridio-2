@@ -84,37 +84,42 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 				return bgpCountReadyTargets(clientset, namespace, targetLabel)
 			}).WithTimeout(120 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
 			_ = bgpExecAllTargets(clientset, namespace, targetLabel, "touch", "/tmp/ready")
-			Eventually(func() bool {
-				ok, _ := e2eutils.VPNGatewayHasRoute(prefix)
-				return ok
-			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(BeTrue())
+			Eventually(func(g Gomega) {
+				ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+				g.Expect(ok).To(BeTrue())
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 		})
 
 		By("verifying the VIP is advertised to the DCGW at start")
-		Eventually(func() bool {
-			ok, _ := e2eutils.VPNGatewayHasRoute(prefix)
-			return ok
-		}).WithTimeout(60*time.Second).WithPolling(2*time.Second).
-			Should(BeTrue(), "%s should be advertised before disruption", prefix)
+		Eventually(func(g Gomega) {
+			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+			g.Expect(ok).To(BeTrue(), "%s should be advertised before disruption", prefix)
+		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 	})
 
 	It("advertises the VIP to the DCGW over BGP with LB Pod next-hops", func() {
 		By("verifying the VIP is received on the DCGW via BGP")
-		Eventually(func() bool {
-			ok, _ := e2eutils.VPNGatewayHasRoute(prefix)
-			return ok
-		}).WithTimeout(60*time.Second).WithPolling(2*time.Second).
-			Should(BeTrue(), "VIP %s should be received on the DCGW via BGP", prefix)
+		Eventually(func(g Gomega) {
+			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+			g.Expect(ok).To(BeTrue(), "VIP %s should be received on the DCGW via BGP", prefix)
+		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 
 		By("verifying the VIP is installed with at least one ECMP next-hop")
 		// One next-hop per LB Pod (ECMP). We assert at least one rather than an
 		// exact count, since LB replica count is independent of the application
 		// target count.
-		Eventually(func() int {
-			nextHops, _ := e2eutils.VPNGatewayRouteNextHops(prefix)
-			return len(nextHops)
-		}).WithTimeout(60*time.Second).WithPolling(2*time.Second).
-			Should(BeNumerically(">=", 1), "expected at least one ECMP next-hop for %s", prefix)
+		Eventually(func(g Gomega) {
+			nextHops, err := e2eutils.VPNGatewayRouteNextHops(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW next-hops for %s failed", prefix)
+			g.Expect(len(nextHops)).To(BeNumerically(">=", 1),
+				"expected at least one ECMP next-hop for %s", prefix)
+		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 	})
 
 	It("withdraws VIP from DCGW when app replicas=0", func() {
@@ -127,11 +132,12 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeZero())
 
 		By("verifying the VIP is withdrawn from the DCGW")
-		Eventually(func() bool {
-			ok, _ := e2eutils.VPNGatewayHasRoute(prefix)
-			return ok
-		}).WithTimeout(90*time.Second).WithPolling(2*time.Second).
-			Should(BeFalse(), "%s should be withdrawn once no targets exist", prefix)
+		Eventually(func(g Gomega) {
+			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+			g.Expect(ok).To(BeFalse(), "%s should be withdrawn once no targets exist", prefix)
+		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 	})
 
 	It("re-advertises VIP to DCGW when app replicas are restored", func() {
@@ -142,11 +148,12 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 		}).WithTimeout(120 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
 
 		By("verifying the VIP is advertised again with ready pods")
-		Eventually(func() bool {
-			ok, _ := e2eutils.VPNGatewayHasRoute(prefix)
-			return ok
-		}).WithTimeout(90*time.Second).WithPolling(2*time.Second).
-			Should(BeTrue(), "%s should be re-advertised once targets exist again", prefix)
+		Eventually(func(g Gomega) {
+			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+			g.Expect(ok).To(BeTrue(), "%s should be re-advertised once targets exist again", prefix)
+		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 	})
 
 	It("withdraws VIP from DCGW when all backing pods become NotReady", func() {
@@ -164,11 +171,12 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeZero())
 
 		By("verifying the VIP is withdrawn from the DCGW")
-		Eventually(func() bool {
-			ok, _ := e2eutils.VPNGatewayHasRoute(prefix)
-			return ok
-		}).WithTimeout(90*time.Second).WithPolling(2*time.Second).
-			Should(BeFalse(), "%s should be withdrawn when all pods are NotReady", prefix)
+		Eventually(func(g Gomega) {
+			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+			g.Expect(ok).To(BeFalse(), "%s should be withdrawn when all pods are NotReady", prefix)
+		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 	})
 
 	It("re-advertises VIP to DCGW when pods become Ready again", func() {
@@ -181,18 +189,21 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
 
 		By("verifying the VIP is re-advertised to the DCGW")
-		Eventually(func() bool {
-			ok, _ := e2eutils.VPNGatewayHasRoute(prefix)
-			return ok
-		}).WithTimeout(90*time.Second).WithPolling(2*time.Second).
-			Should(BeTrue(), "%s should be re-advertised once pods are Ready", prefix)
+		Eventually(func(g Gomega) {
+			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+			g.Expect(ok).To(BeTrue(), "%s should be re-advertised once pods are Ready", prefix)
+		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 
 		By("verifying ECMP next-hops are present again on the DCGW")
-		Eventually(func() int {
-			nextHops, _ := e2eutils.VPNGatewayRouteNextHops(prefix)
-			return len(nextHops)
-		}).WithTimeout(90*time.Second).WithPolling(2*time.Second).
-			Should(BeNumerically(">=", 1), "expected at least one ECMP next-hop for %s after recovery", prefix)
+		Eventually(func(g Gomega) {
+			nextHops, err := e2eutils.VPNGatewayRouteNextHops(prefix)
+			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW next-hops for %s failed", prefix)
+			g.Expect(len(nextHops)).To(BeNumerically(">=", 1),
+				"expected at least one ECMP next-hop for %s after recovery", prefix)
+		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+			Should(Succeed())
 	})
 })
 

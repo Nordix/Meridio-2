@@ -416,35 +416,6 @@ func runBirdcOnVPNGateway(args string) (string, error) {
 	return string(out), nil
 }
 
-// VPNGatewayBGPEstablished checks, from the DCGW/VPN gateway side, whether a BGP
-// session with an LB router is Established. It inspects `birdc show protocols`.
-//
-// protoMatch is a substring matched against the protocol Name column. On the
-// gateway, peers are created dynamically from a `dynamic name "GW4_A1_"` prefix,
-// so the actual protocol names look like "GW4_A1_1", "GW4_A1_2", etc. Passing
-// "GW4_A1_" matches all of them; at least one must be Established for this to
-// return true.
-func VPNGatewayBGPEstablished(protoMatch string) (bool, error) {
-	out, err := runBirdcOnVPNGateway("show protocols")
-	if err != nil {
-		return false, err
-	}
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.Fields(line)
-		// Columns: Name Proto Table State Since Info...
-		if len(fields) < 6 {
-			continue
-		}
-		if fields[1] != "BGP" || !strings.Contains(fields[0], protoMatch) {
-			continue
-		}
-		if strings.Contains(line, "Established") {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 // VPNGatewayHasRoute checks, from the DCGW/VPN gateway side, whether a route for
 // the exact given prefix (e.g. a VIP "10.0.0.1/32") has been received via BGP.
 //
@@ -462,12 +433,20 @@ func VPNGatewayHasRoute(prefix string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	return routeIsBGPSourced(out, prefix), nil
+}
+
+// routeIsBGPSourced reports whether the exact prefix is present in `birdc show
+// route ... all` output AND that route was learned via BGP (not a local
+// static/blackhole route). This is the pure decision behind VPNGatewayHasRoute,
+// factored out so it can be unit-tested without shelling out to the gateway.
+func routeIsBGPSourced(out, prefix string) bool {
 	block, found := exactPrefixBlock(out, prefix)
 	if !found {
-		return false, nil
+		return false
 	}
 	// BIRD 3.x prints "source: BGP" for BGP-learned routes in `all` mode.
-	return strings.Contains(block, "source: BGP"), nil
+	return strings.Contains(block, "source: BGP")
 }
 
 // VPNGatewayRouteNextHops returns the next-hop addresses the DCGW has installed
