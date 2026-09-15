@@ -69,6 +69,7 @@ jobs:
         suite:
           - ipv4
           - dual-stack
+          - ipv6
         k8s_version:
           - v1.32.2
           - v1.31.6
@@ -77,6 +78,12 @@ jobs:
             image: v1.32.2@sha256:f226345927d7e348497136874b6d207e0b32cc52154ad8323129352923a3142f
           - k8s_version: v1.31.6
             image: v1.31.6@sha256:28b7cbb993dfe093c76641a0c95807637213c9109b761f1d422c2400e22b8e87
+          - suite: ipv4
+            kind_config: test/e2e/kind-cluster/kind.yaml
+          - suite: dual-stack
+            kind_config: test/e2e/kind-cluster/kind.yaml
+          - suite: ipv6
+            kind_config: test/e2e/kind-cluster/kind-ipv6.yaml
     steps:
       - uses: actions/checkout@v6
         with:
@@ -89,7 +96,7 @@ jobs:
           version: ${{ env.KIND_VERSION }}
           node_image: kindest/node:${{ matrix.image }}
           cluster_name: kind
-          config: test/e2e/kind-cluster/kind.yaml
+          config: ${{ matrix.kind_config }}
       - name: Check cluster
         run: |
           kubectl version
