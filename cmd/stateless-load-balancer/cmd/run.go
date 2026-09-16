@@ -190,7 +190,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return err
 	}
 
-	setupLog.Info("starting manager for Gateway %s/%s", cfg.GatewayName, cfg.GatewayNamespace)
+	setupLog.Info("starting manager", "gateway", cfg.GatewayName, "namespace", cfg.GatewayNamespace)
 	if err := mgr.Start(ctx); err != nil {
 		// Check if the manager stopped because NFQLB crashed
 		if cause := context.Cause(ctx); cause != nil {
