@@ -22,6 +22,7 @@ type mockNftablesManager struct {
 	setVIPsCalled bool
 	cleanupCalled bool
 	vips          []string
+	setVIPsErr    error // when set, SetVIPs returns this error (and does not record vips)
 }
 
 func newMockNftablesManager() *mockNftablesManager {
@@ -35,6 +36,9 @@ func (m *mockNftablesManager) Setup() error {
 
 func (m *mockNftablesManager) SetVIPs(cidrs []string) error {
 	m.setVIPsCalled = true
+	if m.setVIPsErr != nil {
+		return m.setVIPsErr
+	}
 	m.vips = cidrs
 	return nil
 }

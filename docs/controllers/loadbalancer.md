@@ -209,10 +209,14 @@ nftables (shared across all DGs in this LB Pod)
 
 - List L34Routes matching this Gateway AND this DistributionGroup
 
-**If no L34Routes found:** Delete ALL flows for this DG + clear nftables VIPs. This only happens when L34Routes are explicitly removed — flows are never deleted based on endpoint availability.
+**If no L34Routes found:** Delete all flows for this DG. The shared nftables VIP set is **not** cleared — it is synced from `Gateway.status.addresses` (shared across all DGs on the Gateway), so it must not be flushed just because one DG lost its routes. This only happens when L34Routes are explicitly removed — flows are never deleted based on endpoint availability.
 - Delete removed flows from NFQLB instance
 - Add/update flows: maps L34Route → `nfqlb.Flow` via `l34RouteFlow` adapter
-- Configure nftables VIP sets: fetch VIPs from `Gateway.status.addresses` (via `getGatewayVIPs()`), call `nftManager.SetVIPs()`
+- Configure the shared nftables VIP set from `Gateway.status.addresses` via `applyGatewayVIPs()`
+  (which calls `getGatewayVIPs()` then `nftManager.SetVIPs()`). Flow configuration and VIP
+  configuration are independent: flows are always attempted regardless of whether VIPs can be
+  resolved. If the Gateway is not found, VIP configuration is skipped without error (the Gateway
+  is watched and its creation re-enqueues affected DGs); other fetch/`SetVIPs` errors are returned.
 
 **Flow naming:** The flow name is the L34Route's metadata name (e.g., `my-http-route`). The flow is bound to its NFQLB instance via the `--target` flag which receives the DistributionGroup name.
 
@@ -420,6 +424,14 @@ ip route del default via <target-ip> table <fwmark>   (ignore ESRCH — already 
 - `RouteReplace` and `ensureRule` make rebuild safe (no duplicate rules, atomic route creation)
 - Brief period after startup where targets are being re-added is acceptable (BGP reconvergence happens anyway during container restart)
 
+**Caveat — nftables VIP set:** `CleanupStaleRules` clears only ip rules/routes, not the shared
+nftables VIP set. That set lives in the kernel and can survive an ungraceful restart, while the
+controller's in-memory `currentVIPs` starts empty. If the first reconcile's desired VIP set is
+also empty, the change-detection skips the write and stale VIPs may linger in the set. This is
+benign: NFQLB flows are also in-memory (gone after restart, so no flow matches a stale VIP) and
+BGP stops advertising the VIP, so no traffic is drawn toward it until reconciliation rewrites the
+set. See the note on `configureNftables`.
+
 ## Error Handling
 
 | Error Source | Example | Action | Requeue? |
@@ -432,7 +444,9 @@ ip route del default via <target-ip> table <fwmark>   (ignore ESRCH — already 
 | `reconcileTargets` | `nfqlb activate` fails | Mark target as broken, accumulate error | Yes |
 | `AddTarget` | Route creation fails | Mark broken, cleanup rule, return error | Yes (via caller) |
 | `reconcileFlows` | `nfqlb flow-set` fails | Log error, accumulate | Yes |
-| `reconcileFlows` | nftables SetVIPs fails | Return error | Yes |
+| `reconcileFlows` | `deleteAllFlows` fails (empty-routes path) | Log error, not propagated | No (retry would be in vain — see note) |
+| `reconcileFlows` | Gateway not found (VIP config) | Log at V(1), skip VIP config | No (Gateway watch re-enqueues) |
+| `reconcileFlows` | nftables SetVIPs fails / other Gateway fetch error | Return error | Yes |
 | `cleanupDistributionGroup` | `nfqlb delete` fails | Log error, return error | Yes |
 | `cleanupDistributionGroup` | Flow/target cleanup partial failure | `errors.Join`, return combined | Yes |
 

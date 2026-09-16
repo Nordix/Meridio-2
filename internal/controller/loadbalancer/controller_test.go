@@ -18,6 +18,7 @@ package loadbalancer
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -1028,6 +1029,114 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// Verify flow was deleted
 			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.flows).ToNot(HaveKey("old-route"))
+		})
+
+		It("should keep the shared Gateway VIP set when a DG has no L34Routes", func() {
+			// The nftables VIP set is shared across all DGs on this Gateway and
+			// tracks Gateway.status.addresses, not any single DG's L34Routes.
+			// A DG losing its last L34Route must not flush the shared VIP set,
+			// otherwise it black-holes traffic for every other DG on the Gateway.
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+
+			// Pre-populate the shared set as if another (routed) DG had set it.
+			controller.currentVIPs = []string{"20.0.0.1/32"}
+			mockNft.vips = []string{"20.0.0.1/32"}
+
+			// This DG has no L34Routes, but the Gateway still advertises its VIP.
+			ipAddrType := gatewayv1.IPAddressType
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{Name: gatewayName, Namespace: namespace},
+				Status: gatewayv1.GatewayStatus{
+					Addresses: []gatewayv1.GatewayStatusAddress{
+						{Type: &ipAddrType, Value: "20.0.0.1"},
+					},
+				},
+			}
+			fakeClient = newFakeClient(scheme, distGroup, gateway)
+			controller.Client = fakeClient
+
+			err := controller.reconcileFlows(ctx, distGroup)
+			Expect(err).ToNot(HaveOccurred())
+
+			// The shared VIP set must still reflect the Gateway's addresses.
+			Expect(mockNft.vips).To(ConsistOf("20.0.0.1/32"))
+			Expect(controller.currentVIPs).To(ConsistOf("20.0.0.1/32"))
+		})
+
+		It("should return the error but still track successful flows when SetVIPs fails", func() {
+			// A VIP-configuration failure must not lose flow tracking: the error is
+			// returned (for requeue), but c.flows is still updated with the flows that
+			// were successfully programmed into NFQLB. Flow config and VIP config are
+			// independent, so a nftables failure should not discard good flow state.
+			group := meridio2v1alpha1.GroupVersion.Group
+			kind := kindDistributionGroup
+
+			l34route := &meridio2v1alpha1.L34Route{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-route", Namespace: namespace},
+				Spec: meridio2v1alpha1.L34RouteSpec{
+					ParentRefs: []gatewayv1.ParentReference{{Name: gatewayv1.ObjectName(gatewayName)}},
+					BackendRefs: []gatewayv1.BackendRef{{
+						BackendObjectReference: gatewayv1.BackendObjectReference{
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
+						},
+					}},
+					DestinationCIDRs: []string{"20.0.0.1/32"},
+					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
+					Priority:         100,
+				},
+			}
+
+			ipAddrType := gatewayv1.IPAddressType
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{Name: gatewayName, Namespace: namespace},
+				Status: gatewayv1.GatewayStatus{
+					Addresses: []gatewayv1.GatewayStatusAddress{
+						{Type: &ipAddrType, Value: "20.0.0.1"},
+					},
+				},
+			}
+
+			// Force the nftables VIP programming to fail.
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+			mockNft.setVIPsErr = errors.New("nftables SetVIPs failed")
+
+			fakeClient = newFakeClient(scheme, distGroup, l34route, gateway)
+			controller.Client = fakeClient
+
+			err := controller.reconcileFlows(ctx, distGroup)
+
+			// The SetVIPs failure is surfaced (joined) for requeue.
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nftables SetVIPs failed"))
+
+			// Flow tracking is NOT lost: the successfully programmed flow is retained.
+			Expect(controller.flows[distGroup.Name]).To(HaveKey("test-route"))
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.flows).To(HaveKey("test-route"))
+		})
+	})
+
+	Describe("applyGatewayVIPs", func() {
+		It("should not error when the Gateway does not exist", func() {
+			// A missing Gateway must not push the reconcile into error backoff:
+			// the Gateway is watched, and its creation re-enqueues affected DGs.
+			// applyGatewayVIPs should skip VIP configuration and return nil.
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+
+			// Fake client with no Gateway object.
+			fakeClient = newFakeClient(scheme)
+			controller.Client = fakeClient
+
+			err := controller.applyGatewayVIPs(ctx, "test-distgroup")
+			Expect(err).ToNot(HaveOccurred())
+
+			// VIP set must be left untouched (no SetVIPs call on not-found).
+			Expect(mockNft.setVIPsCalled).To(BeFalse())
 		})
 	})
 
