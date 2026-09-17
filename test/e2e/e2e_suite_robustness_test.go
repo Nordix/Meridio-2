@@ -41,20 +41,26 @@ const (
 	robTargetLabel         = "app=target-ds"
 )
 
-// robHealth is the known-good state for the dual-stack gateway backing all
-// robustness tests: 2 LB replicas, both IP families advertised over BGP,
-// and 2 target Pods with Ready ENCs.
-var robHealth = e2eutils.GatewayHealth{
-	Name:         robGatewayName,
-	LBReplicas:   2,
-	VIPs:         []string{"10.0.0.1", "fd00:cafe:1::1"},
-	BGPProtocols: []string{"NBR-gw-ds-router-v4", "NBR-gw-ds-router-v6"},
+// robServiceHealth is the known-good state for the dual-stack gateway
+// backing all robustness tests: 2 LB replicas, both IP families advertised
+// over BGP, and 2 target Pods with Ready ENCs.
+var robServiceHealth = e2eutils.ServiceHealth{
+	Namespace: robNamespace,
+	Gateways: []e2eutils.GatewayHealth{
+		{
+			Name:         robGatewayName,
+			LBReplicas:   2,
+			VIPs:         []string{"10.0.0.1", "fd00:cafe:1::1"},
+			BGPProtocols: []string{"NBR-gw-ds-router-v4", "NBR-gw-ds-router-v6"},
+		},
+	},
+	Targets: []e2eutils.TargetHealth{
+		{Label: robTargetLabel, Count: 2},
+	},
 }
 
-var robTargets = e2eutils.TargetHealth{Label: robTargetLabel, Count: 2}
-
 // robTrafficExpectations are the traffic checks that must pass alongside
-// robHealth/robTargets to consider the data path fully intact — TCP and UDP
+// robServiceHealth to consider the data path fully intact — TCP and UDP
 // over both IP families, matching the checks the Dual Stack suite itself
 // exercises in steady state.
 var robTrafficExpectations = []e2eutils.TrafficExpectation{
@@ -64,15 +70,12 @@ var robTrafficExpectations = []e2eutils.TrafficExpectation{
 	{VIP: "fd00:cafe:1::1", Protocol: "udp", Port: 5001, Connections: 100, ExpectedTargets: 2},
 }
 
-// verifyRobustHealthy asserts robHealth/robTargets plus full traffic
-// continuity (robTrafficExpectations) in one call, so every robustness test
-// judges "recovered" against the same, complete bar: Gateway/LB/BGP/ENC
-// state AND actual data-path traffic, not just steady-state conditions.
+// verifyRobustHealthy asserts robServiceHealth plus full traffic continuity
+// (robTrafficExpectations) in one call, so every robustness test judges
+// "recovered" against the same, complete bar: Gateway/LB/BGP/ENC state AND
+// actual data-path traffic, not just steady-state conditions.
 func verifyRobustHealthy(timeout, polling time.Duration) {
-	e2eutils.VerifyHealthy(robNamespace,
-		[]e2eutils.GatewayHealth{robHealth},
-		[]e2eutils.TargetHealth{robTargets},
-		timeout, polling)
+	e2eutils.VerifyHealthy(robServiceHealth, timeout, polling)
 
 	for _, exp := range robTrafficExpectations {
 		Eventually(func() error { return e2eutils.VerifyTraffic(exp) }).
@@ -81,9 +84,6 @@ func verifyRobustHealthy(timeout, polling time.Duration) {
 }
 
 var _ = Describe("Robustness", Label("dual-stack"), Serial, Ordered, func() {
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
 	BeforeEach(func() {
 		By("confirming baseline healthy state and traffic continuity before fault injection")
 		verifyRobustHealthy(30*time.Second, 2*time.Second)
@@ -91,10 +91,12 @@ var _ = Describe("Robustness", Label("dual-stack"), Serial, Ordered, func() {
 
 	// Controller-manager restart recovery.
 	// Goal: verify the controller-manager recovers after a restart, returns
-	// to Ready, reconciles current state, and the existing data path is
-	// unaffected during the restart.
+	// to Ready, resumes reconciling, and the data path is healthy again
+	// afterward. This test does not assert zero-disruption *during* the
+	// outage window itself (no traffic is generated concurrently with the
+	// restart) — only that nothing is left broken once the new Pod is Ready.
 	Context("Controller-manager", func() {
-		It("restarts cleanly and resumes reconciling without disrupting the data path", func() {
+		It("restarts cleanly, resumes reconciling, and the data path is healthy again afterward", func() {
 			By("finding the controller-manager Pod")
 			controllerPod := e2eutils.GetPodName(robNamespace, robControllerLabel)
 			Expect(controllerPod).NotTo(BeEmpty(), "controller-manager Pod should exist")
@@ -109,13 +111,14 @@ var _ = Describe("Robustness", Label("dual-stack"), Serial, Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("verifying a new controller-manager Pod becomes Ready")
+			var newPod string
 			Eventually(func(g Gomega) {
-				newPod := e2eutils.GetPodName(robNamespace, robControllerLabel)
+				newPod = e2eutils.GetPodName(robNamespace, robControllerLabel)
 				g.Expect(newPod).NotTo(BeEmpty(), "a controller-manager Pod should exist after restart")
 				g.Expect(e2eutils.IsPodReady(robNamespace, newPod)).To(BeTrue())
 			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
-			By("verifying the existing data path was unaffected by the restart (steady-state and traffic still healthy)")
+			By("verifying the data path is healthy again after the restart (steady-state and traffic)")
 			verifyRobustHealthy(60*time.Second, 2*time.Second)
 
 			By("deleting a target Pod to force a fresh ENC reconciliation")
@@ -127,7 +130,6 @@ var _ = Describe("Robustness", Label("dual-stack"), Serial, Ordered, func() {
 			verifyRobustHealthy(90*time.Second, 2*time.Second)
 
 			By("confirming the new controller-manager Pod did not crash-loop")
-			newPod := e2eutils.GetPodName(robNamespace, robControllerLabel)
 			Expect(e2eutils.GetContainerRestarts(robNamespace, newPod, robControllerContainer)).
 				To(BeNumerically("==", 0), "freshly restarted controller-manager should not have crashed again")
 		})

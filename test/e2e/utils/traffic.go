@@ -179,22 +179,17 @@ func VerifyPMTU(vip string, size int) error {
 //   - ExpectedHosts: the exact set of hosts reached matters (e.g.
 //     pod-cache-label's negative case, where only the labeled Pod should
 //     receive traffic and no others).
-//
-// Set MinFairnessRatio (0, 1] to additionally assert reasonable load
-// distribution across targets; leave it 0 to skip the fairness check.
 type TrafficExpectation struct {
-	VIP              string
-	Protocol         string // "tcp" or "udp"
-	Port             int
-	Connections      int
-	ExpectedTargets  int
-	ExpectedHosts    []string
-	MinFairnessRatio float64
+	VIP             string
+	Protocol        string // "tcp" or "udp"
+	Port            int
+	Connections     int
+	ExpectedTargets int
+	ExpectedHosts   []string
 }
 
 // VerifyTraffic sends traffic per exp and asserts zero loss plus the
-// expected target spread (and, optionally, reasonable load distribution via
-// MinFairnessRatio). ICMP reachability is always checked first since a
+// expected target spread. ICMP reachability is always checked first since a
 // failed connection storm is a less useful signal than a failed ping.
 func VerifyTraffic(exp TrafficExpectation) error {
 	if err := Ping(exp.VIP); err != nil {
@@ -224,41 +219,6 @@ func VerifyTraffic(exp TrafficExpectation) error {
 			exp.ExpectedTargets, exp.VIP, exp.Port, len(lastingConn), lastingConn)
 	}
 
-	if exp.MinFairnessRatio > 0 {
-		if err := verifyFairDistribution(lastingConn, exp.Connections, exp.MinFairnessRatio); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// verifyFairDistribution asserts that no target received a disproportionately
-// low share of connections. Maglev guarantees spread (every ready endpoint
-// gets traffic), not uniformity, so this deliberately does NOT assert
-// near-equal counts — it only rules out degenerate skew (e.g. one endpoint
-// getting almost everything while another gets almost nothing).
-//
-// minRatio is the minimum fraction of the ideal per-target average
-// (totalConn / len(hostCounts)) that every target must receive. A minRatio
-// of 0.2 means: with 100 connections over 4 targets (ideal 25 each), every
-// target must receive at least 5.
-func verifyFairDistribution(hostCounts map[string]int, totalConn int, minRatio float64) error {
-	if len(hostCounts) == 0 {
-		return fmt.Errorf("no hosts received traffic, cannot assess distribution")
-	}
-
-	idealShare := float64(totalConn) / float64(len(hostCounts))
-	minShare := idealShare * minRatio
-
-	for host, count := range hostCounts {
-		if float64(count) < minShare {
-			return fmt.Errorf(
-				"unfair distribution: target %s received %d connections, below minimum %.1f "+
-					"(%.0f%% of ideal %.1f per-target share); full distribution: %v",
-				host, count, minShare, minRatio*100, idealShare, hostCounts)
-		}
-	}
 	return nil
 }
 

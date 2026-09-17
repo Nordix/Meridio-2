@@ -87,43 +87,40 @@ type ServiceHealth struct {
 // conditions, LB readiness, ENC readiness) on every poll cycle. Call sites
 // still get a single VerifyHealthy call as "one check-do-it-all" for a
 // gateway+target combination; only the internal retry granularity changed.
-func VerifyHealthy(namespace string, gateways []GatewayHealth, targets []TargetHealth, timeout, polling time.Duration) {
-	for _, gw := range gateways {
+func VerifyHealthy(health ServiceHealth, timeout, polling time.Duration) {
+	for _, gw := range health.Gateways {
 		Eventually(func(g Gomega) {
-			g.Expect(gatewayConditionTrue(namespace, gw.Name, "Accepted")).
+			g.Expect(gatewayConditionTrue(health.Namespace, gw.Name, "Accepted")).
 				To(BeTrue(), "gateway %s should be Accepted", gw.Name)
 		}).WithTimeout(timeout).WithPolling(polling).Should(Succeed())
 
 		Eventually(func(g Gomega) {
-			g.Expect(gatewayConditionTrue(namespace, gw.Name, "Programmed")).
+			g.Expect(gatewayConditionTrue(health.Namespace, gw.Name, "Programmed")).
 				To(BeTrue(), "gateway %s should be Programmed", gw.Name)
 		}).WithTimeout(timeout).WithPolling(polling).Should(Succeed())
 
 		Eventually(func(g Gomega) {
-			g.Expect(lbPodsReadyCount(namespace, gw.Name)).
+			g.Expect(lbPodsReadyCount(health.Namespace, gw.Name)).
 				To(Equal(gw.LBReplicas), "gateway %s should have %d Ready LB Pods", gw.Name, gw.LBReplicas)
 		}).WithTimeout(timeout).WithPolling(polling).Should(Succeed())
 
 		for _, proto := range gw.BGPProtocols {
-			proto := proto
 			Eventually(func(g Gomega) {
-				g.Expect(bgpEstablished(namespace, gw.Name, proto)).
+				g.Expect(bgpEstablished(health.Namespace, gw.Name, proto)).
 					To(BeTrue(), "BGP protocol %s for gateway %s should be Established", proto, gw.Name)
 			}).WithTimeout(timeout).WithPolling(polling).Should(Succeed())
 		}
 
 		for _, vip := range gw.VIPs {
-			vip := vip
 			Eventually(func() error { return Ping(vip) }).
 				WithTimeout(timeout).WithPolling(polling).
 				Should(Succeed(), "VIP %s (gateway %s) should be reachable", vip, gw.Name)
 		}
 	}
 
-	for _, tgt := range targets {
-		tgt := tgt
+	for _, tgt := range health.Targets {
 		Eventually(func(g Gomega) {
-			g.Expect(encsReadyCount(namespace, tgt.Label)).
+			g.Expect(encsReadyCount(health.Namespace, tgt.Label)).
 				To(Equal(tgt.Count), "target selector %q should have %d Ready ENCs", tgt.Label, tgt.Count)
 		}).WithTimeout(timeout).WithPolling(polling).Should(Succeed())
 	}
