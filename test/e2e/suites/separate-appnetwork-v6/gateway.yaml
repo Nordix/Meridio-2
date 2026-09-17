@@ -29,6 +29,11 @@ spec:
       interface: dummy
   - type: NAD
     nad:
+      name: bird-router-id-v6
+      namespace: e2e-separate-appnetwork-v6
+      interface: bird-rid
+  - type: NAD
+    nad:
       name: vlan-1300
       namespace: e2e-separate-appnetwork-v6
       interface: vlan-1300
@@ -71,6 +76,11 @@ spec:
       name: sysctl-tuning
       namespace: e2e-separate-appnetwork-v6
       interface: dummy
+  - type: NAD
+    nad:
+      name: bird-router-id-v6
+      namespace: e2e-separate-appnetwork-v6
+      interface: bird-rid
   - type: NAD
     nad:
       name: vlan-1400
