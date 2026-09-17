@@ -459,6 +459,23 @@ test-readiness-gates: ## Run e2e readiness gates tests.
 .PHONY: undeploy-readiness-gates
 undeploy-readiness-gates: undeploy-dual-stack-simple ## Undeploy readiness-gates topology (same as dual-stack-simple).
 
+################################################################################
+##@ Suite: robustness
+################################################################################
+
+.PHONY: robustness
+robustness: deploy-robustness test-robustness ## Deploy and test robustness suite.
+
+.PHONY: deploy-robustness
+deploy-robustness: deploy-dual-stack-simple ## Deploy robustness topology (reuses dual-stack-simple).
+
+.PHONY: test-robustness
+test-robustness: ## Run e2e robustness (fault-injection/recovery) tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Robustness" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-robustness
+undeploy-robustness: undeploy-dual-stack-simple ## Undeploy robustness topology (same as dual-stack-simple).
+
 ###############################################################################
 ##@ All ipv4 suites
 ################################################################################
