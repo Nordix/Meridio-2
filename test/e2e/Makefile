@@ -29,9 +29,8 @@ WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
 SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
-SUITES_DS ?= dual-stack-simple
+SUITES_DS ?= dual-stack-simple shared-appnetwork-ds
 SUITES_IPV6 ?= separate-appnetwork-v6
-SUITES_SCALING ?= shared-appnetwork-ds
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
 GINKGO_FLAGS ?=
@@ -292,23 +291,16 @@ undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 #################################################################################
-##@ Suite: shared-appnetwork-ds (dual-stack; endpoint scaling)
+##@ Topology: shared-appnetwork-ds (dual-stack; used by Endpoint Scaling)
 ################################################################################
 
 # NOTE: shared-appnetwork-ds reuses VLAN 300/400 + ASN 64514/64515 (with an IPv6
 # overlay). It is therefore mutually exclusive with the IPv4 shared-appnetwork
 # suite and cannot be deployed at the same time.
 
-.PHONY: shared-appnetwork-ds
-shared-appnetwork-ds: deploy-shared-appnetwork-ds test-shared-appnetwork-ds ## Deploy and test shared-appnetwork-ds suite.
-
 .PHONY: deploy-shared-appnetwork-ds
 deploy-shared-appnetwork-ds: cluster ## Deploy shared-appnetwork-ds topology.
 	$(call deploy-suite,e2e-shared-appnetwork-ds,$(shell pwd)/suites/shared-appnetwork-ds,shared-appnet-ds,sllbr-gw-bds1 sllbr-gw-bds2)
-
-.PHONY: test-shared-appnetwork-ds
-test-shared-appnetwork-ds: ## Run e2e tests for shared-appnetwork-ds suite (endpoint scaling).
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Endpoint Scaling" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-shared-appnetwork-ds
 undeploy-shared-appnetwork-ds: ## Undeploy shared-appnetwork-ds topology.
@@ -483,7 +475,7 @@ deploy-dual-stack: ## Deploy all dual-stack suites.
 
 .PHONY: test-dual-stack
 test-dual-stack: ## Run all dual-stack e2e tests in parallel.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter='dual-stack && !scaling' $(GINKGO_FLAGS)
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=dual-stack $(GINKGO_FLAGS)
 
 .PHONY: undeploy-dual-stack
 undeploy-dual-stack: ## Undeploy all dual-stack suites.
@@ -509,28 +501,23 @@ undeploy-ipv6: ## Undeploy all IPv6 suites.
 	@for suite in $(SUITES_IPV6); do $(MAKE) undeploy-$$suite; done
 
 ################################################################################
-##@ All scaling suites
+##@ Suite: Endpoint Scaling
 ################################################################################
 
-# Scaling suites are Ordered and each own a single shared, deploy-heavy
-# environment, so they run sequentially (no -p) and are selected by the
-# 'scaling' label. They also carry the 'dual-stack' label for categorization,
-# but are excluded from the parallel 'dual-stack' sweep (see test-dual-stack).
-
-.PHONY: scaling
-scaling: deploy-scaling test-scaling ## Deploy and test all scaling suites.
+# Endpoint Scaling reuses the shared-appnetwork-ds topology (like low-mtu reuses
+# ipv4-simple). The spec is Serial and carries the 'dual-stack' label, so it runs
+# as part of the dual-stack suite on the dual-stack runner. These targets are
+# kept for running the scaling tests standalone locally.
 
 .PHONY: deploy-scaling
-deploy-scaling: ## Deploy all scaling suites.
-	@for suite in $(SUITES_SCALING); do $(MAKE) deploy-$$suite || exit 1; done
+deploy-scaling: deploy-shared-appnetwork-ds ## Deploy shared-appnetwork-ds topology.
 
 .PHONY: test-scaling
-test-scaling: ## Run all scaling e2e tests (sequential; single shared environment).
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --label-filter=scaling $(GINKGO_FLAGS)
+test-scaling: ## Run Endpoint Scaling tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Endpoint Scaling" $(GINKGO_FLAGS)
 
 .PHONY: undeploy-scaling
-undeploy-scaling: ## Undeploy all scaling suites.
-	@for suite in $(SUITES_SCALING); do $(MAKE) undeploy-$$suite; done
+undeploy-scaling: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology.
 
 ################################################################################
 ##@ Suite: openshift-crc

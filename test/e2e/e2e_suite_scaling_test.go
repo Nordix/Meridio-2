@@ -104,7 +104,8 @@ func minCoverage(newN int) int {
 // trafficDurationFor picks a traffic window long enough for the scale from oldN
 // to newN to converge: a longer window for bigger jumps.
 func trafficDurationFor(oldN, newN int) time.Duration {
-	if int(math.Abs(float64(newN-oldN))) > 1 {
+	x := newN - oldN
+	if max(x, -x) > 1 {
 		return scalingTrafficDurationJump
 	}
 	return scalingTrafficDurationStep
@@ -275,7 +276,7 @@ func scaleStep(oldN, newN int) {
 	})
 }
 
-var _ = Describe("Endpoint Scaling", Label("dual-stack", "scaling"), Ordered, func() {
+var _ = Describe("Endpoint Scaling", Label("dual-stack"), Serial, Ordered, func() {
 	SetDefaultEventuallyTimeout(5 * time.Minute)
 	SetDefaultEventuallyPollingInterval(2 * time.Second)
 

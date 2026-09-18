@@ -69,7 +69,6 @@ jobs:
         suite:
           - ipv4
           - dual-stack
-          - scaling
         k8s_version:
           - v1.32.2
           - v1.31.6
