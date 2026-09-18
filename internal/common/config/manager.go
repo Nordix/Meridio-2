@@ -105,15 +105,8 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Prefix for custom Meridio-2 metric names. Must start with a lowercase letter and contain only "+
 			"lowercase letters, digits, and underscores. Maximum 10 characters.")
 	fs.DurationVar(&c.MetricsCollectTimeout, "metrics-collect-timeout", 5*time.Second,
-		"Maximum time a single metrics scrape will wait for the informer cache to finish its initial "+
-			"sync before reporting a collection error. Kept deliberately shorter than Prometheus's own "+
-			"default scrape_timeout (10s): prometheus/client_golang's Gather has no way to be "+
-			"cancelled by the scraper disconnecting, so this timeout is the only thing that can make "+
-			"a not-yet-synced-cache scrape fail with our specific, actionable error instead of a "+
-			"generic timeout on Prometheus's side. Setting this equal to or above the scrape's "+
-			"scrape_timeout risks losing that race most of the time (Prometheus's clock starts before "+
-			"ours does), which is why raising it further is discouraged rather than recommended for "+
-			"large clusters — prefer leaving it below whatever scrape_timeout is configured.")
+		"Maximum time a single metrics scrape waits for the informer cache to finish its initial "+
+			"sync before reporting a collection error. Keep below Prometheus's scrape_timeout (default 10s).")
 	fs.StringVar(&c.LogLevel, "log-level", "info",
 		"Log level (debug, info, warn, error)")
 	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",

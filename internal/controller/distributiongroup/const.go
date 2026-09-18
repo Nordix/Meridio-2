@@ -51,3 +51,10 @@ const (
 	messageNoNetworkContext     = "No network context available (check GatewayConfiguration internalSubnets)"
 	messageMultipleGateways     = "DistributionGroup is referenced by multiple Gateways; only a single Gateway is supported"
 )
+
+// ConditionTypeReady and ReasonEndpointsAvailable re-export the corresponding private constants
+// above for reuse by the controller-manager metrics collectors
+const (
+	ConditionTypeReady       = conditionTypeReady
+	ReasonEndpointsAvailable = reasonEndpointsAvailable
+)

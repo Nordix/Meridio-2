@@ -19,6 +19,19 @@ The controller-manager exposes these custom metrics (all prefixed by
 | `<prefix>_distributiongroup_endpoints` | `gateway`, `gateway_namespace`, `dg`, `namespace` | Current endpoint count for the DG under a given Gateway. |
 | `<prefix>_distributiongroup_max_endpoints` | `gateway`, `gateway_namespace`, `dg`, `namespace` | Upper bound on endpoint count per the DG's distribution strategy (Maglev capacity; `+Inf` for strategies without a bounded capacity). |
 
+## The `--metrics-collect-timeout` flag
+
+Each collector's `Collect` waits for the informer cache to finish its initial
+sync before listing objects, bounded by `--metrics-collect-timeout` (default
+5s). It is kept deliberately shorter than Prometheus's own `scrape_timeout`
+(default 10s): `prometheus/client_golang`'s `Gather` cannot be cancelled by the
+scraper disconnecting, so this timeout is the only thing that turns a
+not-yet-synced-cache scrape into our specific, actionable error instead of a
+generic timeout on Prometheus's side. Setting it equal to or above
+`scrape_timeout` loses that race most of the time (Prometheus's clock starts
+before ours), so raising it further is discouraged — keep it below whatever
+`scrape_timeout` is configured.
+
 ## Unit Tests
 
 ```bash
