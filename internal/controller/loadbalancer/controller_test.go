@@ -1029,6 +1029,59 @@ var _ = Describe("LoadBalancer Controller", func() {
 			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.flows).ToNot(HaveKey("old-route"))
 		})
+
+		It("should keep the shared Gateway VIP set when a DG has no L34Routes", func() {
+			// The nftables VIP set is shared across all DGs on this Gateway and
+			// tracks Gateway.status.addresses, not any single DG's L34Routes.
+			// A DG losing its last L34Route must not flush the shared VIP set,
+			// otherwise it black-holes traffic for every other DG on the Gateway.
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+
+			// Pre-populate the shared set as if another (routed) DG had set it.
+			controller.currentVIPs = []string{"20.0.0.1/32"}
+			mockNft.vips = []string{"20.0.0.1/32"}
+
+			// This DG has no L34Routes, but the Gateway still advertises its VIP.
+			ipAddrType := gatewayv1.IPAddressType
+			gateway := &gatewayv1.Gateway{
+				ObjectMeta: metav1.ObjectMeta{Name: gatewayName, Namespace: namespace},
+				Status: gatewayv1.GatewayStatus{
+					Addresses: []gatewayv1.GatewayStatusAddress{
+						{Type: &ipAddrType, Value: "20.0.0.1"},
+					},
+				},
+			}
+			fakeClient = newFakeClient(scheme, distGroup, gateway)
+			controller.Client = fakeClient
+
+			err := controller.reconcileFlows(ctx, distGroup)
+			Expect(err).ToNot(HaveOccurred())
+
+			// The shared VIP set must still reflect the Gateway's addresses.
+			Expect(mockNft.vips).To(ConsistOf("20.0.0.1/32"))
+			Expect(controller.currentVIPs).To(ConsistOf("20.0.0.1/32"))
+		})
+	})
+
+	Describe("applyGatewayVIPs", func() {
+		It("should not error when the Gateway does not exist", func() {
+			// A missing Gateway must not push the reconcile into error backoff:
+			// the Gateway is watched, and its creation re-enqueues affected DGs.
+			// applyGatewayVIPs should skip VIP configuration and return nil.
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+
+			// Fake client with no Gateway object.
+			fakeClient = newFakeClient(scheme)
+			controller.Client = fakeClient
+
+			err := controller.applyGatewayVIPs(ctx, "test-distgroup")
+			Expect(err).ToNot(HaveOccurred())
+
+			// VIP set must be left untouched (no SetVIPs call on not-found).
+			Expect(mockNft.setVIPsCalled).To(BeFalse())
+		})
 	})
 
 	Describe("endpointSliceEnqueue", func() {
