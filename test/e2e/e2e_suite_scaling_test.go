@@ -139,7 +139,22 @@ func scaleTargets(replicas int) {
 		lines := utils.GetNonEmptyLines(out)
 		ready := 0
 		for _, l := range lines {
-			if strings.HasPrefix(l, "Running=") && !strings.Contains(l, "false") {
+			parts := strings.SplitN(l, "=", 2)
+			if parts[0] != "Running" {
+				continue
+			}
+			flags := strings.Fields(parts[1]) // RHS, one bool per container
+			if len(flags) == 0 {
+				continue // no container statuses yet -> not ready
+			}
+			allReady := true
+			for _, f := range flags {
+				if f != "true" {
+					allReady = false
+					break
+				}
+			}
+			if allReady {
 				ready++
 			}
 		}
@@ -277,10 +292,10 @@ func scaleStep(oldN, newN int) {
 }
 
 var _ = Describe("Endpoint Scaling", Label("dual-stack"), Serial, Ordered, func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
 	BeforeAll(func() {
+		SetDefaultEventuallyTimeout(5 * time.Minute)
+		SetDefaultEventuallyPollingInterval(2 * time.Second)
+
 		By("verifying gateways are Programmed")
 		for _, gw := range []string{"gw-bds1", "gw-bds2"} {
 			gw := gw
