@@ -1,0 +1,13 @@
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-bfd
+spec:
+  selector:
+    matchLabels:
+      app: target-bfd
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-bfd
