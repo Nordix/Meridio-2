@@ -28,7 +28,7 @@ const (
 	// messageWaitingForController is the default message for Unknown status with Pending reason
 	// Matches Gateway API default: {status: "Unknown", reason:"Pending", message:"Waiting for controller"}
 	messageWaitingForController = "Waiting for controller"
-	messageProgrammed           = "LB Deployment reconciled"
+	messageProgrammed           = "LB Deployment workload reconciled (Pods may still be initializing)"
 
 	// YAML decoder buffer size (standard page size)
 	yamlDecoderBufferSize = 4096

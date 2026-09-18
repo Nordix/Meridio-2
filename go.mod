@@ -19,6 +19,7 @@ require github.com/vishvananda/netns v0.0.5
 
 require (
 	github.com/josharian/native v1.1.0 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.5.0 // indirect
 	go.uber.org/goleak v1.3.1-0.20241121203838-4ff5fa6529ee // indirect

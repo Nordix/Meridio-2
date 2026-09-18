@@ -291,6 +291,13 @@ The controller reconciles when:
 
 **ObservedGeneration:** Tracks which Gateway.spec version was evaluated
 
+**Message format is a load-bearing contract.** The Accepted `Message` is
+`gatewayutil.GatewayAcceptedMessagePrefix` + the controller name — i.e.
+`"Gateway accepted by <controller-name>"` (`acceptedMessage` in `status.go`).
+Internally, this format is how a Gateway is recognized as one we handle
+(`gatewayutil.IsGatewayAcceptedByController` matches on that prefix), so any edit
+to `acceptedMessage` must preserve the prefix.
+
 ### Programmed Condition
 
 **Type:** `Programmed`
