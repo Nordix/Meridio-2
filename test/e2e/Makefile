@@ -29,7 +29,7 @@ WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
 SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao
-SUITES_DS ?= dual-stack-simple
+SUITES_DS ?= dual-stack-simple shared-appnetwork-ds
 SUITES_IPV6 ?= separate-appnetwork-v6
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
@@ -291,6 +291,24 @@ undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 #################################################################################
+##@ Topology: shared-appnetwork-ds (dual-stack; used by Endpoint Scaling)
+################################################################################
+
+# NOTE: shared-appnetwork-ds reuses VLAN 300/400 + ASN 64514/64515 (with an IPv6
+# overlay). It is therefore mutually exclusive with the IPv4 shared-appnetwork
+# suite and cannot be deployed at the same time.
+
+.PHONY: deploy-shared-appnetwork-ds
+deploy-shared-appnetwork-ds: cluster ## Deploy shared-appnetwork-ds topology.
+	$(call deploy-suite,e2e-shared-appnetwork-ds,$(shell pwd)/suites/shared-appnetwork-ds,shared-appnet-ds,sllbr-gw-bds1 sllbr-gw-bds2)
+
+.PHONY: undeploy-shared-appnetwork-ds
+undeploy-shared-appnetwork-ds: ## Undeploy shared-appnetwork-ds topology.
+	@NS=e2e-shared-appnetwork-ds; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnet-ds --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#################################################################################
 ##@ Suite: sctp-multihoming
 ################################################################################
 
@@ -515,6 +533,25 @@ test-ipv6: ## Run all IPv6 e2e tests in parallel.
 .PHONY: undeploy-ipv6
 undeploy-ipv6: ## Undeploy all IPv6 suites.
 	@for suite in $(SUITES_IPV6); do $(MAKE) undeploy-$$suite; done
+
+################################################################################
+##@ Suite: Endpoint Scaling
+################################################################################
+
+# Endpoint Scaling reuses the shared-appnetwork-ds topology (like low-mtu reuses
+# ipv4-simple). The spec is Serial and carries the 'dual-stack' label, so it runs
+# as part of the dual-stack suite on the dual-stack runner. These targets are
+# kept for running the scaling tests standalone locally.
+
+.PHONY: deploy-scaling
+deploy-scaling: deploy-shared-appnetwork-ds ## Deploy shared-appnetwork-ds topology.
+
+.PHONY: test-scaling
+test-scaling: ## Run Endpoint Scaling tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Endpoint Scaling" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-scaling
+undeploy-scaling: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology.
 
 ################################################################################
 ##@ Suite: openshift-crc
