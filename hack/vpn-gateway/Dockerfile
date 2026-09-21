@@ -57,7 +57,7 @@ RUN wget -q https://www.nntb.no/~dreibh/netperfmeter/download/netperfmeter-2.0.2
 COPY --from=bird-builder /usr/local/sbin/bird /usr/sbin/bird
 COPY --from=bird-builder /usr/local/sbin/birdc /usr/sbin/birdc
 
-ADD https://github.com/Nordix/ctraffic/releases/download/v1.7.0/ctraffic.gz /tmp/ctraffic.gz
+ADD https://github.com/Nordix/ctraffic/releases/download/v1.10.1/ctraffic.gz /tmp/ctraffic.gz
 RUN gunzip /tmp/ctraffic.gz \
   && chmod u+x /tmp/ctraffic \
   && mv /tmp/ctraffic /usr/bin/

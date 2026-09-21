@@ -86,6 +86,7 @@ func TestNewCommand_CreatesCommand(t *testing.T) {
 	cmd := NewCommand()
 	if cmd == nil {
 		t.Fatal("NewCommand returned nil")
+		return
 	}
 	if cmd.Use != "run" {
 		t.Errorf("expected Use='run', got %q", cmd.Use)
