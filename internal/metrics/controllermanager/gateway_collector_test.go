@@ -14,9 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package controllermanager
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 )
 
-// Constants shared across the GatewayCollector tests.
 const (
 	// testControllerName is the controller name treated as "ours" in these tests.
 	testControllerName = "example.com/gateway-controller"
@@ -45,6 +45,13 @@ const (
 	ourClassName   = "meridio-class"
 	otherClassName = "other-class"
 )
+
+// alwaysSyncedWaiter is a metricsutil.CacheSyncWaiter test double that always reports synced
+type alwaysSyncedWaiter struct{}
+
+func (alwaysSyncedWaiter) WaitForCacheSync(_ context.Context) bool {
+	return true
+}
 
 func gcScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()

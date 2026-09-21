@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package metrics implements the controller-manager's custom Prometheus
+// Package controllermanager implements the controller-manager binary's custom Prometheus
 // metrics, defined in https://github.com/Nordix/Meridio-2/issues/153 and
 // tracked for implementation in https://github.com/Nordix/Meridio-2/issues/236.
 //
@@ -24,9 +24,9 @@ limitations under the License.
 // gives correct lifecycle behavior for free — a deleted Gateway or DistributionGroup stops
 // appearing in the next Collect, and Prometheus marks the series stale on its own.
 //
-// See CacheSyncWaiter (cache_sync.go) for why every Collect waits for the informer cache to
-// sync, bounded by a timeout, before issuing any List calls.
-package metrics
+// See internal/metrics/util.CacheSyncWaiter for why every Collect waits for the informer cache
+// to sync, bounded by a timeout, before issuing any List calls.
+package controllermanager
 
 import (
 	"context"
@@ -38,6 +38,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/nordix/meridio-2/internal/common/gatewayutil"
+	metricsutil "github.com/nordix/meridio-2/internal/metrics/util"
 )
 
 // GatewayCollector is a prometheus.Collector exposing Gateway-derived metrics:
@@ -71,7 +72,7 @@ import (
 // into one series.
 type GatewayCollector struct {
 	client         client.Client
-	syncGate       *syncGate
+	syncGate       *metricsutil.SyncGate
 	collectTimeout time.Duration
 	namespace      string // "" watches all namespaces, mirrors ManagerConfig.Namespace
 	controllerName string
@@ -85,11 +86,11 @@ type GatewayCollector struct {
 // cache (mgr.GetCache()); collectTimeout bounds how long Collect will wait for it to sync
 // before giving up and reporting a collection error for that scrape — see CacheSyncWaiter.
 func NewGatewayCollector(
-	c client.Client, cacheWaiter CacheSyncWaiter, collectTimeout time.Duration, namespace, controllerName, prefix string,
+	c client.Client, cacheWaiter metricsutil.CacheSyncWaiter, collectTimeout time.Duration, namespace, controllerName, prefix string,
 ) *GatewayCollector {
 	return &GatewayCollector{
 		client:         c,
-		syncGate:       newSyncGate(cacheWaiter),
+		syncGate:       metricsutil.NewSyncGate(cacheWaiter),
 		collectTimeout: collectTimeout,
 		namespace:      namespace,
 		controllerName: controllerName,
