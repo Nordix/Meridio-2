@@ -19,10 +19,8 @@ limitations under the License.
 // validation and a metrics-enabled check.
 //
 // This package intentionally has no knowledge of any specific metric, CRD, or
-// data source. Metric definitions and prometheus.Collector implementations
-// live in per-binary packages (e.g. internal/metrics for controller-manager),
-// next to (or reading via read-only accessors from) the domain/data-source
-// packages they instrument.
+// data source. Metric definitions and Collector implementations live in per-binary
+// packages.
 package metrics
 
 import (

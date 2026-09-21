@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package controllermanager
 
 import (
 	"context"
@@ -29,6 +29,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 	"github.com/nordix/meridio-2/internal/controller/distributiongroup"
+	metricsutil "github.com/nordix/meridio-2/internal/metrics/util"
 )
 
 // DistributionGroupCollector is a prometheus.Collector exposing DistributionGroup-derived metrics:
@@ -99,7 +100,7 @@ import (
 // endpoints/max_endpoints evaluate to 0, not NaN.
 type DistributionGroupCollector struct {
 	client         client.Client
-	syncGate       *syncGate
+	syncGate       *metricsutil.SyncGate
 	collectTimeout time.Duration
 	namespace      string // "" watches all namespaces, mirrors ManagerConfig.Namespace
 	controllerName string
@@ -122,12 +123,12 @@ type gatewayRef struct {
 // to sync before giving up and reporting a collection error for that scrape — see
 // CacheSyncWaiter.
 func NewDistributionGroupCollector(
-	c client.Client, cacheWaiter CacheSyncWaiter, collectTimeout time.Duration, namespace, controllerName, prefix string,
+	c client.Client, cacheWaiter metricsutil.CacheSyncWaiter, collectTimeout time.Duration, namespace, controllerName, prefix string,
 ) *DistributionGroupCollector {
 	gatewayLabels := []string{"gateway", "gateway_namespace", "dg", "namespace"}
 	return &DistributionGroupCollector{
 		client:         c,
-		syncGate:       newSyncGate(cacheWaiter),
+		syncGate:       metricsutil.NewSyncGate(cacheWaiter),
 		collectTimeout: collectTimeout,
 		namespace:      namespace,
 		controllerName: controllerName,

@@ -35,9 +35,9 @@ func (r *DistributionGroupReconciler) listReferencedGateways(ctx context.Context
 // single namespace (mirrors the reconciler's r.Namespace); pass "" to watch all namespaces.
 //
 // Exported so that other consumers reading the same association (e.g. the controller-manager
-// metrics collectors in internal/metrics) can reuse the exact resolution semantics used by
-// reconciliation, rather than reimplementing parentRef/L34Route walking and risking the two
-// paths diverging on what counts as "referenced".
+// metrics collectors) can reuse the exact resolution semantics used by reconciliation, rather
+// than reimplementing parentRef/L34Route walking and risking the two paths diverging on what
+// counts as "referenced".
 func ListReferencedGateways(
 	ctx context.Context, c client.Client, namespace string, dg *meridio2v1alpha1.DistributionGroup,
 ) ([]gatewayv1.Gateway, error) {
