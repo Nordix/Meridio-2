@@ -56,12 +56,12 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/log"
-	"github.com/nordix/meridio-2/internal/common/metrics"
+	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/prerequisites"
 	"github.com/nordix/meridio-2/internal/controller/distributiongroup"
 	"github.com/nordix/meridio-2/internal/controller/endpointnetworkconfiguration"
 	"github.com/nordix/meridio-2/internal/controller/gateway"
-	mgrmetrics "github.com/nordix/meridio-2/internal/metrics"
+	cmmetrics "github.com/nordix/meridio-2/internal/metrics/controllermanager"
 	webhookv1alpha1 "github.com/nordix/meridio-2/internal/webhook/v1alpha1"
 )
 
@@ -211,7 +211,7 @@ func validateConfig(cfg *config.ManagerConfig) error {
 	if cfg.CertWaitTimeout > time.Minute {
 		return fmt.Errorf("cert-wait-timeout cannot exceed 1 minute (got %s)", cfg.CertWaitTimeout)
 	}
-	if err := metrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+	if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
 		return fmt.Errorf("metrics-prefix: %w", err)
 	}
 	return nil
@@ -386,14 +386,14 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 }
 
 // registerMetricsCollectors registers the controller-manager's custom Prometheus collectors
-// (see internal/metrics) against controller-runtime's metrics.Registry, when metrics are enabled
-// (--metrics-bind-address != "0").
+// (see internal/metrics/controllermanager) against controller-runtime's metrics.Registry,
+// when metrics are enabled (--metrics-bind-address != "0").
 //
 // This MUST run synchronously before mgr.Start(cfg) — not in a goroutine, not after:
 // controller-runtime brings the metrics HTTP server up very early (before caches, before leader
 // election), so registration deferred past mgr.Start could let a scrape hit /metrics before the
 // collectors exist, returning an incomplete set with no error. This is the registration half of
-// the startup-timing story CacheSyncWaiter (internal/metrics) handles on the scrape side.
+// the startup-timing story CacheSyncWaiter (internal/metrics/util) handles on the scrape side.
 //
 // It also establishes a cross-package invariant the collectors' sync-gate relies on: every type
 // a collector reads — DistributionGroup, Gateway, L34Route, LoadBalancerEndpointSlice — is
@@ -407,16 +407,16 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 func registerMetricsCollectors(mgr ctrl.Manager, cfg *config.ManagerConfig) error {
 	logger := ctrl.Log.WithName("metrics")
 
-	if !metrics.Enabled(cfg.MetricsAddr) {
+	if !commonmetrics.Enabled(cfg.MetricsAddr) {
 		logger.Info("Custom metrics collectors not registered (metrics disabled)",
 			"metricsBindAddress", cfg.MetricsAddr)
 		return nil
 	}
 
-	gatewayCollector := mgrmetrics.NewGatewayCollector(
+	gatewayCollector := cmmetrics.NewGatewayCollector(
 		mgr.GetClient(), mgr.GetCache(), cfg.MetricsCollectTimeout, cfg.Namespace, cfg.ControllerName, cfg.MetricsPrefix,
 	)
-	dgCollector := mgrmetrics.NewDistributionGroupCollector(
+	dgCollector := cmmetrics.NewDistributionGroupCollector(
 		mgr.GetClient(), mgr.GetCache(), cfg.MetricsCollectTimeout, cfg.Namespace, cfg.ControllerName, cfg.MetricsPrefix,
 	)
 

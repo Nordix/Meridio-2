@@ -14,7 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+// Package util holds metrics helpers shared across the per-component collector
+// packages (internal/metrics/controllermanager, internal/metrics/networksidecar, ...).
+// It is import-aliased (e.g. as metricsutil) at call sites to disambiguate the
+// generic "util" name.
+package util
 
 import (
 	"context"
@@ -41,30 +45,30 @@ import (
 // Satisfied directly by controller-runtime's cache.Cache (and thus ctrl.Manager.GetCache());
 // declared narrowly so collectors depend only on this one method.
 //
-// Semantics relied on by syncGate (below): WaitForCacheSync (client-go's) ANDs the HasSynced of
+// Semantics relied on by SyncGate (below): WaitForCacheSync (client-go's) ANDs the HasSynced of
 // EVERY currently-tracked informer (not just the GVKs a collector reads), polling until all are
 // true or ctx is done. Each HasSynced is a one-way latch — once its first full LIST completes it
-// never regresses to false — so syncGate can skip the check permanently once it has observed true.
+// never regresses to false — so SyncGate can skip the check permanently once it has observed true.
 type CacheSyncWaiter interface {
 	WaitForCacheSync(ctx context.Context) bool
 }
 
-// syncGate wraps a CacheSyncWaiter with a "synced once" latch: once WaitForCacheSync returns
+// SyncGate wraps a CacheSyncWaiter with a "synced once" latch: once WaitForCacheSync returns
 // true, later Wait calls are a cheap atomic load instead of re-running the poll-every-informer
 // path on every scrape — safe because that result never regresses (see CacheSyncWaiter). Until
 // it first observes true, Wait delegates on every call and retries, never caching a false.
-type syncGate struct {
+type SyncGate struct {
 	waiter CacheSyncWaiter
 	synced atomic.Bool
 }
 
-// newSyncGate wraps waiter in a syncGate.
-func newSyncGate(waiter CacheSyncWaiter) *syncGate {
-	return &syncGate{waiter: waiter}
+// NewSyncGate wraps waiter in a SyncGate.
+func NewSyncGate(waiter CacheSyncWaiter) *SyncGate {
+	return &SyncGate{waiter: waiter}
 }
 
-// Wait reports whether the cache is synced, per the latch behavior described on syncGate.
-func (g *syncGate) Wait(ctx context.Context) bool {
+// Wait reports whether the cache is synced, per the latch behavior described on SyncGate.
+func (g *SyncGate) Wait(ctx context.Context) bool {
 	if g.synced.Load() {
 		return true
 	}

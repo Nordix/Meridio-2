@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package util
 
 import (
 	"context"
@@ -42,27 +42,9 @@ func (f *fakeCacheSyncWaiter) WaitForCacheSync(_ context.Context) bool {
 	return f.results[idx]
 }
 
-// alwaysSyncedWaiter is a CacheSyncWaiter test double that reports synced on every call.
-// Shared by gateway_collector_test.go and distributiongroup_collector_test.go: those tests
-// exercise Collect's data-handling branches, not the sync-gate itself (covered above), so they
-// don't need per-call control over the sync result.
-type alwaysSyncedWaiter struct{}
-
-func (alwaysSyncedWaiter) WaitForCacheSync(_ context.Context) bool {
-	return true
-}
-
-func TestAlwaysSyncedWaiter_WaitForCacheSync_AlwaysTrue(t *testing.T) {
-	waiter := alwaysSyncedWaiter{}
-
-	for i := range 3 {
-		assert.True(t, waiter.WaitForCacheSync(context.Background()), "call %d", i)
-	}
-}
-
 func TestSyncGate_WaitTrue_LatchesAndSkipsFurtherCalls(t *testing.T) {
 	waiter := &fakeCacheSyncWaiter{results: []bool{true}}
-	gate := newSyncGate(waiter)
+	gate := NewSyncGate(waiter)
 
 	assert.True(t, gate.Wait(context.Background()))
 	assert.True(t, gate.Wait(context.Background()))
@@ -75,7 +57,7 @@ func TestSyncGate_WaitTrue_LatchesAndSkipsFurtherCalls(t *testing.T) {
 
 func TestSyncGate_WaitFalse_RetriesOnEveryCallUntilSuccess(t *testing.T) {
 	waiter := &fakeCacheSyncWaiter{results: []bool{false, false, true}}
-	gate := newSyncGate(waiter)
+	gate := NewSyncGate(waiter)
 
 	assert.False(t, gate.Wait(context.Background()))
 	assert.False(t, gate.Wait(context.Background()))
@@ -91,7 +73,7 @@ func TestSyncGate_WaitFalse_RetriesOnEveryCallUntilSuccess(t *testing.T) {
 
 func TestSyncGate_NeverSucceeds_CallsEveryTime(t *testing.T) {
 	waiter := &fakeCacheSyncWaiter{results: []bool{false}}
-	gate := newSyncGate(waiter)
+	gate := NewSyncGate(waiter)
 
 	for i := 1; i <= 5; i++ {
 		assert.False(t, gate.Wait(context.Background()))
