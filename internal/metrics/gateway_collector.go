@@ -44,10 +44,25 @@ import (
 //   - <prefix>_gateway_count: number of Gateways with Accepted=True managed by this controller
 //   - <prefix>_gateway_programmed: 0/1 per Gateway, from the Programmed status condition
 //
-// Only Gateways accepted by controllerName count as "managed by this controller", matching the
-// billing-relevant semantics finalized in issue #153. gateway_programmed is reported per such
-// Gateway (Programmed is only meaningful once Accepted; Gateways not accepted by us are not ours
-// to report on).
+// The two metrics use deliberately different "ours" predicates:
+//
+// gateway_count counts Gateways whose Accepted=True condition was set by this controller
+// (gatewayutil.IsGatewayAcceptedByController), matching the billing-relevant semantics finalized
+// in issue #153 — it reflects Gateways we have actually accepted.
+//
+// gateway_programmed is emitted for every Gateway destined for this controller by its
+// GatewayClass (Gateway.spec.gatewayClassName -> GatewayClass.spec.controllerName == our name),
+// independent of the Accepted condition. This is the same ownership test the Gateway reconciler
+// gates on (shouldManageGateway). Gating on the GatewayClass rather than the Accepted condition
+// lets gateway_programmed report 0/1 for the whole lifetime a Gateway is class-ours — including
+// before we have Accepted it, or after Accepted was reset (e.g. a transient state) — rather than
+// emitting no series in those windows, which is the operationally useful behavior for tracking
+// whether our data plane is programmed.
+//
+// Note the class-based gate means a Gateway that is class-ours but whose Programmed was left
+// stale by a previous owning controller (during a discouraged gatewayClassName change) can report
+// programmed=1; this metric reflects the current Programmed condition as-is and makes no claim
+// that the data plane is up to date.
 //
 // gateway_programmed carries "gateway" and "namespace" labels, following the kube-state-metrics
 // convention of a name label paired with a separate namespace label rather than folding
@@ -97,9 +112,10 @@ func (c *GatewayCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.programmedDesc
 }
 
-// Collect implements prometheus.Collector. It lists Gateways from the informer cache fresh on
-// every call (safe to do unconditionally per the package doc), first waiting for the cache to
-// sync — bounded by collectTimeout, a cheap no-op once synced (see CacheSyncWaiter / syncGate).
+// Collect implements prometheus.Collector. It lists Gateways (and GatewayClasses, to resolve
+// class-based ownership for gateway_programmed) from the informer cache fresh on every call,
+// first waiting for the cache to sync — bounded by collectTimeout, a cheap no-op once synced
+// (see CacheSyncWaiter / syncGate).
 //
 // On sync-timeout or List failure it emits an invalid metric rather than returning silently:
 // Collect has no error return, so this is the only way to distinguish a collection failure from
@@ -111,6 +127,14 @@ func (c *GatewayCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if !c.syncGate.Wait(ctx) {
 		ch <- prometheus.NewInvalidMetric(c.countDesc, fmt.Errorf("informer cache did not sync within %s", c.collectTimeout))
+		return
+	}
+
+	// gateway_programmed is gated on GatewayClass ownership (see the type doc), so resolve the
+	// set of GatewayClass names owned by this controller first.
+	ourClasses, err := c.ourGatewayClassNames(ctx)
+	if err != nil {
+		ch <- prometheus.NewInvalidMetric(c.programmedDesc, err)
 		return
 	}
 
@@ -127,17 +151,44 @@ func (c *GatewayCollector) Collect(ch chan<- prometheus.Metric) {
 	var acceptedCount float64
 	for i := range gwList.Items {
 		gw := &gwList.Items[i]
-		if !gatewayutil.IsGatewayAcceptedByController(gw, c.controllerName) {
-			continue
-		}
-		acceptedCount++
 
-		programmed := 0.0
-		if gatewayutil.IsGatewayProgrammed(gw) {
-			programmed = 1.0
+		// gateway_count: Gateways this controller has Accepted (billing semantics, see #153).
+		if gatewayutil.IsGatewayAcceptedByController(gw, c.controllerName) {
+			acceptedCount++
 		}
-		ch <- prometheus.MustNewConstMetric(c.programmedDesc, prometheus.GaugeValue, programmed, gw.Name, gw.Namespace)
+
+		// gateway_programmed: emitted for every Gateway class-destined for this controller,
+		// independent of Accepted (see the type doc for why the predicates differ).
+		if _, ok := ourClasses[string(gw.Spec.GatewayClassName)]; ok {
+			programmed := 0.0
+			if gatewayutil.IsGatewayProgrammed(gw) {
+				programmed = 1.0
+			}
+			ch <- prometheus.MustNewConstMetric(c.programmedDesc, prometheus.GaugeValue, programmed, gw.Name, gw.Namespace)
+		}
 	}
 
 	ch <- prometheus.MustNewConstMetric(c.countDesc, prometheus.GaugeValue, acceptedCount)
+}
+
+// ourGatewayClassNames returns the set of GatewayClass names whose controllerName is this
+// controller's, mirroring the reconciler's shouldManageGateway ownership test.
+//
+// It lists all GatewayClasses and filters in memory rather than using a server-side field
+// selector: GatewayClass.spec.controllerName is not a selectable field (no selectableFields in
+// the CRD, no field index registered), and GatewayClass is cluster-scoped and low-cardinality,
+// so the cached List + in-memory filter is cheap and avoids maintaining an index solely for this
+// metric.
+func (c *GatewayCollector) ourGatewayClassNames(ctx context.Context) (map[string]struct{}, error) {
+	var gwClassList gatewayv1.GatewayClassList
+	if err := c.client.List(ctx, &gwClassList); err != nil {
+		return nil, err
+	}
+	ourClasses := make(map[string]struct{})
+	for i := range gwClassList.Items {
+		if string(gwClassList.Items[i].Spec.ControllerName) == c.controllerName {
+			ourClasses[gwClassList.Items[i].Name] = struct{}{}
+		}
+	}
+	return ourClasses, nil
 }

@@ -14,7 +14,7 @@ The controller-manager exposes these custom metrics (all prefixed by
 | Metric | Labels | Meaning |
 | --- | --- | --- |
 | `<prefix>_gateway_count` | (none) | Number of Gateways with `Accepted=True` managed by this controller. |
-| `<prefix>_gateway_programmed` | `gateway`, `namespace` | `Programmed` status condition (0/1) per managed Gateway. |
+| `<prefix>_gateway_programmed` | `gateway`, `namespace` | `Programmed` status condition (0/1) per Gateway destined for this controller by its GatewayClass (`spec.gatewayClassName` → `GatewayClass.spec.controllerName`), independent of `Accepted`. |
 | `<prefix>_distributiongroup_ready` | `dg`, `namespace` | DistributionGroup `Ready` status condition (0/1). DG-wide, no Gateway dimension. |
 | `<prefix>_distributiongroup_endpoints` | `gateway`, `gateway_namespace`, `dg`, `namespace` | Current endpoint count for the DG under a given Gateway. |
 | `<prefix>_distributiongroup_max_endpoints` | `gateway`, `gateway_namespace`, `dg`, `namespace` | Upper bound on endpoint count per the DG's distribution strategy (Maglev capacity; `+Inf` for strategies without a bounded capacity). |
@@ -117,6 +117,12 @@ A Gateway only reaches `Accepted=True` when it references a valid
 required, not optional. Without it, the Gateway is `Accepted=False`, so
 `gateway_count` stays `0` and any DG referencing it falls back to the empty
 `gateway=""` label (the empty-union fallback).
+
+> Note: `gateway_programmed` is gated on GatewayClass ownership, not on `Accepted`.
+> So as soon as a Gateway references our GatewayClass it emits a
+> `gateway_programmed{gateway=...}` series — reading `0` while it is not yet
+> programmed (e.g. still `Accepted=False`), and `1` once the LB Deployment is
+> reconciled. This series appears independently of `gateway_count`.
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
@@ -277,8 +283,11 @@ watch -n1 'curl -s http://127.0.0.1:8080/metrics | grep ^meridio'
 Observable with the setup above (no data plane needed):
 
 - `gateway_count` transitioning 0 → 1 on Gateway acceptance.
-- `gateway_programmed` series appearing per Gateway. Note `Programmed` is set by
-  the Gateway reconciler based on observing the LB Deployment, not on its Pods
+- `gateway_programmed` series appearing per Gateway destined for this controller
+  by its GatewayClass — emitted regardless of the `Accepted` condition, so it
+  appears (as `0`) even for a class-ours Gateway that is not yet accepted, and
+  becomes `1` once the reconciler sets `Programmed=True`. Note `Programmed` is set
+  by the Gateway reconciler based on observing the LB Deployment, not on its Pods
   actually running — so it can read `1` locally even though no data plane exists.
 - `distributiongroup_ready`, `distributiongroup_endpoints`, and per-Gateway
   attribution, via fake-annotation target Pods.
@@ -303,13 +312,25 @@ Not meaningfully observable without a full data plane (belongs in the e2e suite)
 
 ## Troubleshooting
 
-- **Only `gateway_count 0`, DG series show `gateway=""`** — the Gateway is not
+- **`gateway_count 0`, DG series show `gateway=""`** — the Gateway is not
   `Accepted=True`. Check why:
   ```bash
   kubectl get gateway sllb-sample -n default -o jsonpath='{.status.conditions}' | jq .
   ```
   The `Accepted=False` message names the rejected field (most commonly a missing
   or invalid `GatewayConfiguration` reference).
+
+  Cross-check with `gateway_programmed`, which is gated on GatewayClass ownership
+  rather than `Accepted`, so its presence tells you whether the Gateway is even
+  destined for this controller:
+  - a `gateway_programmed{gateway="sllb-sample"}` series **is present** (reading
+    `0`) — the Gateway's `gatewayClassName` resolves to a GatewayClass whose
+    `controllerName` is ours, so this controller owns it; it is simply not
+    accepted/programmed yet (the `Accepted=False` case above).
+  - **no** `gateway_programmed` series for the Gateway — its `gatewayClassName`
+    does not resolve to one of our GatewayClasses (wrong/missing class, or a class
+    owned by a different controller), so this controller is not managing it at all.
+    Check `spec.gatewayClassName` and the target GatewayClass's `controllerName`.
 
 - **`endpoints` stays 0 after Pods are Running** — check whether slices were
   created:
