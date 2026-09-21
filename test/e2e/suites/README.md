@@ -214,3 +214,32 @@ Update this README whenever you add, remove, or modify a test suite. Specificall
 - A VLAN ID is unique only per IP Family: the same VLAN ID may be reused by suites of a different IP Family (e.g. one IPv4, one IPv6, and one dual-stack suite could all use VLAN 100)
 - Suites sharing the same VLAN ID are mutually exclusive (deploy only one at a time), regardless of IP Family
 - The `separate-static-appnetwork` suite uses static routing with BFD. LB pod IPs are limited to `.1`-`.10` per VLAN (max 10 replicas per gateway) to match the gateway's pre-configured static routes.
+
+## Shared `ipv4-simple` Topology — Single-Suite Execution
+
+Three Go test suites are pinned to the **same** `ipv4-simple` topology (namespace
+`e2e-ipv4-simple`, Deployment `target-m`, gateway `gw-m1`, VIP `40.0.0.1`):
+
+| Suite (Ginkgo `Describe`) | Test file | What it does |
+|---------------------------|-----------|--------------|
+| `Low MTU` | `e2e_suite_lowmtu_test.go` | PMTU discovery (ICMP Frag Needed) |
+| `Resiliency` | `e2e_suite_resiliency_test.go` | kills the NFQLB process, verifies recovery |
+| `E2E BGP VIP Advertisement` | `e2e_suite_bgp_test.go` | scales `target-m` to 0 / flips pod readiness, verifies VIP withdraw/re-advertise on the DCGW |
+
+Because Resiliency and BGP are **disruptive** (process kills, scale-to-0, readiness
+flips) against this shared Deployment/gateway/VIP, these suites **must run one at a
+time against a freshly deployed `ipv4-simple` topology**. This is enforced/relied on by:
+
+- **`Serial` decorator** on all three `Describe`s — under `ginkgo -p` they never run
+  concurrently with each other or any other spec (they run isolated after the parallel
+  pool drains). **Do not remove `Serial` from any of them.**
+- **Makefile isolation** — each has its own deploy+test target
+  (`make low-mtu`, `make resiliency`, `make bgp`), all depending on `deploy-ipv4-simple`;
+  they are not deployed/run together.
+- **State restoration** — each suite restores the topology to a healthy baseline
+  (`DeferCleanup` / recovery waits) so the next suite starts clean.
+
+To reduce the risk of a future cross-suite coupling bug, the topology identifiers
+(`target-m` / `40.0.0.1` / `gw-m1` / `e2e-ipv4-simple`) should ideally be shared
+constants across the three files rather than duplicated literals — if the manifest
+changes, all three suites must be updated together.

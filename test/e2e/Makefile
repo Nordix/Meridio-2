@@ -385,6 +385,40 @@ test-resiliency: ## Run process recovery tests.
 undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
 
 ################################################################################
+##@ Suite: bgp
+################################################################################
+
+.PHONY: bgp
+bgp: deploy-bgp test-bgp ## Deploy and test BGP VIP advertisement suite.
+
+.PHONY: deploy-bgp
+deploy-bgp: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+
+.PHONY: test-bgp
+test-bgp: ## Run BGP VIP advertisement tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="E2E BGP VIP Advertisement" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-bgp
+undeploy-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+
+################################################################################
+##@ Suite: traffic-exclusion
+################################################################################
+
+.PHONY: traffic-exclusion
+traffic-exclusion: deploy-traffic-exclusion test-traffic-exclusion ## Deploy and test traffic-exclusion suite.
+
+.PHONY: deploy-traffic-exclusion
+deploy-traffic-exclusion: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+
+.PHONY: test-traffic-exclusion
+test-traffic-exclusion: ## Run NotReady target traffic exclusion tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Traffic Exclusion" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-traffic-exclusion
+undeploy-traffic-exclusion: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+
+################################################################################
 ##@ Suite: pod-cache-label
 ################################################################################
 
@@ -442,6 +476,23 @@ test-readiness-gates: ## Run e2e readiness gates tests.
 
 .PHONY: undeploy-readiness-gates
 undeploy-readiness-gates: undeploy-dual-stack-simple ## Undeploy readiness-gates topology (same as dual-stack-simple).
+
+################################################################################
+##@ Suite: robustness
+################################################################################
+
+.PHONY: robustness
+robustness: deploy-robustness test-robustness ## Deploy and test robustness suite.
+
+.PHONY: deploy-robustness
+deploy-robustness: deploy-dual-stack-simple ## Deploy robustness topology (reuses dual-stack-simple).
+
+.PHONY: test-robustness
+test-robustness: ## Run e2e robustness (fault-injection/recovery) tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Robustness" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-robustness
+undeploy-robustness: undeploy-dual-stack-simple ## Undeploy robustness topology (same as dual-stack-simple).
 
 ###############################################################################
 ##@ All ipv4 suites

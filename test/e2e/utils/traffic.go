@@ -253,6 +253,60 @@ func VerifyPMTU(vip string, size int) error {
 	return nil
 }
 
+// TrafficExpectation describes one protocol's expected traffic behavior
+// against a VIP — the common shape shared by TCP/UDP checks across nearly
+// every suite: send N connections, expect zero loss, and expect the
+// connections to land on a known set of targets.
+//
+// Exactly one of ExpectedTargets or ExpectedHosts should be set:
+//   - ExpectedTargets: only the count of distinct hosts reached matters
+//     (the common case: "every one of my N targets got traffic").
+//   - ExpectedHosts: the exact set of hosts reached matters (e.g.
+//     pod-cache-label's negative case, where only the labeled Pod should
+//     receive traffic and no others).
+type TrafficExpectation struct {
+	VIP             string
+	Protocol        string // "tcp" or "udp"
+	Port            int
+	Connections     int
+	ExpectedTargets int
+	ExpectedHosts   []string
+}
+
+// VerifyTraffic sends traffic per exp and asserts zero loss plus the
+// expected target spread. ICMP reachability is always checked first since a
+// failed connection storm is a less useful signal than a failed ping.
+func VerifyTraffic(exp TrafficExpectation) error {
+	if err := Ping(exp.VIP); err != nil {
+		return fmt.Errorf("VIP %s not reachable via ICMP: %w", exp.VIP, err)
+	}
+
+	lastingConn, lostConn, err := SendTraffic(exp.VIP, exp.Port, exp.Protocol, exp.Connections)
+	if err != nil {
+		return err
+	}
+	if lostConn != 0 {
+		return fmt.Errorf("%d %s connections lost to %s:%d", lostConn, exp.Protocol, exp.VIP, exp.Port)
+	}
+
+	if exp.ExpectedHosts != nil {
+		if len(lastingConn) != len(exp.ExpectedHosts) {
+			return fmt.Errorf("expected exactly %d hosts reached, got %d: %v",
+				len(exp.ExpectedHosts), len(lastingConn), lastingConn)
+		}
+		for _, h := range exp.ExpectedHosts {
+			if _, ok := lastingConn[h]; !ok {
+				return fmt.Errorf("expected host %s to receive traffic, got: %v", h, lastingConn)
+			}
+		}
+	} else if len(lastingConn) != exp.ExpectedTargets {
+		return fmt.Errorf("expected %d targets reached for %s:%d, got %d: %v",
+			exp.ExpectedTargets, exp.VIP, exp.Port, len(lastingConn), lastingConn)
+	}
+
+	return nil
+}
+
 // ctrafficResult represents the relevant fields from ctraffic JSON output.
 type ctrafficResult struct {
 	FailedConnects int `json:"FailedConnects"`
@@ -484,4 +538,115 @@ func CheckSCTPAssociationWithVIPs(port int, localAddrs []string, vips []string) 
 	}
 
 	return false, "", nil
+}
+
+// runBirdcOnVPNGateway runs a birdc command on the VPN gateway (the simulated
+// DCGW) and returns its combined output. The gateway's BIRD uses the default
+// control socket (/run/bird/bird.ctl), so no -s flag is needed. Works for both
+// Kind (docker exec) and in-cluster Pod (kubectl/oc exec) suites via
+// vpnGatewayExecPrefix().
+func runBirdcOnVPNGateway(args string) (string, error) {
+	cmdStr := fmt.Sprintf("%s birdc %s", vpnGatewayExecPrefix(), args)
+	cmd := exec.Command("/bin/sh", "-c", cmdStr)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("birdc %q failed: %w\noutput: %s", args, err, string(out))
+	}
+	return string(out), nil
+}
+
+// VPNGatewayHasRoute checks, from the DCGW/VPN gateway side, whether a route for
+// the exact given prefix (e.g. a VIP "10.0.0.1/32") has been received via BGP.
+//
+// It inspects `birdc show route for <prefix> all`. Note that BIRD's `show route
+// for` returns the longest-matching route, so for an absent prefix it falls back
+// to the default route (0.0.0.0/0 blackhole). This helper therefore requires the
+// output to contain a route line for the *exact* prefix AND that route to be
+// sourced from BGP ("source: BGP"), avoiding false positives from the default
+// fallback or a locally-originated static/blackhole route.
+//
+// This is the end-to-end proof that the LB advertised the VIP and the DCGW
+// installed it.
+func VPNGatewayHasRoute(prefix string) (bool, error) {
+	out, err := runBirdcOnVPNGateway(fmt.Sprintf("show route for %s all", prefix))
+	if err != nil {
+		return false, err
+	}
+	return routeIsBGPSourced(out, prefix), nil
+}
+
+// routeIsBGPSourced reports whether the exact prefix is present in `birdc show
+// route ... all` output AND that route was learned via BGP (not a local
+// static/blackhole route). This is the pure decision behind VPNGatewayHasRoute,
+// factored out so it can be unit-tested without shelling out to the gateway.
+func routeIsBGPSourced(out, prefix string) bool {
+	block, found := exactPrefixBlock(out, prefix)
+	if !found {
+		return false
+	}
+	// BIRD 3.x prints "source: BGP" for BGP-learned routes in `all` mode.
+	return strings.Contains(block, "source: BGP")
+}
+
+// VPNGatewayRouteNextHops returns the next-hop addresses the DCGW has installed
+// for the exact given prefix, parsed from `birdc show route for <prefix> all`.
+// Useful for asserting ECMP fan-out across multiple LB Pods. Returns an empty
+// slice if the exact prefix is not present (e.g. the query matched only the
+// default fallback route).
+func VPNGatewayRouteNextHops(prefix string) ([]string, error) {
+	out, err := runBirdcOnVPNGateway(fmt.Sprintf("show route for %s all", prefix))
+	if err != nil {
+		return nil, err
+	}
+	block, found := exactPrefixBlock(out, prefix)
+	if !found {
+		return nil, nil
+	}
+	var nextHops []string
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		// Next-hop lines look like: "via 169.254.10.1 on vlan1"
+		if !strings.HasPrefix(line, "via ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			nextHops = append(nextHops, fields[1])
+		}
+	}
+	return nextHops, nil
+}
+
+// exactPrefixBlock extracts the portion of `birdc show route ... all` output
+// that describes the route for the exact prefix given. A route entry begins with
+// a line whose first field is the network prefix (e.g. "10.0.0.1/32 unicast ..."),
+// followed by indented attribute/next-hop lines and possibly additional
+// continuation lines (further paths) whose network column is empty (they start
+// with whitespace).
+//
+// It returns the matching block and whether the exact prefix was found. Lines for
+// other prefixes (such as the 0.0.0.0/0 default fallback) are excluded.
+func exactPrefixBlock(out, prefix string) (string, bool) {
+	var block []string
+	capturing := false
+	for _, line := range strings.Split(out, "\n") {
+		// A new route entry starts on a non-indented line whose first field is
+		// a network prefix (contains "/"). Continuation paths for the same
+		// prefix start with whitespace (empty network column) and must not
+		// reset capture state.
+		isNewEntry := len(line) > 0 && line[0] != ' ' && line[0] != '\t'
+		if isNewEntry {
+			fields := strings.Fields(line)
+			if len(fields) > 0 && strings.Contains(fields[0], "/") {
+				// Starting a new route entry: capture only if it's ours.
+				capturing = fields[0] == prefix
+			}
+			// Non-prefix header lines (e.g. "Table master4:",
+			// "BIRD ... ready.") don't change capture state.
+		}
+		if capturing {
+			block = append(block, line)
+		}
+	}
+	return strings.Join(block, "\n"), len(block) > 0
 }
