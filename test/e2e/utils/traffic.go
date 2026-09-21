@@ -168,6 +168,60 @@ func VerifyPMTU(vip string, size int) error {
 	return nil
 }
 
+// TrafficExpectation describes one protocol's expected traffic behavior
+// against a VIP — the common shape shared by TCP/UDP checks across nearly
+// every suite: send N connections, expect zero loss, and expect the
+// connections to land on a known set of targets.
+//
+// Exactly one of ExpectedTargets or ExpectedHosts should be set:
+//   - ExpectedTargets: only the count of distinct hosts reached matters
+//     (the common case: "every one of my N targets got traffic").
+//   - ExpectedHosts: the exact set of hosts reached matters (e.g.
+//     pod-cache-label's negative case, where only the labeled Pod should
+//     receive traffic and no others).
+type TrafficExpectation struct {
+	VIP             string
+	Protocol        string // "tcp" or "udp"
+	Port            int
+	Connections     int
+	ExpectedTargets int
+	ExpectedHosts   []string
+}
+
+// VerifyTraffic sends traffic per exp and asserts zero loss plus the
+// expected target spread. ICMP reachability is always checked first since a
+// failed connection storm is a less useful signal than a failed ping.
+func VerifyTraffic(exp TrafficExpectation) error {
+	if err := Ping(exp.VIP); err != nil {
+		return fmt.Errorf("VIP %s not reachable via ICMP: %w", exp.VIP, err)
+	}
+
+	lastingConn, lostConn, err := SendTraffic(exp.VIP, exp.Port, exp.Protocol, exp.Connections)
+	if err != nil {
+		return err
+	}
+	if lostConn != 0 {
+		return fmt.Errorf("%d %s connections lost to %s:%d", lostConn, exp.Protocol, exp.VIP, exp.Port)
+	}
+
+	if exp.ExpectedHosts != nil {
+		if len(lastingConn) != len(exp.ExpectedHosts) {
+			return fmt.Errorf("expected exactly %d hosts reached, got %d: %v",
+				len(exp.ExpectedHosts), len(lastingConn), lastingConn)
+		}
+		for _, h := range exp.ExpectedHosts {
+			if _, ok := lastingConn[h]; !ok {
+				return fmt.Errorf("expected host %s to receive traffic, got: %v", h, lastingConn)
+			}
+		}
+	} else if len(lastingConn) != exp.ExpectedTargets {
+		return fmt.Errorf("expected %d targets reached for %s:%d, got %d: %v",
+			exp.ExpectedTargets, exp.VIP, exp.Port, len(lastingConn), lastingConn)
+	}
+
+	return nil
+}
+
 // ctrafficResult represents the relevant fields from ctraffic JSON output.
 type ctrafficResult struct {
 	FailedConnects int `json:"FailedConnects"`
