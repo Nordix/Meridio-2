@@ -1,5 +1,5 @@
 ---
-# IPv4 router (VLAN 100, ASN 64512) - reuses separate-appnetwork-v4 gw-a1 slot
+# IPv4 router (VLAN 700, ASN 64518) - reuses ipv4-simple gw-m1 slot
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
@@ -7,11 +7,11 @@ metadata:
 spec:
   gatewayRef:
     name: gw-ds
-  interface: "vlan-100"
-  address: "169.254.10.150"
+  interface: "vlan-700"
+  address: "169.254.40.150"
   protocol: "BGP"
   bgp:
-    localASN: 64512
+    localASN: 64518
     remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179
@@ -21,7 +21,7 @@ spec:
       minRx: 300ms
       multiplier: 3
 ---
-# IPv6 router (VLAN 100, ASN 64512) - reuses separate-appnetwork-v4 gw-a1 slot
+# IPv6 router (VLAN 700, ASN 64518) - reuses ipv4-simple gw-m1 slot
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayRouter
 metadata:
@@ -29,11 +29,11 @@ metadata:
 spec:
   gatewayRef:
     name: gw-ds
-  interface: "vlan-100"
-  address: "fd00:cafe:10::150"
+  interface: "vlan-700"
+  address: "fd00:cafe:40::150"
   protocol: "BGP"
   bgp:
-    localASN: 64512
+    localASN: 64518
     remoteASN: 4200000000
     localPort: 10179
     remotePort: 10179
@@ -56,8 +56,8 @@ spec:
     kind: DistributionGroup
     name: dg-ds
   destinationCIDRs:
-  - "10.0.0.1/32"
-  - "fd00:cafe:1::1/128"
+  - "40.0.0.1/32"
+  - "fd00:cafe:4::1/128"
   protocols:
   - TCP
   - UDP

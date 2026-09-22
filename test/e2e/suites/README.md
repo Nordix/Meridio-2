@@ -66,7 +66,6 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | VLAN ID | Suite | IP Family | Gateway | External Subnet (IPv4) | External Subnet (IPv6) | Internal Subnet (IPv4) | Internal Subnet (IPv6) | VIP(s) | Local ASN | Remote ASN |
 |---------|-------|-----------|---------|----------------------|----------------------|----------------------|----------------------|--------|-----------|------------|
 | 100 | separate-appnetwork-v4 | IPv4 | gw-a1 | `169.254.10.0/24` | — | `169.111.10.0/24` | — | `10.0.0.1/32` | 64512 | 4200000000 |
-| 100 | dual-stack | dual-stack-simple | gw-ds | `169.254.10.0/24` | `fd00:cafe:10::/64` | `169.111.10.0/24` | `fd00:cafe:110::/64` | `10.0.0.1/32`, `fd00:cafe:1::1/128` | 64512 | 4200000000 |
 | 200 | separate-appnetwork-v4 | IPv4 | gw-a2 | `169.254.11.0/24` | — | `169.111.10.0/24` | — | `10.0.0.2/32` | 64513 | 4200000000 |
 | 300 | shared-appnetwork | IPv4 | gw-b1 | `169.254.20.0/24` | — | `169.111.20.0/24` | — | `20.0.0.1/32` | 64514 | 4200000000 |
 | 300 | shared-appnetwork-ds | dual-stack | gw-bds1 | `169.254.20.0/24` | `fd00:cafe:20::/64` | `169.111.20.0/24` | `fd00:cafe:120::/64` | `20.0.0.1/32`, `fd00:cafe:2::1/128` | 64514 | 4200000000 |
@@ -75,6 +74,7 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | 500 | sctp-multihoming | IPv4 | sctp-gw1 | `169.254.30.0/24` | — | `169.111.30.0/24` | — | `30.0.0.1/32` | 64516 | 4200000000 |
 | 600 | sctp-multihoming | IPv4 | sctp-gw2 | `169.254.31.0/24` | — | `169.111.30.0/24` | — | `30.0.0.2/32` | 64517 | 4200000000 |
 | 700 | ipv4-simple | IPv4 | gw-m1 | `169.254.40.0/24` | — | `169.111.40.0/24` | — | `40.0.0.1/32` | 64518 | 4200000000 |
+| 700 | dual-stack-simple | dual-stack | gw-ds | `169.254.40.0/24` | `fd00:cafe:40::/64` | `169.111.40.0/24` | `fd00:cafe:140::/64` | `40.0.0.1/32`, `fd00:cafe:4::1/128` | 64518 | 4200000000 |
 | 800 | pod-cache-label | IPv4 | gw-pcl | `169.254.50.0/24` | — | `169.111.50.0/24` | — | `50.0.0.1/32` | 64519 | 4200000000 |
 | 900 | tcp-ao | IPv4 | gw-t1 | `169.254.60.0/24` | — | `169.111.60.0/24` | — | `60.0.0.1/32` | 64520 | 4200000000 |
 | 1000 | tcp-ao | IPv4 | gw-t2 | `169.254.61.0/24` | — | `169.111.60.0/24` | — | `60.0.0.2/32` | 64521 | 4200000000 |
@@ -196,7 +196,7 @@ ipRanges:
 
 ### 5. Namespace naming
 
-Use `e2e-{suite-name}` (e.g., `e2e-dual-stack`, `e2e-separate-appnetwork-v4`).
+Use `e2e-{suite-name}` (e.g., `e2e-dual-stack-simple`, `e2e-separate-appnetwork-v4`).
 
 ## Maintaining This Document
 

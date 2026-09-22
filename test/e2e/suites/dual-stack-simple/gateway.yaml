@@ -24,22 +24,22 @@ spec:
   - type: NAD
     nad:
       name: sysctl-tuning
-      namespace: e2e-dual-stack
+      namespace: e2e-dual-stack-simple
       interface: dummy
   - type: NAD
     nad:
-      name: vlan-100
-      namespace: e2e-dual-stack
-      interface: vlan-100
+      name: vlan-700
+      namespace: e2e-dual-stack-simple
+      interface: vlan-700
   - type: NAD
     nad:
       name: app-net-ds
-      namespace: e2e-dual-stack
+      namespace: e2e-dual-stack-simple
       interface: net-ds
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.10.0/24"
+    cidr: "169.111.40.0/24"
   - attachmentType: NAD
-    cidr: "fd00:cafe:110::/64"
+    cidr: "fd00:cafe:140::/64"
   horizontalScaling:
     replicas: 2

@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	rgNamespace   = "e2e-dual-stack"
+	rgNamespace   = "e2e-dual-stack-simple"
 	rgGateway     = "gw-ds"
 	rgInterface   = "net-ds"
 	rgGateIPv4    = "meridio-2.nordix.org/ipv4-connectivity"
@@ -42,8 +42,8 @@ const (
 	rgProtocolV4  = "NBR-gw-ds-router-v4"
 	rgProtocolV6  = "NBR-gw-ds-router-v6"
 	rgTargetLabel = "app=target-ds"
-	rgVIPv4       = "10.0.0.1"
-	rgVIPv6       = "fd00:cafe:1::1"
+	rgVIPv4       = "40.0.0.1"
+	rgVIPv6       = "fd00:cafe:4::1"
 )
 
 var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func() {
