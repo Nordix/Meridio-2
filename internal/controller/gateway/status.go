@@ -18,11 +18,12 @@ package gateway
 
 import (
 	"context"
-	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 )
 
 // updateAcceptedStatus sets the Accepted condition on the Gateway
@@ -59,7 +60,9 @@ func (r *GatewayReconciler) updateProgrammedStatus(ctx context.Context, gw *gate
 	return nil
 }
 
-// acceptedMessage returns the standard message for Accepted=True condition
+// acceptedMessage returns the standard message for Accepted=True condition. Built from
+// gatewayutil.GatewayAcceptedMessagePrefix, the same constant IsGatewayAcceptedByController matches against,
+// so the writer and reader of this message can never drift apart on the literal prefix text.
 func (r *GatewayReconciler) acceptedMessage() string {
-	return fmt.Sprintf("Gateway accepted by %s", r.ControllerName)
+	return gatewayutil.GatewayAcceptedMessagePrefix + r.ControllerName
 }

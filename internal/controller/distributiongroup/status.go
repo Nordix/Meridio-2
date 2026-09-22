@@ -47,6 +47,15 @@ func (r *DistributionGroupReconciler) updateStatus(ctx context.Context, dg *meri
 	return nil
 }
 
+// IsReady reports whether the DistributionGroup's Ready status condition (set by updateStatus
+// above based on endpoint availability) is currently True. Exported for reuse by the
+// controller-manager metrics collectors in internal/metrics, keeping the "what does Ready mean"
+// logic next to where the condition is actually written rather than re-derived independently
+// elsewhere.
+func IsReady(dg *meridio2v1alpha1.DistributionGroup) bool {
+	return meta.IsStatusConditionTrue(dg.Status.Conditions, conditionTypeReady)
+}
+
 // buildReadyCondition creates the Ready condition based on endpoint availability
 func buildReadyCondition(hasEndpoints bool, generation int64, message string) metav1.Condition {
 	condition := metav1.Condition{

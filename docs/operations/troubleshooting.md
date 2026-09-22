@@ -556,7 +556,7 @@ Two condition types are used (per Gateway API GEP-1364):
   - The controller released a previously managed Gateway (e.g., `gatewayClassName` was changed to a different GatewayClass).
 
 **`Programmed`** — indicates whether the LB Deployment has been reconciled:
-- `Programmed=True`, reason `Programmed` — LB Deployment has been created or updated successfully. Message: `"LB Deployment reconciled"`.
+- `Programmed=True`, reason `Programmed` — LB Deployment has been created or updated successfully. Message: `"LB Deployment workload reconciled (Pods may still be initializing)"`.
 - `Programmed=False`, reason `Invalid` — a permanent error prevented Deployment creation (e.g., name collision with an existing Deployment not owned by this Gateway). The message describes the error.
 
 `status.addresses` should list VIPs from L34Routes. If empty, check that L34Routes exist with `parentRefs` pointing to this Gateway and that `destinationCIDRs` are set.
