@@ -139,16 +139,20 @@ func (r *DistributionGroupReconciler) findDGsReferencingGateways(ctx context.Con
 	return requests
 }
 
-// listRoutesReferencingDG finds L34Routes that reference this DistributionGroup in backendRefs
-func (r *DistributionGroupReconciler) listRoutesReferencingDG(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup) ([]meridio2v1alpha1.L34Route, error) {
+// listRoutesReferencingDG finds L34Routes that reference this DistributionGroup in backendRefs.
+// namespace scopes the List to a single namespace (mirrors the reconciler's r.Namespace); pass
+// "" to watch all namespaces, consistent with the rest of this package.
+func listRoutesReferencingDG(
+	ctx context.Context, c client.Client, namespace string, dg *meridio2v1alpha1.DistributionGroup,
+) ([]meridio2v1alpha1.L34Route, error) {
 	var routeList meridio2v1alpha1.L34RouteList
 	listOpts := []client.ListOption{}
 
-	if r.Namespace != "" {
-		listOpts = append(listOpts, client.InNamespace(r.Namespace))
+	if namespace != "" {
+		listOpts = append(listOpts, client.InNamespace(namespace))
 	}
 
-	if err := r.List(ctx, &routeList, listOpts...); err != nil {
+	if err := c.List(ctx, &routeList, listOpts...); err != nil {
 		return nil, err
 	}
 

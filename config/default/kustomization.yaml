@@ -40,16 +40,17 @@ resources:
 # [ENV] Inject runtime environment variables via Downward API
 # [TEMPLATE] Mount ConfigMap that contains lb-deployment template
 
-# Uncomment the patches line if you enable Metrics and CertManager
-# [METRICS-WITH-CERTS] To enable metrics protected with certManager, uncomment the following line.
-# This patch will protect the metrics with certManager self-signed certs.
-#- path: cert_metrics_manager_patch.yaml
-#  target:
-#    kind: Deployment
+# [METRICS-WITH-CERTS] Serve /metrics over HTTPS with a cert-manager cert (enabled by default).
+# This patch mounts the metrics-server-cert secret into the manager and sets --metrics-cert-path.
+# The paired metrics-cert replacements at the end of this file fill in the cert's dnsNames.
+# To disable secure metrics serving, comment out both this patch and those replacements.
 
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 patches:
+  - path: cert_metrics_manager_patch.yaml
+    target:
+      kind: Deployment
   - path: manager_metrics_patch.yaml
     target:
       kind: Deployment
@@ -62,68 +63,6 @@ patches:
   - path: manager_webhook_patch.yaml
     target:
       kind: Deployment
-
-# [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
-# Uncomment the following replacements to add the cert-manager CA injection annotations
-# - source: # Uncomment the following block to enable certificates for metrics
-#     kind: Service
-#     version: v1
-#     name: controller-manager-metrics-service
-#     fieldPath: metadata.name
-#   targets:
-#     - select:
-#         kind: Certificate
-#         group: cert-manager.io
-#         version: v1
-#         name: metrics-certs
-#       fieldPaths:
-#         - spec.dnsNames.0
-#         - spec.dnsNames.1
-#       options:
-#         delimiter: '.'
-#         index: 0
-#         create: true
-#     - select: # Uncomment the following to set the Service name for TLS config in Prometheus ServiceMonitor
-#         kind: ServiceMonitor
-#         group: monitoring.coreos.com
-#         version: v1
-#         name: controller-manager-metrics-monitor
-#       fieldPaths:
-#         - spec.endpoints.0.tlsConfig.serverName
-#       options:
-#         delimiter: '.'
-#         index: 0
-#         create: true
-
-# - source:
-#     kind: Service
-#     version: v1
-#     name: controller-manager-metrics-service
-#     fieldPath: metadata.namespace
-#   targets:
-#     - select:
-#         kind: Certificate
-#         group: cert-manager.io
-#         version: v1
-#         name: metrics-certs
-#       fieldPaths:
-#         - spec.dnsNames.0
-#         - spec.dnsNames.1
-#       options:
-#         delimiter: '.'
-#         index: 1
-#         create: true
-#     - select: # Uncomment the following to set the Service namespace for TLS in Prometheus ServiceMonitor
-#         kind: ServiceMonitor
-#         group: monitoring.coreos.com
-#         version: v1
-#         name: controller-manager-metrics-monitor
-#       fieldPaths:
-#         - spec.endpoints.0.tlsConfig.serverName
-#       options:
-#         delimiter: '.'
-#         index: 1
-#         create: true
 
 replacements:
   - source:
@@ -230,5 +169,50 @@ replacements:
         select:
           kind: Deployment
           labelSelector: control-plane=controller-manager
+  # [METRICS-WITH-CERTS] Substitute the real metrics Service name (segment 0) and namespace
+  # (segment 1) into the metrics-certs Certificate's placeholder dnsNames, which ship as
+  # SERVICE_NAME.SERVICE_NAMESPACE.svc[.cluster.local] (see config/certmanager/certificate-metrics.yaml),
+  # so the cert is valid for the Service's DNS name.
+  #
+  # Only the Certificate is targeted here. Stock kubebuilder also offered a replacement writing the
+  # Service name/namespace into a Prometheus ServiceMonitor's tlsConfig.serverName; that is omitted
+  # because the ServiceMonitor is not part of config/default (it must not depend on the Prometheus
+  # Operator CRDs).
+  - source:
+      kind: Service
+      version: v1
+      name: controller-manager-metrics-service
+      fieldPath: metadata.name
+    targets:
+      - select:
+          kind: Certificate
+          group: cert-manager.io
+          version: v1
+          name: metrics-certs
+        fieldPaths:
+          - spec.dnsNames.0
+          - spec.dnsNames.1
+        options:
+          delimiter: '.'
+          index: 0
+          create: true
+  - source:
+      kind: Service
+      version: v1
+      name: controller-manager-metrics-service
+      fieldPath: metadata.namespace
+    targets:
+      - select:
+          kind: Certificate
+          group: cert-manager.io
+          version: v1
+          name: metrics-certs
+        fieldPaths:
+          - spec.dnsNames.0
+          - spec.dnsNames.1
+        options:
+          delimiter: '.'
+          index: 1
+          create: true
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

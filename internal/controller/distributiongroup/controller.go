@@ -47,6 +47,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	"github.com/nordix/meridio-2/internal/common/gatewayutil"
 )
 
 // DistributionGroupReconciler reconciles a DistributionGroup object
@@ -131,7 +132,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// 6. Filter Gateways by Accepted condition (only process Gateways controlled by us)
 	var acceptedGateways []gatewayv1.Gateway
 	for _, gw := range allGateways {
-		if r.isGatewayAccepted(&gw) {
+		if gatewayutil.IsGatewayAcceptedByController(&gw, r.ControllerName) {
 			acceptedGateways = append(acceptedGateways, gw)
 		}
 	}
