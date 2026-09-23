@@ -571,6 +571,30 @@ test-scaling: ## Run Endpoint Scaling tests.
 undeploy-scaling: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology.
 
 ################################################################################
+##@ Suite: Node Drain
+################################################################################
+
+# Node Drain reuses the shared-appnetwork-ds topology (like Endpoint Scaling).
+# The spec is Serial and carries the 'dual-stack' label, so it runs as part of
+# the dual-stack suite on the dual-stack runner. It requires a cluster with at
+# least 4 worker nodes (the default Kind cluster config provides 4). These
+# targets are kept for running the node-drain test standalone locally.
+
+.PHONY: node-drain
+node-drain: deploy-node-drain test-node-drain ## Deploy and run the Node Drain test.
+
+.PHONY: deploy-node-drain
+deploy-node-drain: deploy-shared-appnetwork-ds ## Deploy shared-appnetwork-ds topology.
+
+.PHONY: test-node-drain
+test-node-drain: ## Run Node Drain test.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Node Drain" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-node-drain
+undeploy-node-drain: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology.
+
+
+################################################################################
 ##@ Suite: openshift-crc
 ################################################################################
 

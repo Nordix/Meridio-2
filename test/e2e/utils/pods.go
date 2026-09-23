@@ -63,6 +63,40 @@ func IsPodReady(namespace, podName string) bool {
 	return strings.TrimSpace(out) == "True"
 }
 
+// GetPodNode returns the node name a Pod is scheduled on (.spec.nodeName),
+// or "" if the Pod cannot be found or is not yet scheduled.
+func GetPodNode(namespace, podName string) string {
+	cmd := exec.Command("kubectl", "get", "pod", podName, "-n", namespace,
+		"-o", "jsonpath={.spec.nodeName}")
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// NodesForPods returns the set of node names hosting Running Pods matching
+// label in namespace. Pods not yet scheduled (empty nodeName) are skipped.
+// The result is a set (map to struct{}) so callers can test co-location with
+// a simple membership check.
+func NodesForPods(namespace, label string) map[string]struct{} {
+	nodes := make(map[string]struct{})
+	cmd := exec.Command("kubectl", "get", "pods", "-n", namespace,
+		"-l", label, "--field-selector=status.phase=Running",
+		"-o", "jsonpath={range .items[*]}{.spec.nodeName}{\"\\n\"}{end}")
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return nodes
+	}
+	for _, n := range utils.GetNonEmptyLines(out) {
+		n = strings.TrimSpace(n)
+		if n != "" {
+			nodes[n] = struct{}{}
+		}
+	}
+	return nodes
+}
+
 // GetContainerRestarts returns the restart count of containerName inside
 // podName, or -1 if the Pod/container cannot be found or the count cannot be
 // parsed.
