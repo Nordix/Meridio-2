@@ -73,8 +73,8 @@ var ipv6TestCases = []suiteTestCase{
 		targetApp:      "target-v6a",
 		targetReplicas: 2,
 		gateways: []gwTestCase{
-			{name: "gw-v6a1", vip: "fd00:cafe:7::1", targets: 2, dgName: "dg-v6a1"},
-			{name: "gw-v6a2", vip: "fd00:cafe:7::2", targets: 2, dgName: "dg-v6a2"},
+			{name: "gw-v6a1", vip: "fd00:cafe:1::1", targets: 2, dgName: "dg-v6a1"},
+			{name: "gw-v6a2", vip: "fd00:cafe:1::2", targets: 2, dgName: "dg-v6a2"},
 		},
 	},
 }

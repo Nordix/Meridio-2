@@ -66,7 +66,9 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | VLAN ID | Suite | IP Family | Gateway | External Subnet (IPv4) | External Subnet (IPv6) | Internal Subnet (IPv4) | Internal Subnet (IPv6) | VIP(s) | Local ASN | Remote ASN |
 |---------|-------|-----------|---------|----------------------|----------------------|----------------------|----------------------|--------|-----------|------------|
 | 100 | separate-appnetwork-v4 | IPv4 | gw-a1 | `169.254.10.0/24` | — | `169.111.10.0/24` | — | `10.0.0.1/32` | 64512 | 4200000000 |
+| 100 | separate-appnetwork-v6 | IPv6 | gw-v6a1 | — | `fd00:cafe:10::/64` | — | `fd00:cafe:110::/64` | `fd00:cafe:1::1/128` | 64512 | 4200000000 |
 | 200 | separate-appnetwork-v4 | IPv4 | gw-a2 | `169.254.11.0/24` | — | `169.111.10.0/24` | — | `10.0.0.2/32` | 64513 | 4200000000 |
+| 200 | separate-appnetwork-v6 | IPv6 | gw-v6a2 | — | `fd00:cafe:11::/64` | — | `fd00:cafe:110::/64` | `fd00:cafe:1::2/128` | 64513 | 4200000000 |
 | 300 | shared-appnetwork | IPv4 | gw-b1 | `169.254.20.0/24` | — | `169.111.20.0/24` | — | `20.0.0.1/32` | 64514 | 4200000000 |
 | 300 | shared-appnetwork-ds | dual-stack | gw-bds1 | `169.254.20.0/24` | `fd00:cafe:20::/64` | `169.111.20.0/24` | `fd00:cafe:120::/64` | `20.0.0.1/32`, `fd00:cafe:2::1/128` | 64514 | 4200000000 |
 | 400 | shared-appnetwork | IPv4 | gw-b2 | `169.254.21.0/24` | — | `169.111.20.0/24` | — | `20.0.0.2/32` | 64515 | 4200000000 |
@@ -80,9 +82,7 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | 1000 | tcp-ao | IPv4 | gw-t2 | `169.254.61.0/24` | — | `169.111.60.0/24` | — | `60.0.0.2/32` | 64521 | 4200000000 |
 | 1100 | separate-static-appnetwork | IPv4 | gw-a1 | `169.254.110.0/24` | — | `169.111.110.0/24` | — | `110.0.0.1/32` | — (static+BFD) | — |
 | 1200 | separate-static-appnetwork | IPv4 | gw-a2 | `169.254.111.0/24` | — | `169.111.110.0/24` | — | `110.0.0.2/32` | — (static+BFD) | — |
-| 1300 | separate-appnetwork-v6 | IPv6 | gw-v6a1 | — | `fd00:cafe:70::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::1/128` | 64522 | 4200000000 |
-| 1400 | separate-appnetwork-v6 | IPv6 | gw-v6a2 | — | `fd00:cafe:71::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::2/128` | 64523 | 4200000000 |
-| 1500 | IPv4 | bfd-detection | gw-bfd | `169.254.80.0/24` | — | `169.111.80.0/24` | — | `80.0.0.1/32` | 64524 | 4200000000 |
+| 1500 | bfd-detection | IPV4 | gw-bfd | `169.254.80.0/24` | — | `169.111.80.0/24` | — | `80.0.0.1/32` | 64524 | 4200000000 |
 
 **Next available:** VLAN 1600, ASN 64525, external `169.254.90.0/24` / `fd00:cafe:90::/64`, internal `169.111.90.0/24` / `fd00:cafe:190::/64`, VIP `90.0.0.1/32` / `fd00:cafe:9::1/128`
 
@@ -110,9 +110,9 @@ Also record the suite's **IP Family** in the allocation table — one of `IPv4`,
 **VLAN IDs may be reused across suites of a different IP Family.** A VLAN ID is
 only unique per IP family, so the same VLAN can host one IPv4 suite, one IPv6
 suite, and one dual-stack suite. For example, VLAN 100 is shared by
-`separate-appnetwork-v4` (IPv4) and `dual-stack` (dual-stack); a pure-IPv6 suite
-could reuse VLAN 100 as well. Suites that share a VLAN ID are mutually exclusive
-and cannot be deployed simultaneously (see Notes).
+`separate-appnetwork-v4` (IPv4) and `separate-appnetwork-v6` (IPv6). Suites that
+share a VLAN ID are mutually exclusive and cannot be deployed simultaneously
+(see Notes).
 
 ### 2. Register on the VPN gateway
 
