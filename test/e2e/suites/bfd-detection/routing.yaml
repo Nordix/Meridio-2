@@ -1,0 +1,48 @@
+---
+# gw-bfd router (VLAN 1500, ASN 64524).
+#
+# Starts WITH BFD enabled. The BFD-detection test measures the fast
+# (sub-second) failure detection this provides, then patches this router at
+# runtime to remove the `bfd` block and measures the slower hold-timer
+# detection, before restoring BFD. The hold time is deliberately short (15s)
+# so the no-BFD phase completes quickly.
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-bfd-router-v4
+spec:
+  gatewayRef:
+    name: gw-bfd
+  interface: "vlan-1500"
+  address: "169.254.80.150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64524
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 15s
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-bfd
+spec:
+  parentRefs:
+  - name: gw-bfd
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-bfd
+  destinationCIDRs:
+  - "80.0.0.1/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100

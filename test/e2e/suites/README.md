@@ -82,8 +82,9 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | 1200 | separate-static-appnetwork | IPv4 | gw-a2 | `169.254.111.0/24` | — | `169.111.110.0/24` | — | `110.0.0.2/32` | — (static+BFD) | — |
 | 1300 | separate-appnetwork-v6 | IPv6 | gw-v6a1 | — | `fd00:cafe:70::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::1/128` | 64522 | 4200000000 |
 | 1400 | separate-appnetwork-v6 | IPv6 | gw-v6a2 | — | `fd00:cafe:71::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::2/128` | 64523 | 4200000000 |
+| 1500 | bfd-detection | gw-bfd | `169.254.80.0/24` | — | `169.111.80.0/24` | — | `80.0.0.1/32` | 64524 | 4200000000 |
 
-**Next available:** VLAN 1500, ASN 64524, external `169.254.80.0/24` / `fd00:cafe:80::/64`, internal `169.111.80.0/24` / `fd00:cafe:180::/64`, VIP `80.0.0.1/32` / `fd00:cafe:8::1/128`
+**Next available:** VLAN 1600, ASN 64525, external `169.254.90.0/24` / `fd00:cafe:90::/64`, internal `169.111.90.0/24` / `fd00:cafe:190::/64`, VIP `90.0.0.1/32` / `fd00:cafe:9::1/128`
 
 ## Adding a New Suite
 
@@ -214,6 +215,7 @@ Update this README whenever you add, remove, or modify a test suite. Specificall
 - A VLAN ID is unique only per IP Family: the same VLAN ID may be reused by suites of a different IP Family (e.g. one IPv4, one IPv6, and one dual-stack suite could all use VLAN 100)
 - Suites sharing the same VLAN ID are mutually exclusive (deploy only one at a time), regardless of IP Family
 - The `separate-static-appnetwork` suite uses static routing with BFD. LB pod IPs are limited to `.1`-`.10` per VLAN (max 10 replicas per gateway) to match the gateway's pre-configured static routes.
+- The `bfd-detection` suite is a standalone single-gateway topology (VLAN 1500, `gw-bfd`) whose GatewayRouter starts with BFD enabled. Its e2e test measures BGP-down detection time with BFD (~0.9s) versus the BGP hold timer (~15s) by injecting an abrupt, silent VPN-gateway link failure, patching the router at runtime to remove/re-add the `bfd` block between phases. It uses a shortened 15s hold time so the no-BFD phase completes quickly, and restores BFD when done.
 
 ## Shared `ipv4-simple` Topology — Single-Suite Execution
 
