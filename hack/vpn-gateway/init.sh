@@ -4,16 +4,18 @@ sysctl -w net.ipv4.fib_multipath_hash_policy=1
 sysctl -w net.ipv4.conf.all.forwarding=1
 sysctl -w net.ipv6.conf.all.forwarding=1
 
-# VLAN 100 — separate-appnetwork-v4 gw-a1
+# VLAN 100 — separate-appnetwork-v4 gw-a1 + separate-appnetwork-v6 gw-v6a1 (shared)
 ip link add link eth0 name vlan1 type vlan id 100
 ip link set vlan1 up
 ip addr add 169.254.10.150/24 dev vlan1
+ip addr add fd00:cafe:10::150/64 dev vlan1
 ip addr add 200.100.0.100/32 dev vlan1
 
-# VLAN 200 — separate-appnetwork-v4 gw-a2
+# VLAN 200 — separate-appnetwork-v4 gw-a2 + separate-appnetwork-v6 gw-v6a2 (shared)
 ip link add link eth0 name vlan2 type vlan id 200
 ip link set vlan2 up
 ip addr add 169.254.11.150/24 dev vlan2
+ip addr add fd00:cafe:11::150/64 dev vlan2
 ip addr add 200.200.0.100/32 dev vlan2
 
 # VLAN 300 — shared-appnetwork gw-b1 (IPv4) + shared-appnetwork-ds gw-bds1 (dual-stack)
@@ -74,18 +76,8 @@ ip link add link eth0 name vlan12 type vlan id 1200
 ip link set vlan12 up
 ip addr add 169.254.111.150/24 dev vlan12
 
-# VLAN 1300 — separate-appnetwork-v6 gw-v6a1
-ip link add link eth0 name vlan13 type vlan id 1300
-ip link set vlan13 up
-ip addr add fd00:cafe:70::150/64 dev vlan13
-
-# VLAN 1400 — separate-appnetwork-v6 gw-v6a2
-ip link add link eth0 name vlan14 type vlan id 1400
-ip link set vlan14 up
-ip addr add fd00:cafe:71::150/64 dev vlan14
-
 ethtool -K eth0 tx off
 
-echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400"
+echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200"
 
 /usr/sbin/bird -d -c /etc/bird/bird-gw.conf

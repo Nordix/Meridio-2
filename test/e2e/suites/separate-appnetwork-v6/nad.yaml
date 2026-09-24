@@ -53,42 +53,42 @@ spec:
       ]
     }
 ---
-# VLAN 1300 NAD for gw-v6a1 BGP peering (IPv6-only)
+# VLAN 100 NAD for gw-v6a1 BGP peering (reuses separate-appnetwork-v4 VLAN slot, IPv6-only)
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-1300
+  name: vlan-100
 spec:
   config: |
     {
       "cniVersion": "0.3.1",
       "type": "vlan",
       "master": "eth0",
-      "vlanId": 1300,
+      "vlanId": 100,
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
-          { "range": "fd00:cafe:70::/64", "exclude": ["fd00:cafe:70::150/128"] }
+          { "range": "fd00:cafe:10::/64", "exclude": ["fd00:cafe:10::150/128"] }
         ]
       }
     }
 ---
-# VLAN 1400 NAD for gw-v6a2 BGP peering (IPv6-only)
+# VLAN 200 NAD for gw-v6a2 BGP peering (reuses separate-appnetwork-v4 VLAN slot, IPv6-only)
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-1400
+  name: vlan-200
 spec:
   config: |
     {
       "cniVersion": "0.3.1",
       "type": "vlan",
       "master": "eth0",
-      "vlanId": 1400,
+      "vlanId": 200,
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
-          { "range": "fd00:cafe:71::/64", "exclude": ["fd00:cafe:71::150/128"] }
+          { "range": "fd00:cafe:11::/64", "exclude": ["fd00:cafe:11::150/128"] }
         ]
       }
     }
@@ -111,7 +111,7 @@ spec:
           "ipam": {
             "type": "whereabouts",
             "ipRanges": [
-              { "range": "fd00:cafe:170::/64" }
+              { "range": "fd00:cafe:110::/64" }
             ]
           }
         }
@@ -136,7 +136,7 @@ spec:
           "ipam": {
             "type": "whereabouts",
             "ipRanges": [
-              { "range": "fd00:cafe:170::/64" }
+              { "range": "fd00:cafe:110::/64" }
             ]
           }
         }
