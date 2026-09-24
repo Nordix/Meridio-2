@@ -30,11 +30,11 @@ import (
 	"github.com/nordix/meridio-2/test/utils"
 )
 
-// Robustness tests reuse the dual-stack suite deployment (namespace
-// e2e-dual-stack, gateway gw-ds) as their target topology, matching the
+// Robustness tests reuse the dual-stack-simple suite deployment (namespace
+// e2e-dual-stack-simple, gateway gw-ds) as their target topology, matching the
 // ip_family: dualstack execution context requested by the ROB Jira tickets.
 const (
-	robNamespace           = "e2e-dual-stack"
+	robNamespace           = "e2e-dual-stack-simple"
 	robGatewayName         = "gw-ds"
 	robControllerLabel     = "control-plane=controller-manager"
 	robControllerContainer = "manager"
@@ -50,7 +50,7 @@ var robServiceHealth = e2eutils.ServiceHealth{
 		{
 			Name:         robGatewayName,
 			LBReplicas:   2,
-			VIPs:         []string{"10.0.0.1", "fd00:cafe:1::1"},
+			VIPs:         []string{"40.0.0.1", "fd00:cafe:4::1"},
 			BGPProtocols: []string{"NBR-gw-ds-router-v4", "NBR-gw-ds-router-v6"},
 		},
 	},
@@ -64,10 +64,10 @@ var robServiceHealth = e2eutils.ServiceHealth{
 // over both IP families, matching the checks the Dual Stack suite itself
 // exercises in steady state.
 var robTrafficExpectations = []e2eutils.TrafficExpectation{
-	{VIP: "10.0.0.1", Protocol: "tcp", Port: 5000, Connections: 100, ExpectedTargets: 2},
-	{VIP: "10.0.0.1", Protocol: "udp", Port: 5001, Connections: 100, ExpectedTargets: 2},
-	{VIP: "fd00:cafe:1::1", Protocol: "tcp", Port: 5000, Connections: 100, ExpectedTargets: 2},
-	{VIP: "fd00:cafe:1::1", Protocol: "udp", Port: 5001, Connections: 100, ExpectedTargets: 2},
+	{VIP: "40.0.0.1", Protocol: "tcp", Port: 5000, Connections: 100, ExpectedTargets: 2},
+	{VIP: "40.0.0.1", Protocol: "udp", Port: 5001, Connections: 100, ExpectedTargets: 2},
+	{VIP: "fd00:cafe:4::1", Protocol: "tcp", Port: 5000, Connections: 100, ExpectedTargets: 2},
+	{VIP: "fd00:cafe:4::1", Protocol: "udp", Port: 5001, Connections: 100, ExpectedTargets: 2},
 }
 
 // verifyRobustHealthy asserts robServiceHealth plus full traffic continuity

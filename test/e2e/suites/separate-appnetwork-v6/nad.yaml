@@ -27,42 +27,68 @@ spec:
       ]
   }'
 ---
-# VLAN 1300 NAD for gw-v6a1 BGP peering (IPv6-only)
+# BIRD router-id NAD (IPv4-only, dummy interface).
+# On an IPv6-only cluster, BIRD cannot auto-derive a router ID (which is
+# historically a 32-bit/IPv4-shaped value) since no interface has an IPv4
+# address. This NAD gives the SLLBR pods a throwaway IPv4 address on a dummy
+# interface purely so BIRD can pick a router ID; it is not used for any
+# real traffic. See separate-appnetwork-v6/README.md (if present) for details.
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-1300
+  name: bird-router-id-v6
+spec:
+  config: |
+    {
+      "cniVersion": "1.0.0",
+      "name": "bird-router-id-v6",
+      "plugins": [
+        {
+          "type": "dummy",
+          "ipam": {
+            "type": "whereabouts",
+            "range": "169.254.254.0/24"
+          }
+        }
+      ]
+    }
+---
+# VLAN 100 NAD for gw-v6a1 BGP peering (reuses separate-appnetwork-v4 VLAN slot, IPv6-only)
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vlan-100
 spec:
   config: |
     {
       "cniVersion": "0.3.1",
       "type": "vlan",
       "master": "eth0",
-      "vlanId": 1300,
+      "vlanId": 100,
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
-          { "range": "fd00:cafe:70::/64", "exclude": ["fd00:cafe:70::150/128"] }
+          { "range": "fd00:cafe:10::/64", "exclude": ["fd00:cafe:10::150/128"] }
         ]
       }
     }
 ---
-# VLAN 1400 NAD for gw-v6a2 BGP peering (IPv6-only)
+# VLAN 200 NAD for gw-v6a2 BGP peering (reuses separate-appnetwork-v4 VLAN slot, IPv6-only)
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-1400
+  name: vlan-200
 spec:
   config: |
     {
       "cniVersion": "0.3.1",
       "type": "vlan",
       "master": "eth0",
-      "vlanId": 1400,
+      "vlanId": 200,
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
-          { "range": "fd00:cafe:71::/64", "exclude": ["fd00:cafe:71::150/128"] }
+          { "range": "fd00:cafe:11::/64", "exclude": ["fd00:cafe:11::150/128"] }
         ]
       }
     }
@@ -85,7 +111,7 @@ spec:
           "ipam": {
             "type": "whereabouts",
             "ipRanges": [
-              { "range": "fd00:cafe:170::/64" }
+              { "range": "fd00:cafe:110::/64" }
             ]
           }
         }
@@ -110,7 +136,7 @@ spec:
           "ipam": {
             "type": "whereabouts",
             "ipRanges": [
-              { "range": "fd00:cafe:170::/64" }
+              { "range": "fd00:cafe:110::/64" }
             ]
           }
         }
