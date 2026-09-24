@@ -180,9 +180,9 @@ spec:
               byteMatches:
                 description: ByteMatches matches bytes in the L4 header in the L34Route.
                 items:
-                  maxLength: 80
+                  maxLength: 160
                   type: string
-                maxItems: 10
+                maxItems: 100
                 type: array
                 x-kubernetes-validations:
                 - message: each byteMatch must be a valid string
@@ -211,10 +211,15 @@ spec:
                   - a single port, such as 3000;
                   - a port range, such as 3000-4000;
                   - "any", which is equivalent to port range 0-65535.
+
+                  The number of ports that actually take effect is bounded by the data
+                  plane (nfqlb), which is smaller than MaxItems here. The webhook rejects
+                  port sets that would exceed the data-plane capacity. MaxItems is a
+                  generous CRD-level ceiling only; see docs/operations/constraints-and-limitations.md.
                 items:
                   maxLength: 11
                   type: string
-                maxItems: 20
+                maxItems: 1000
                 type: array
                 x-kubernetes-validations:
                 - message: each destinationPort must be a single port, a port range,
@@ -426,10 +431,15 @@ spec:
                   - a single port, such as 3000;
                   - a port range, such as 3000-4000;
                   - "any", which is equivalent to port range 0-65535.
+
+                  The number of ports that actually take effect is bounded by the data
+                  plane (nfqlb), which is smaller than MaxItems here. The webhook rejects
+                  port sets that would exceed the data-plane capacity. MaxItems is a
+                  generous CRD-level ceiling only; see docs/operations/constraints-and-limitations.md.
                 items:
                   maxLength: 11
                   type: string
-                maxItems: 20
+                maxItems: 1000
                 type: array
                 x-kubernetes-validations:
                 - message: each sourcePort must be a single port, a port range, or

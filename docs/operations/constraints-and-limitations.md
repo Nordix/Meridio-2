@@ -67,6 +67,16 @@ Raising the effective limit requires an **nfqlb change** (increase `MAX_CIDRS`) 
 - **nftables** imposes no practical limit — VIPs populate a dynamic named interval set matched by a single `ip daddr @vip-set` rule (O(1) per packet); it scales cleanly well beyond the nfqlb per-flow cap.
 - **BGP is the practical ceiling for total VIPs per Gateway.** Each VIP is advertised as an individual `/32` or `/128` static route (see the router controller); host routes cannot be aggregated. The number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit** (operator/peer configured). Exceeding it causes the peer to tear down the BGP session — a session-wide failure affecting all VIPs on that Gateway, and not detectable at admission. Note the nfqlb `MAX_CIDRS` limit is per L34Route flow, whereas the BGP/nftables cost scales with the union of all VIPs across the Gateway.
 
+**31. L34Route port count is bounded by the nfqlb data-plane port-string buffer (~85 entries)** *(architectural constraint)*
+
+`L34Route.spec.sourcePorts` and `destinationPorts` accept up to `MaxItems=1000` at the CRD level, but the number of ports that actually take effect is smaller and bounded by the data plane. The LB controller passes a DistributionGroup's ports to nfqlb as a single comma-joined `--sports`/`--dports` value (see `internal/nfqlb` `Instance.AddFlow`), and nfqlb copies that value with `strndupa(str, 1024)` in `rangeSetAddStr()` (`src/lib/rangeset.c`) — anything beyond **1024 bytes is silently truncated in the data plane**. With the 11-byte-per-entry CRD item limit (`"65535-65535"`), roughly **85 port entries** fit before truncation.
+
+To prevent silently-truncated configuration, the L34Route validating webhook rejects a port set whose comma-joined form exceeds the nfqlb buffer (constant `nfqlbPortStringMaxBytes` in `internal/webhook/v1alpha1/l34route_webhook.go`, mirroring nfqlb's `strndupa` size). `"any"` is excluded from this accounting because the controller does not serialize a full-range/any port set to nfqlb.
+
+Raising the effective port capacity is a **data-plane change**: increase nfqlb's buffer and bump `nfqlbPortStringMaxBytes` together. No CRD change is required — the CRD `MaxItems` is deliberately a generous ceiling above this limit.
+
+By contrast, `L34Route.spec.byteMatches` (`MaxItems=100`) has no fixed nfqlb data-plane cap; nfqlb stores matches in a dynamically-grown list. The `byteMatches` limit is a CRD-level ceiling only.
+
 ## Router Controller
 
 **10. ~~VIPs advertised regardless of LB distribution readiness~~ (Resolved)**
