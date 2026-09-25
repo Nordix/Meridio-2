@@ -95,8 +95,13 @@ type L34RouteSpec struct {
 	// - a single port, such as 3000;
 	// - a port range, such as 3000-4000;
 	// - "any", which is equivalent to port range 0-65535.
+	//
+	// The number of ports that actually take effect is bounded by the data
+	// plane (nfqlb), which is smaller than MaxItems here. The webhook rejects
+	// port sets that would exceed the data-plane capacity. MaxItems is a
+	// generous CRD-level ceiling only; see docs/operations/constraints-and-limitations.md.
 	// +optional
-	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:MaxItems=1000
 	// +kubebuilder:validation:items:MaxLength=11
 	// +kubebuilder:validation:XValidation:message="each sourcePort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <= 65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1]) <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))"
 	SourcePorts []string `json:"sourcePorts,omitempty"`
@@ -107,8 +112,13 @@ type L34RouteSpec struct {
 	// - a single port, such as 3000;
 	// - a port range, such as 3000-4000;
 	// - "any", which is equivalent to port range 0-65535.
+	//
+	// The number of ports that actually take effect is bounded by the data
+	// plane (nfqlb), which is smaller than MaxItems here. The webhook rejects
+	// port sets that would exceed the data-plane capacity. MaxItems is a
+	// generous CRD-level ceiling only; see docs/operations/constraints-and-limitations.md.
 	// +optional
-	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:MaxItems=1000
 	// +kubebuilder:validation:items:MaxLength=11
 	// +kubebuilder:validation:XValidation:message="each destinationPort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <= 65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1]) <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))"
 	DestinationPorts []string `json:"destinationPorts,omitempty"`
@@ -128,8 +138,8 @@ type L34RouteSpec struct {
 
 	// ByteMatches matches bytes in the L4 header in the L34Route.
 	// +optional
-	// +kubebuilder:validation:MaxItems=10
-	// +kubebuilder:validation:items:MaxLength=80
+	// +kubebuilder:validation:MaxItems=100
+	// +kubebuilder:validation:items:MaxLength=160
 	// +kubebuilder:validation:XValidation:message="each byteMatch must be a valid string",rule="self.all(byteMatch, byteMatch.matches(\"^(sctp|tcp|udp)\\\\[[0-9]+ *: *[124]\\\\]( *& *0x[0-9a-f]+)? *= *([0-9]+|0x[0-9a-f]+)$\"))"
 	ByteMatches []string `json:"byteMatches,omitempty"`
 }

@@ -36,6 +36,32 @@ import (
 // log is for logging in this package.
 var l34routelog = logf.Log.WithName("l34route-resource")
 
+// nfqlbPortStringMaxBytes is the maximum length, in bytes, of the comma-joined
+// port string that the data plane (nfqlb) accepts for a single flow. nfqlb copies
+// the joined --sports/--dports value with strndupa(str, 1024) in
+// rangeSetAddStr() (src/lib/rangeset.c), so any port string longer than this is
+// silently truncated in the data plane. The CRD MaxItems on sourcePorts/
+// destinationPorts is a generous ceiling; this is the real, load-bearing limit
+// and is enforced here so oversized sets are rejected at admission rather than
+// silently dropped at runtime.
+//
+// Raising the effective port capacity requires increasing nfqlb's buffer AND
+// this constant together — no CRD change is needed.
+// See docs/operations/constraints-and-limitations.md.
+const nfqlbPortStringMaxBytes = 1024
+
+// Full-range port tokens. When a port set contains either of these, the LB
+// controller treats the set as "all ports" and omits the --sports/--dports flag
+// entirely (see anyPortRange in internal/nfqlb, which matches maxPortRange
+// "0-65535"), so nothing is serialized to nfqlb. Both spellings must be
+// recognized here to stay consistent with the controller:
+//   - "any": the user-facing spelling documented on the L34Route API.
+//   - "0-65535": the explicit full range; the literal the controller matches on.
+const (
+	anyPort           = "any"
+	fullRangePortSpan = "0-65535"
+)
+
 // SetupL34RouteWebhookWithManager registers the webhook for L34Route in the manager.
 func SetupL34RouteWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &meridio2v1alpha1.L34Route{}).
@@ -114,6 +140,18 @@ func (v *L34RouteCustomValidator) validateL34Route(r *meridio2v1alpha1.L34Route)
 	if p, err := validatePorts(r.Spec.DestinationPorts); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("destinationPorts"), p,
 			fmt.Sprintf("destination port%s", err.Error())))
+	}
+
+	// Validate that the ports fit the data-plane (nfqlb) port-string buffer.
+	// The CRD MaxItems is a generous ceiling; the effective limit is the length
+	// of the comma-joined string nfqlb accepts (see nfqlbPortStringMaxBytes).
+	if err := validatePortStringLength(r.Spec.SourcePorts); err != nil {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("sourcePorts"),
+			len(r.Spec.SourcePorts), fmt.Sprintf("source ports %s", err.Error())))
+	}
+	if err := validatePortStringLength(r.Spec.DestinationPorts); err != nil {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("destinationPorts"),
+			len(r.Spec.DestinationPorts), fmt.Sprintf("destination ports %s", err.Error())))
 	}
 
 	if len(allErrs) == 0 {
@@ -208,6 +246,44 @@ func cidrContainsCIDR(outer, inner *net.IPNet) bool {
 type ports struct {
 	start uint64
 	end   uint64
+}
+
+// validatePortStringLength rejects a port list whose comma-joined form would
+// exceed the data-plane (nfqlb) port-string buffer (nfqlbPortStringMaxBytes).
+// The controller passes ports to nfqlb as a single comma-joined --sports/--dports
+// value (see internal/nfqlb Instance.AddFlow), and nfqlb truncates that value at
+// nfqlbPortStringMaxBytes. Enforcing the joined length here — rather than a fixed
+// item count — tracks the real constraint exactly regardless of individual port
+// or range widths.
+//
+// Full-range sets are exempt: when the set contains a full-range token ("any" or
+// "0-65535"), the controller omits the --sports/--dports flag entirely (see
+// anyPortRange in internal/nfqlb), so nothing is serialized to nfqlb and no length
+// limit applies. This mirrors the controller's own full-range handling so the
+// webhook and the data plane agree on what "all ports" means.
+func validatePortStringLength(portList []string) error {
+	if containsFullRangePort(portList) {
+		return nil
+	}
+	joined := strings.Join(portList, ",")
+	if len(joined) > nfqlbPortStringMaxBytes {
+		return fmt.Errorf("exceed the data-plane limit: the comma-joined port string is %d bytes, "+
+			"which is over the nfqlb maximum of %d bytes; reduce the number or size of port entries",
+			len(joined), nfqlbPortStringMaxBytes)
+	}
+	return nil
+}
+
+// containsFullRangePort reports whether the port set covers all ports via a
+// full-range token, matching the LB controller's anyPortRange semantics: if any
+// entry is a full-range spelling, the whole set is treated as "all ports".
+func containsFullRangePort(portList []string) bool {
+	for _, p := range portList {
+		if p == anyPort || p == fullRangePortSpan {
+			return true
+		}
+	}
+	return false
 }
 
 func validatePorts(portList []string) (string, error) {

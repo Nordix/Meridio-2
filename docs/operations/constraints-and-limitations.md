@@ -52,6 +52,16 @@ The LB controller assigns fwmarks and routing table IDs dynamically per Distribu
 
 Fixed in PR #110. The `belongsToGateway` check now also inspects `DistributionGroup.spec.parentRefs` in addition to L34Route references.
 
+**30. L34Route port count is bounded by the nfqlb data-plane port-string buffer (~85 entries)** *(architectural constraint)*
+
+`L34Route.spec.sourcePorts` and `destinationPorts` accept up to `MaxItems=1000` at the CRD level, but the number of ports that actually take effect is smaller and bounded by the data plane. The LB controller passes a DistributionGroup's ports to nfqlb as a single comma-joined `--sports`/`--dports` value (see `internal/nfqlb` `Instance.AddFlow`), and nfqlb copies that value with `strndupa(str, 1024)` in `rangeSetAddStr()` (`src/lib/rangeset.c`) — anything beyond **1024 bytes is silently truncated in the data plane**. With the 11-byte-per-entry CRD item limit (`"65535-65535"`), roughly **85 port entries** fit before truncation.
+
+To prevent silently-truncated configuration, the L34Route validating webhook rejects a port set whose comma-joined form exceeds the nfqlb buffer (constant `nfqlbPortStringMaxBytes` in `internal/webhook/v1alpha1/l34route_webhook.go`, mirroring nfqlb's `strndupa` size). `"any"` is excluded from this accounting because the controller does not serialize a full-range/any port set to nfqlb.
+
+Raising the effective port capacity is a **data-plane change**: increase nfqlb's buffer and bump `nfqlbPortStringMaxBytes` together. No CRD change is required — the CRD `MaxItems` is deliberately a generous ceiling above this limit.
+
+By contrast, `L34Route.spec.byteMatches` (`MaxItems=100`) has no fixed nfqlb data-plane cap; nfqlb stores matches in a dynamically-grown list. The `byteMatches` limit is a CRD-level ceiling only.
+
 ## Router Controller
 
 **10. ~~VIPs advertised regardless of LB distribution readiness~~ (Resolved)**

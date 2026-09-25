@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -314,6 +316,73 @@ var _ = Describe("L34Route Webhook", func() {
 			_, err := validator.ValidateCreate(ctx, obj)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("overlapping ports"))
+		})
+	})
+
+	Context("When validating the data-plane port-string limit", func() {
+		// manyDistinctPorts returns n distinct, non-overlapping single ports
+		// (starting at 10000, all 5-digit and <= 65535) so the overlap check
+		// passes and only the joined-length guard is exercised.
+		manyDistinctPorts := func(n int) []string {
+			ports := make([]string, 0, n)
+			for i := range n {
+				ports = append(ports, fmt.Sprintf("%d", 10000+i))
+			}
+			return ports
+		}
+
+		It("Should accept a port set within the nfqlb buffer", func() {
+			// ~85 5-digit ports -> joined length just under nfqlbPortStringMaxBytes.
+			obj.Spec.SourcePorts = manyDistinctPorts(80)
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should reject a source port set exceeding the nfqlb buffer", func() {
+			// 200 5-digit ports -> joined length (~1199 bytes) exceeds the limit.
+			obj.Spec.SourcePorts = manyDistinctPorts(200)
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("data-plane limit"))
+		})
+
+		It("Should reject a destination port set exceeding the nfqlb buffer", func() {
+			obj.Spec.DestinationPorts = manyDistinctPorts(200)
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("data-plane limit"))
+		})
+
+		It("Should not count 'any' toward the data-plane limit", func() {
+			// 'any' is not serialized to nfqlb, so it must not contribute length.
+			obj.Spec.SourcePorts = []string{"any"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should not count the explicit full range toward the limit", func() {
+			// "0-65535" is treated as full range by the controller (anyPortRange),
+			// which omits the flag entirely — nothing is serialized to nfqlb — so the
+			// data-plane length limit must not apply. (A full-range entry overlaps all
+			// other ports, so a full-range set is the single element by construction.)
+			obj.Spec.SourcePorts = []string{"0-65535"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
