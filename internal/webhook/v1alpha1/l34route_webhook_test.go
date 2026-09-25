@@ -371,6 +371,19 @@ var _ = Describe("L34Route Webhook", func() {
 			_, err := validator.ValidateCreate(ctx, obj)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("Should not count the explicit full range toward the limit", func() {
+			// "0-65535" is treated as full range by the controller (anyPortRange),
+			// which omits the flag entirely — nothing is serialized to nfqlb — so the
+			// data-plane length limit must not apply. (A full-range entry overlaps all
+			// other ports, so a full-range set is the single element by construction.)
+			obj.Spec.SourcePorts = []string{"0-65535"}
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
 	})
 
 	Context("When validating complete L34Route", func() {
