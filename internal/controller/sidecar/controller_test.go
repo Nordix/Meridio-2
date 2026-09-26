@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	sidecarmetrics "github.com/nordix/meridio-2/internal/metrics/networksidecar"
 	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,6 +81,9 @@ func setupController(nl *mockNetlink, objects ...client.Object) (*Controller, cl
 		nl:          nl,
 		tableIDs:    newTableIDAllocator(50000, 55000),
 		managedVIPs: make(map[string]map[string]struct{}),
+		// Mirror production's metrics-disabled wiring: a typed-nil *ConfigErrors in the interface
+		// (not a bare-nil interface), so Inc dispatches to the nil-safe receiver.
+		ConfigErrors: (*sidecarmetrics.ConfigErrors)(nil),
 	}, fakeClient
 }
 
@@ -893,4 +897,93 @@ func mustParseCIDR(s string) *net.IPNet {
 		panic(err)
 	}
 	return ipnet
+}
+
+// --- ConfigErrors metric tests ---
+
+// fakeConfigErrors is a configErrorRecorder test double that records Inc calls per reason.
+type fakeConfigErrors struct {
+	counts map[string]int
+}
+
+func newFakeConfigErrors() *fakeConfigErrors {
+	return &fakeConfigErrors{counts: make(map[string]int)}
+}
+
+func (f *fakeConfigErrors) Inc(reason string) { f.counts[reason]++ }
+
+// v4Gateway returns a single-gateway ENC with one IPv4 domain on subnet 192.168.1.0/24 (hint
+// net1) — the fixed topology the ConfigErrors tests drive against a mock interface of the same
+// subnet.
+func v4Gateway() *meridio2v1alpha1.EndpointNetworkConfiguration {
+	return newENC(meridio2v1alpha1.GatewayConnection{
+		Name: "gw-a",
+		Domains: []meridio2v1alpha1.NetworkDomain{{
+			Name:     "v4",
+			IPFamily: "IPv4",
+			Network:  meridio2v1alpha1.NetworkIdentity{Subnet: "192.168.1.0/24", InterfaceHint: "net1"},
+			VIPs:     []string{"20.0.0.1"},
+			NextHops: []string{"192.168.1.1"},
+		}},
+	})
+}
+
+func TestReconcile_ConfigErrors_Link(t *testing.T) {
+	// No interface matches the domain's subnet → findInterfaceBySubnet fails in buildDesiredState.
+	nl := newMockNetlink()
+	enc := v4Gateway()
+	c, _ := setupController(nl, enc)
+	ce := newFakeConfigErrors()
+	c.ConfigErrors = ce
+
+	_, _ = c.Reconcile(context.Background(), reconcileRequest())
+
+	assert.Equal(t, 1, ce.counts[sidecarmetrics.ReasonLink])
+	assert.Zero(t, ce.counts[sidecarmetrics.ReasonAddress])
+	assert.Zero(t, ce.counts[sidecarmetrics.ReasonRoute])
+}
+
+func TestReconcile_ConfigErrors_Address(t *testing.T) {
+	// Interface resolves, but the address add fails → syncVIPs error attributed to reasonAddress.
+	nl := newMockNetlink()
+	nl.addLink("net1", 10, "192.168.1.5/24")
+	nl.addrAddErr = fmt.Errorf("simulated AddrAdd failure")
+	enc := v4Gateway()
+	c, _ := setupController(nl, enc)
+	ce := newFakeConfigErrors()
+	c.ConfigErrors = ce
+
+	_, _ = c.Reconcile(context.Background(), reconcileRequest())
+
+	assert.Equal(t, 1, ce.counts[sidecarmetrics.ReasonAddress])
+	assert.Zero(t, ce.counts[sidecarmetrics.ReasonLink])
+	assert.Zero(t, ce.counts[sidecarmetrics.ReasonRoute])
+}
+
+func TestReconcile_ConfigErrors_Route(t *testing.T) {
+	// Interface + address succeed, but rule add fails → syncRules error attributed to reasonRoute.
+	nl := newMockNetlink()
+	nl.addLink("net1", 10, "192.168.1.5/24")
+	nl.ruleAddErr = fmt.Errorf("simulated RuleAdd failure")
+	enc := v4Gateway()
+	c, _ := setupController(nl, enc)
+	ce := newFakeConfigErrors()
+	c.ConfigErrors = ce
+
+	_, _ = c.Reconcile(context.Background(), reconcileRequest())
+
+	assert.Equal(t, 1, ce.counts[sidecarmetrics.ReasonRoute])
+	assert.Zero(t, ce.counts[sidecarmetrics.ReasonLink])
+	assert.Zero(t, ce.counts[sidecarmetrics.ReasonAddress])
+}
+
+func TestReconcile_ConfigErrors_NilRecorderSafe(t *testing.T) {
+	// setupController wires a typed-nil *ConfigErrors (production's metrics-disabled state); an
+	// error path must not panic on it.
+	nl := newMockNetlink()
+	nl.addLink("net1", 10, "192.168.1.5/24")
+	nl.addrAddErr = fmt.Errorf("simulated AddrAdd failure")
+	enc := v4Gateway()
+	c, _ := setupController(nl, enc) // ConfigErrors is typed-nil by default
+	assert.NotPanics(t, func() { _, _ = c.Reconcile(context.Background(), reconcileRequest()) })
 }

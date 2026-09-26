@@ -149,22 +149,35 @@ func runSidecar(cfg *config.SidecarConfig) error {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
 
+	// Construct the push-style config-error counter early (before controller setup) when metrics
+	// are enabled, so it can be injected into the controller. When disabled it stays a nil
+	// *ConfigErrors and the controller's increments are no-ops via its nil-safe Inc. Registered
+	// alongside the collector below.
+	var configErrors *sidecarmetrics.ConfigErrors
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		configErrors = sidecarmetrics.NewConfigErrors(cfg.MetricsPrefix)
+	}
+
 	if err := (&sidecar.Controller{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		PodName:    cfg.PodName,
-		PodUID:     cfg.PodUID,
-		MinTableID: cfg.MinTableID,
-		MaxTableID: cfg.MaxTableID,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		PodName:      cfg.PodName,
+		PodUID:       cfg.PodUID,
+		MinTableID:   cfg.MinTableID,
+		MaxTableID:   cfg.MaxTableID,
+		ConfigErrors: configErrors, // nil when metrics disabled; Inc is nil-safe
 	}).SetupWithManager(mgr, cfg); err != nil {
 		return fmt.Errorf("failed to setup controller: %w", err)
 	}
 
-	// Register the custom sidecar metrics collector when metrics are enabled. Must run before
+	// Register all custom metrics collectors together when metrics are enabled. Must run before
 	// mgr.Start: controller-runtime brings the metrics HTTP server up early (before caches), so
 	// registering after Start could let a scrape hit /metrics before the collector exists. The
 	// collector's own sync-gate handles the cache-not-yet-synced window on the scrape side.
 	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := ctrlmetrics.Registry.Register(configErrors.Collector()); err != nil {
+			return fmt.Errorf("register sidecar ConfigErrors: %w", err)
+		}
 		collector := sidecarmetrics.NewSidecarCollector(
 			mgr.GetClient(), mgr.GetCache(), cfg.MetricsCollectTimeout, cfg.PodName, cfg.PodNamespace, cfg.MetricsPrefix,
 		)

@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-logr/logr"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	sidecarmetrics "github.com/nordix/meridio-2/internal/metrics/networksidecar"
 	"github.com/vishvananda/netlink"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -33,6 +34,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// configErrorRecorder records failed netlink operations by reason (see
+// internal/metrics/networksidecar's Reason* constants for the label values).
+type configErrorRecorder interface {
+	Inc(reason string)
+}
 
 // Controller reconciles EndpointNetworkConfiguration to configure VIPs and
 // source-based policy routing for multi-Gateway connectivity.
@@ -54,6 +61,11 @@ type Controller struct {
 	MinTableID  int
 	MaxTableID  int
 	mappingFile string
+
+	// ConfigErrors counts failed netlink operations by reason. Nil-safe: when metrics are
+	// disabled, leave it as a typed-nil *ConfigErrors (Inc no-ops on a nil receiver) — do NOT
+	// assign a bare-nil interface, which would panic on Inc.
+	ConfigErrors configErrorRecorder
 
 	nl          netlinkOps
 	tableIDs    *tableIDAllocator
@@ -166,6 +178,11 @@ func (c *Controller) buildDesiredState(enc *meridio2v1alpha1.EndpointNetworkConf
 		for _, domain := range gw.Domains {
 			link, err := findInterfaceBySubnet(c.nl, domain.Network.InterfaceHint, domain.Network.Subnet)
 			if err != nil {
+				// A missing or unlistable interface is a link-layer problem (the secondary
+				// interface the sidecar needs is absent or can't be enumerated), counted as
+				// reasonLink. This includes InterfaceNotFoundError, which — while requeued as
+				// transient — still means the required interface is not present.
+				c.ConfigErrors.Inc(sidecarmetrics.ReasonLink)
 				return nil, fmt.Errorf("gateway %s domain %s: %w", gw.Name, domain.Name, err)
 			}
 
@@ -215,11 +232,13 @@ func (c *Controller) applyState(ctx context.Context, domains []domainState) erro
 	for ifaceName, vips := range byIface {
 		link, err := c.nl.LinkByName(ifaceName)
 		if err != nil {
+			c.ConfigErrors.Inc(sidecarmetrics.ReasonLink)
 			return fmt.Errorf("interface %s: %w", ifaceName, err)
 		}
 		newManaged, err := syncVIPs(c.nl, link, vips, c.managedVIPs[ifaceName])
 		c.managedVIPs[ifaceName] = newManaged
 		if err != nil {
+			c.ConfigErrors.Inc(sidecarmetrics.ReasonAddress)
 			return fmt.Errorf("interface %s VIP sync: %w", ifaceName, err)
 		}
 	}
@@ -231,11 +250,13 @@ func (c *Controller) applyState(ctx context.Context, domains []domainState) erro
 		}
 		link, err := c.nl.LinkByName(ifaceName)
 		if err != nil {
+			// Interface gone = its VIPs gone = desired state; not a config error (don't count).
 			continue
 		}
 		newManaged, err := syncVIPs(c.nl, link, nil, managed)
 		c.managedVIPs[ifaceName] = newManaged
 		if err != nil {
+			c.ConfigErrors.Inc(sidecarmetrics.ReasonAddress)
 			return fmt.Errorf("interface %s VIP cleanup: %w", ifaceName, err)
 		}
 		delete(c.managedVIPs, ifaceName)
@@ -258,9 +279,11 @@ func (c *Controller) applyState(ctx context.Context, domains []domainState) erro
 
 	for tableID, ts := range byTable {
 		if err := syncRules(ctx, c.nl, ts.vips, tableID, c.MinTableID, c.MaxTableID); err != nil {
+			c.ConfigErrors.Inc(sidecarmetrics.ReasonRoute)
 			return fmt.Errorf("table %d rules: %w", tableID, err)
 		}
 		if err := syncRoutes(ctx, c.nl, ts.nextHops, tableID); err != nil {
+			c.ConfigErrors.Inc(sidecarmetrics.ReasonRoute)
 			return fmt.Errorf("table %d routes: %w", tableID, err)
 		}
 	}
