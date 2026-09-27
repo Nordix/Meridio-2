@@ -330,6 +330,19 @@ var _ = Describe("Endpoint Scaling", Label("dual-stack"), Serial, Ordered, func(
 		}
 	})
 
+	// On any spec failure, dump the LB/target data-plane state so an
+	// intermittent traffic-loss failure is actionable (control-plane Ready vs
+	// data-plane programmed/routable). Read-only; runs only when a spec failed.
+	AfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			GinkgoWriter.Print(e2eutils.DataPlaneDiagnostics{
+				Namespace:   scalingNamespace,
+				Gateways:    map[string][]string{"gw-bds1": {"dg-bds1"}, "gw-bds2": {"dg-bds2"}},
+				TargetLabel: "app=" + scalingTargetApp,
+			}.Collect())
+		}
+	})
+
 	// Scale-out with traffic continuity.
 	// Increase instances up to the documented max, covering a single-instance
 	// step and a bigger multi-instance jump.
