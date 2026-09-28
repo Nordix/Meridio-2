@@ -82,7 +82,7 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | 1200 | separate-static-appnetwork | IPv4 | gw-a2 | `169.254.111.0/24` | — | `169.111.110.0/24` | — | `110.0.0.2/32` | — (static+BFD) | — |
 | 1300 | separate-appnetwork-v6 | IPv6 | gw-v6a1 | — | `fd00:cafe:70::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::1/128` | 64522 | 4200000000 |
 | 1400 | separate-appnetwork-v6 | IPv6 | gw-v6a2 | — | `fd00:cafe:71::/64` | — | `fd00:cafe:170::/64` | `fd00:cafe:7::2/128` | 64523 | 4200000000 |
-| 1500 | bfd-detection | gw-bfd | `169.254.80.0/24` | — | `169.111.80.0/24` | — | `80.0.0.1/32` | 64524 | 4200000000 |
+| 1500 | IPv4 | bfd-detection | gw-bfd | `169.254.80.0/24` | — | `169.111.80.0/24` | — | `80.0.0.1/32` | 64524 | 4200000000 |
 
 **Next available:** VLAN 1600, ASN 64525, external `169.254.90.0/24` / `fd00:cafe:90::/64`, internal `169.111.90.0/24` / `fd00:cafe:190::/64`, VIP `90.0.0.1/32` / `fd00:cafe:9::1/128`
 
