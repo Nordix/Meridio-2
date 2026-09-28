@@ -83,3 +83,38 @@ func GetContainerRestarts(namespace, podName, containerName string) int {
 	}
 	return n
 }
+
+// GetContainerLastExitCode returns the exit code of containerName's most
+// recent terminated instance inside podName (status.lastState.terminated),
+// or -1 if the Pod/container cannot be found, has never terminated, or the
+// exit code cannot be parsed. Useful for distinguishing a graceful exit
+// (code 0) from a crash after a signal or restart.
+func GetContainerLastExitCode(namespace, podName, containerName string) int {
+	cmd := exec.Command("kubectl", "get", "pod", podName, "-n", namespace,
+		"-o", fmt.Sprintf("jsonpath={.status.containerStatuses[?(@.name=='%s')].lastState.terminated.exitCode}", containerName))
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return -1
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return -1
+	}
+	n, err := strconv.Atoi(out)
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// SignalContainer sends the named signal (e.g. "TERM", "KILL") to PID 1 of
+// containerName inside podName via kubectl exec. The exec session normally
+// terminates along with the signaled process, so a non-nil error here is
+// expected and not necessarily a failure; callers should verify the
+// container's resulting state (restart count, last exit code) separately
+// rather than relying on this call's error alone.
+func SignalContainer(namespace, podName, containerName, signal string) (string, error) {
+	cmd := exec.Command("kubectl", "exec", "-n", namespace, podName,
+		"-c", containerName, "--", "kill", "-s", signal, "1")
+	return utils.Run(cmd)
+}
