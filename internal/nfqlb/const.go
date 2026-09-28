@@ -24,7 +24,6 @@ const (
 	localChainName    = "nfqlb-local"
 	ipv4VIPSetName    = "ipv4-vips"
 	ipv6VIPSetName    = "ipv6-vips"
-	maxPortRange      = "0-65535"
 	maglevMMultiplier = 100
 	defaultQLength    = 1024
 	defaultMaxTargets = 100
@@ -34,6 +33,18 @@ const (
 // DefaultFwmarkBase is the default base fwmark value.
 // Layout: +0=nolb, +1=notargets, +2..=NFQLB instance offsets.
 const DefaultFwmarkBase = 5000
+
+// Full-range port tokens. A flow whose port set covers all ports is expressed to
+// nfqlb by omitting the --sports/--dports flag entirely (see anyPortRange). These
+// constants are the two spellings the rest of the code base recognizes as
+// "all ports" and are shared so the controller and webhook cannot drift:
+//   - AnyPort ("any"): the user-facing spelling documented on the L34Route API.
+//   - MaxPortRange ("0-65535"): the explicit full range; the value anyPortRange
+//     matches on after normalization.
+const (
+	AnyPort      = "any"
+	MaxPortRange = "0-65535"
+)
 
 // MaxOffset is the upper bound for fwmark/routing table IDs to prevent
 // unbounded allocation. Supports ~950 DGs with maxTargets=100.
