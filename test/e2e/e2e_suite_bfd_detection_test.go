@@ -312,6 +312,14 @@ var _ = Describe("BFD Detection", Label("ipv4", "bfd-detection"), Serial, Ordere
 			Expect(lastingConn).To(HaveLen(bfdTargetReplicas),
 				"expected %d targets, got: %v", bfdTargetReplicas, lastingConn)
 		})
+
+		It("should distribute UDP traffic across targets", func() {
+			lastingConn, lostConn, err := e2eutils.SendTraffic(bfdVIP, 5001, "udp", bfdTrafficConns)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lostConn).To(BeZero(), "no connections should be lost")
+			Expect(lastingConn).To(HaveLen(bfdTargetReplicas),
+				"expected %d targets, got: %v", bfdTargetReplicas, lastingConn)
+		})
 	})
 
 	Context("BFD enabled", func() {
