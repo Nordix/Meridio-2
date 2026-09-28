@@ -33,13 +33,38 @@ func newL34RouteFlow(name string, route *meridio2v1alpha1.L34Route) *l34RouteFlo
 	return &l34RouteFlow{name: name, route: route}
 }
 
-func (f *l34RouteFlow) GetName() string                    { return f.name }
-func (f *l34RouteFlow) GetSourceCIDRs() []string           { return f.route.Spec.SourceCIDRs }
-func (f *l34RouteFlow) GetDestinationCIDRs() []string      { return f.route.Spec.DestinationCIDRs }
-func (f *l34RouteFlow) GetSourcePortRanges() []string      { return f.route.Spec.SourcePorts }
-func (f *l34RouteFlow) GetDestinationPortRanges() []string { return f.route.Spec.DestinationPorts }
-func (f *l34RouteFlow) GetByteMatches() []string           { return f.route.Spec.ByteMatches }
-func (f *l34RouteFlow) GetPriority() int32                 { return f.route.Spec.Priority }
+func (f *l34RouteFlow) GetName() string               { return f.name }
+func (f *l34RouteFlow) GetSourceCIDRs() []string      { return f.route.Spec.SourceCIDRs }
+func (f *l34RouteFlow) GetDestinationCIDRs() []string { return f.route.Spec.DestinationCIDRs }
+func (f *l34RouteFlow) GetSourcePortRanges() []string {
+	return normalizePorts(f.route.Spec.SourcePorts)
+}
+func (f *l34RouteFlow) GetDestinationPortRanges() []string {
+	return normalizePorts(f.route.Spec.DestinationPorts)
+}
+func (f *l34RouteFlow) GetByteMatches() []string { return f.route.Spec.ByteMatches }
+func (f *l34RouteFlow) GetPriority() int32       { return f.route.Spec.Priority }
+
+// normalizePorts converts the user-facing "any" spelling to the explicit full
+// range "0-65535" so a single representation reaches both anyPortRange (which
+// omits the port flag for a full-range set) and nfqlb (whose port parser only
+// understands numeric ranges — it would reject the literal "any"). Other port
+// entries are passed through unchanged. Returns nil for a nil input so the
+// nfqlb.Flow "no ports specified" semantics are preserved.
+func normalizePorts(ports []string) []string {
+	if ports == nil {
+		return nil
+	}
+	out := make([]string, len(ports))
+	for i, p := range ports {
+		if p == nfqlb.AnyPort {
+			out[i] = nfqlb.MaxPortRange
+		} else {
+			out[i] = p
+		}
+	}
+	return out
+}
 
 func (f *l34RouteFlow) GetProtocols() []string {
 	protocols := make([]string, len(f.route.Spec.Protocols))

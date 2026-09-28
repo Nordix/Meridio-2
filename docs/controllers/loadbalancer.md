@@ -634,8 +634,8 @@ The `l34RouteFlow` adapter (`internal/controller/loadbalancer/flow_adapter.go`) 
 | `spec.protocols` | `--protocols` | Comma-separated (e.g., `tcp,udp`) |
 | `spec.destinationCIDRs` | `--dsts` | Omitted if nil |
 | `spec.sourceCIDRs` | `--srcs` | Omitted if all CIDRs have `/0` mask (any-IP) |
-| `spec.destinationPorts` | `--dports` | Omitted if contains `0-65535` (any-port) |
-| `spec.sourcePorts` | `--sports` | Omitted if contains `0-65535` (any-port) |
+| `spec.destinationPorts` | `--dports` | `"any"` is normalized to `0-65535`; omitted if the set covers all ports (`"any"`/`0-65535`) |
+| `spec.sourcePorts` | `--sports` | `"any"` is normalized to `0-65535`; omitted if the set covers all ports (`"any"`/`0-65535`) |
 | `spec.byteMatches` | `--match` | L4 header byte matching patterns |
 
 **Example resulting command:**
@@ -649,6 +649,18 @@ nfqlb flow-set \
     --dsts=10.0.0.1/32,fd00::1/128 \
     --dports=80,443
 ```
+
+### Port Normalization
+
+The `"any"` port spelling (documented on the L34Route API as "all ports, 0-65535")
+is normalized to the explicit range `0-65535` in the `l34RouteFlow` adapter
+(`normalizePorts`) before it reaches nfqlb. This is required because nfqlb's port
+parser only understands numeric ranges and would reject the literal token `any`.
+After normalization, a full-range port set causes the `--sports`/`--dports` flag
+to be omitted entirely (`anyPortRange`), so nfqlb matches all ports. The
+`AnyPort` (`"any"`) and `MaxPortRange` (`"0-65535"`) constants live in the
+`internal/nfqlb` package so the controller (and other consumers) share a single
+definition of "all ports".
 
 ### VIP Aggregation
 
