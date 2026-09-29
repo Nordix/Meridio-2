@@ -231,7 +231,7 @@ undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
 ##@ Suite: bfd-detection
 ################################################################################
 
-# Standalone single-gateway suite (VLAN 1500, gw-bfd). The GatewayRouter starts
+# Standalone single-gateway suite (VLAN 1300, gw-bfd). The GatewayRouter starts
 # with BFD enabled; the test compares BGP-down detection time with BFD (~0.9s)
 # against the BGP hold timer (~15s) by patching the router at runtime, and
 # restores BFD afterwards.

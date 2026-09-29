@@ -28,9 +28,9 @@ spec:
       interface: dummy
   - type: NAD
     nad:
-      name: vlan-1500
+      name: vlan-1300
       namespace: e2e-bfd-detection
-      interface: vlan-1500
+      interface: vlan-1300
   - type: NAD
     nad:
       name: app-net-bfd

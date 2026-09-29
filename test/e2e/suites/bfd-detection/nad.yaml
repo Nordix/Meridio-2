@@ -27,18 +27,18 @@ spec:
       ]
   }'
 ---
-# VLAN 1500 NAD for gw-bfd BGP peering
+# VLAN 1300 NAD for gw-bfd BGP peering
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: vlan-1500
+  name: vlan-1300
 spec:
   config: |
     {
       "cniVersion": "0.3.1",
       "type": "vlan",
       "master": "eth0",
-      "vlanId": 1500,
+      "vlanId": 1300,
       "ipam": {
         "type": "whereabouts",
         "ipRanges": [
