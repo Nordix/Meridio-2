@@ -43,8 +43,10 @@ type L34RouteSpec struct {
 	// multiple Gateways is not supported, as VIP ownership would otherwise
 	// become ambiguous.
 	//
-	// Future extensions could consider allowing shared L34Routes, but (possibly)
-	// only for Route objects that do not define destinationCIDRs.
+	// A parent is required (MinItems=1): a parentless L34Route is an orphan set of
+	// VIPs with no consumer (not advertised, no flows programmed, ENC chain dead-ends).
+	// This is stricter than upstream Gateway API, which keeps a parentless route valid
+	// and surfaces the unattached state via status rather than rejecting it.
 	//
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=1
@@ -150,7 +152,9 @@ type L34RouteStatus struct{}
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// L34Route is the Schema for the L34Routes API
+// L34Route is the Schema for the L34Routes API.
+//
+// It is a Route kind modeled on the Gateway API route model (not an upstream resource).
 type L34Route struct {
 	metav1.TypeMeta `json:",inline"`
 
