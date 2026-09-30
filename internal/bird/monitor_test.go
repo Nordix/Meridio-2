@@ -161,6 +161,22 @@ NBR-gw-ipv6 BGP       ---        up     2026-03-02    Established`,
 				},
 			},
 		},
+		{
+			// Captured live from a router pod running the from-source BIRD 3.3.2
+			// build (ipv4-simple suite). The summary-line column layout is
+			// unchanged from 3.1.x/3.2.x, so the field-position parser still holds.
+			name: "3.3.2 established session",
+			output: `BIRD 3.3.2 ready.
+Name       Proto      Table      State  Since         Info
+NBR-gw-m1-router-v4 BGP        ---        up     14:14:42.576  Established`,
+			expected: []ProtocolStatus{
+				{
+					Name:  "NBR-gw-m1-router-v4",
+					State: ProtocolStateUp,
+					Info:  "Established",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -402,6 +418,27 @@ short
 		sessions := parseShowBfdSessionsOutput(output)
 		if len(sessions) != 2 {
 			t.Fatalf("expected 2 sessions (malformed skipped), got %d", len(sessions))
+		}
+	})
+
+	// BIRD 3.3.2 prints a per-instance header line ("bfd1:") before the session
+	// table. Captured live from a router pod running the from-source 3.3.2 build.
+	// The single-field "bfd1:" line must be skipped (parser requires >= 3 fields).
+	t.Run("3.3.2 instance header line skipped", func(t *testing.T) {
+		output := `BIRD 3.3.2 ready.
+bfd1:
+IP address                Interface  State      Since         Interval  Timeout
+169.254.40.150            vlan-700   Up         14:14:43.192    0.300    1.500`
+
+		sessions := parseShowBfdSessionsOutput(output)
+		if len(sessions) != 1 {
+			t.Fatalf("expected 1 session (bfd1: header skipped), got %d", len(sessions))
+		}
+		if sessions[0].IP != "169.254.40.150" || sessions[0].Interface != "vlan-700" || sessions[0].State != "Up" {
+			t.Errorf("session[0] = %+v", sessions[0])
+		}
+		if !sessions[0].IsUp() {
+			t.Errorf("session[0].IsUp() = false, want true")
 		}
 	})
 }

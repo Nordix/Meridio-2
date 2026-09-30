@@ -11,6 +11,7 @@ The Router controller runs inside the LB Pod's router container. It reconciles G
 - Runs as a sidecar container alongside the `stateless-load-balancer` container in each LB Pod
 - Each instance is scoped to a single Gateway (receives `--gateway-name` and `--gateway-namespace` at startup)
 - Multiple LB Pod replicas each run their own independent Router controller instance, all reconciling the same GatewayRouter CRs
+- The container ships **BIRD 3.3.2**, built from source and pinned via `ARG BIRD_VERSION` in `build/router/Dockerfile`. It is built from source rather than installed from the Alpine package to pick the latest upstream release (which includes a memory-leak fix not present in the older BIRD packaged by current Alpine releases, e.g. 3.2.3 on alpine:3.24) and to guarantee a reproducible version. The full set of TCP-AO MAC algorithms exposed by the GatewayRouter API — notably `cmac aes128` — also requires a recent BIRD (3.3.1+); TCP-AO itself is available earlier in the BIRD 3 series. BIRD is built with a portable per-architecture CPU baseline (not `-march=native`) so it runs on any node of the target architecture.
 
 ### Resource Relationships
 
