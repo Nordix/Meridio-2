@@ -27,12 +27,19 @@ import (
 type GatewayConfigurationSpec struct {
 
 	// networkAttachments defines the secondary network interfaces for the LB
-	// Deployment managed by the gateway controller. These only affect the LB Pods
-	// and have no relation to network attachments on user application Pods.
+	// Deployment managed by the gateway controller. These configure the LB Pods'
+	// own interfaces. The LB's attachment to the internal network (see internalSubnets)
+	// is typically declared here. Any external/upstream attachments are unrelated to
+	// application Pods.
 	// +kubebuilder:validation:MaxItems=10
 	NetworkAttachments []NetworkAttachment `json:"networkAttachments"`
 
 	// internalSubnets identifies the subnet(s) where application endpoint IPs reside.
+	//
+	// This is the network shared between the LB and the application Pods: for the
+	// service to work, both the LB and the application Pods must attach to it (see
+	// networkAttachments for the LB side).
+	//
 	// Used by the DG controller to scrape secondary IPs for endpoint management,
 	// and by the ENC controller to match secondary interfaces in application Pods
 	// and to determine IP family (IPv4/IPv6) for VIP and next-hop assignment.
@@ -151,27 +158,7 @@ type ContainerArgs struct {
 }
 
 // GatewayConfigurationStatus defines the observed state of GatewayConfiguration.
-type GatewayConfigurationStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the GatewayConfiguration resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
+type GatewayConfigurationStatus struct{}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

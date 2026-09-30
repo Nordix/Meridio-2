@@ -83,8 +83,7 @@ spec:
                           name:
                             description: |-
                               Name: A unique logical identifier for this domain (e.g., "sllb-a-v4").
-                              The consumer uses this name to maintain local resource state, such as
-                              routing table ID mapping.
+                              The consumer may use this name to identify the domain in local state and logs.
                             type: string
                           network:
                             description: |-
@@ -99,8 +98,8 @@ spec:
                               subnet:
                                 description: |-
                                   Subnet: The network prefix expected on the target interface (e.g., "192.168.1.0/24").
-                                  The processing entity MUST verify this subnet matches the interface's primary IP
-                                  to ensure configuration is applied to the correct network segment.
+                                  The processing entity identifies the target interface as the one holding an address
+                                  within this subnet, ensuring configuration is applied to the correct network segment.
                                 maxLength: 64
                                 type: string
                             required:
