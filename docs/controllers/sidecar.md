@@ -223,6 +223,7 @@ This tolerance is essential for idempotent reconciliation and makes the controll
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8082` | Health probe address |
 | `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 | `--log-level-api` | `MERIDIO_LOG_LEVEL_API` | _(empty)_ | Address for dynamic log level HTTP endpoint (e.g., `127.0.0.1:9903`). Empty disables the feature. |
+| `--pprof-bind-address` | `MERIDIO_PPROF_ADDR` | _(empty)_ | Loopback address for the Go pprof HTTP endpoint (e.g., `127.0.0.1:6060`). Empty disables the feature; must be a loopback address. See [Runtime profiling with pprof](../operations/profiling.md). |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` | Metrics endpoint (0 = disabled) |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | HTTPS metrics |
 | `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | (empty) | Metrics TLS cert directory |
