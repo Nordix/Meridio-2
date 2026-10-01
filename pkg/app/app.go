@@ -55,6 +55,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/prerequisites"
@@ -265,6 +266,8 @@ func waitForCerts(cfg *config.ManagerConfig) error {
 // setupManager creates a configured ctrl.Manager.
 func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 	scheme := runtime.NewScheme()
+	setupLog := ctrl.Log.WithName("setup")
+
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(meridio2v1alpha1.AddToScheme(scheme))
 	utilruntime.Must(gatewayapiv1.Install(scheme))
@@ -328,6 +331,7 @@ func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 		Metrics:                       metricsServerOptions,
 		WebhookServer:                 webhook.NewServer(webhookServerOptions),
 		HealthProbeBindAddress:        cfg.ProbeAddr,
+		PprofBindAddress:              httpsec.ResolvePprofBindAddress(cfg.PprofBindAddress, setupLog),
 		LeaderElection:                cfg.EnableLeaderElection,
 		LeaderElectionID:              "e9d059a3.nordix.org",
 		LeaseDuration:                 &cfg.LeaseDuration,

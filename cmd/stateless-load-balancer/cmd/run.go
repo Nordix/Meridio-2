@@ -37,6 +37,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
@@ -161,6 +162,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		},
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
+		PprofBindAddress:       httpsec.ResolvePprofBindAddress(cfg.PprofBindAddress, setupLog),
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create manager")
