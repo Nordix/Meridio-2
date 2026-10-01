@@ -29,6 +29,9 @@ type nfqlbManager interface {
 	// DropFwmarks returns the fwmark values used for drop accounting:
 	// nolbFwmark (no flow matched) and notargetsFwmark (no active targets).
 	DropFwmarks() (nolb, notargets int)
+	// GCStaleInstances removes shm segments left over from a previous process
+	// lifetime whose name is not in keep and is not currently tracked.
+	GCStaleInstances(ctx context.Context, keep map[string]struct{}) error
 }
 
 // nfqlbInstance abstracts per-DistributionGroup NFQLB operations for testability.
@@ -54,4 +57,8 @@ func (a *NFQLBManagerAdapter) DeleteInstance(ctx context.Context, name string) e
 
 func (a *NFQLBManagerAdapter) DropFwmarks() (nolb, notargets int) {
 	return a.NFQLB.NoLBFwmark(), a.NFQLB.NoTargetsFwmark()
+}
+
+func (a *NFQLBManagerAdapter) GCStaleInstances(ctx context.Context, keep map[string]struct{}) error {
+	return a.NFQLB.GCStaleInstances(ctx, keep)
 }

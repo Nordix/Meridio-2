@@ -17,6 +17,10 @@ limitations under the License.
 package nfqlb
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -202,5 +206,122 @@ var _ = Describe("New", func() {
 		_, err := New(WithQueue("bad"))
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid queue"))
+	})
+})
+
+// Regression coverage for the ENP2 nVIP SLLBR incident: a clean (status 0)
+// exit of the nfqlb daemon must be treated the same as a crash. The caller
+// (cmd/stateless-load-balancer/cmd/run.go) tears down the manager process
+// whenever Start() returns — regardless of error — so that a dead dataplane
+// never continues reporting Ready. Recovery relies on that crash-and-restart:
+// once the process exits, nothing in this package needs to independently
+// detect staleness in already-tracked Instances, because no further calls
+// into this package happen until a fresh process starts clean.
+var _ = Describe("Start", func() {
+	It("surfaces a clean daemon exit as an error so the caller can crash the process", func() {
+		ctx := context.Background()
+
+		// /bin/true stands in for a `nfqlb flowlb` that exits with status 0.
+		lb, err := New(WithNFQLBPath("/bin/true"))
+		Expect(err).ToNot(HaveOccurred())
+
+		err = lb.Start(ctx)
+		Expect(err).To(HaveOccurred(),
+			"a terminated nfqlb process (even clean exit) must be reported as a failure")
+	})
+
+	It("does not report an error when ctx is cancelled (expected shutdown)", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// nfqlbPath is invoked as `<path> flowlb --promiscuous_ping ...`; a
+		// wrapper script lets us ignore those fixed args and just block until
+		// killed, standing in for a healthy nfqlb that runs until shutdown.
+		scriptPath := filepath.Join(GinkgoT().TempDir(), "block.sh")
+		Expect(os.WriteFile(scriptPath, []byte("#!/bin/sh\nexec sleep 100\n"), 0o755)).To(Succeed())
+
+		lb, err := New(WithNFQLBPath(scriptPath))
+		Expect(err).ToNot(HaveOccurred())
+
+		done := make(chan error, 1)
+		go func() { done <- lb.Start(ctx) }()
+
+		Eventually(lb.running.Load).Should(BeTrue(), "process should be running before we cancel")
+		cancel()
+
+		var startErr error
+		Eventually(done).Should(Receive(&startErr))
+		Expect(startErr).ToNot(HaveOccurred(),
+			"a deliberate shutdown via context cancellation is not a failure")
+	})
+})
+
+// Regression coverage: maxEndpoints is accepted by the API with no upper
+// bound today (minimum=1, no maximum), so a single DistributionGroup can
+// exhaust the fwmark/offset space and permanently wedge AddInstance for
+// that DG. The fix should reject this earlier (CRD maximum and/or webhook
+// validation against the LB's remaining offset budget) rather than let the
+// reconciler retry an unwinnable request forever. This spec currently FAILS
+// because AddInstance has no upper validation on maxTargets.
+var _ = Describe("AddInstance", func() {
+	It("rejects a maxEndpoints value that cannot fit instead of looping forever", func() {
+		ctx := context.Background()
+
+		lb, err := New(WithNFQLBPath("/bin/true"))
+		Expect(err).ToNot(HaveOccurred())
+		lb.running.Store(true)
+
+		_, err = lb.AddInstance(ctx, "dg-too-big", WithMaxTargets(99000))
+		Expect(err).To(HaveOccurred())
+		Expect(err).ToNot(MatchError(errIdentifierOffset),
+			"an oversized maxEndpoints should be rejected with a clear, "+
+				"actionable validation error — not the generic offset-exhaustion "+
+				"error that also fires for legitimate capacity exhaustion across "+
+				"many DGs, and should ideally be caught before reaching this layer")
+	})
+
+	// Regression coverage: DeleteInstance currently removes the instance
+	// from the tracking map before target/route cleanup is attempted and
+	// before confirming `nfqlb delete --shm=` succeeded. If that command
+	// fails, routes and flows for the instance's fwmark range are never
+	// cleaned up, yet the offset is immediately eligible for reuse by the
+	// next AddInstance call. The next DG then inherits a fwmark range with
+	// live leftover routes pointing at the previous DG's target IPs. This
+	// spec currently FAILS: DeleteInstance returns an error, but the offset
+	// is already reused by the time it does.
+	It("does not recycle a freed offset onto routes it failed to clean up", func() {
+		ctx := context.Background()
+
+		lb, err := New(WithNFQLBPath("/bin/true"))
+		Expect(err).ToNot(HaveOccurred())
+		lb.running.Store(true)
+
+		inst, err := lb.AddInstance(ctx, "dg-1", WithMaxTargets(4))
+		Expect(err).ToNot(HaveOccurred())
+
+		var routesDeleted []int
+		inst.routeCreate = func(int, string) error { return nil }
+		inst.routeDelete = func(fwmark int, _ string) error {
+			routesDeleted = append(routesDeleted, fwmark)
+			return nil
+		}
+		inst.execCmd = func(context.Context, ...string) ([]byte, error) { return nil, nil }
+		Expect(inst.AddTarget(ctx, []string{"10.0.0.1"}, 0)).To(Succeed())
+
+		firstOffset := inst.offset
+
+		// `nfqlb delete --shm=` fails (shm busy, EACCES, binary error, ...)
+		lb.nfqlbPath = "/bin/false"
+		err = lb.DeleteInstance(ctx, "dg-1")
+		Expect(err).To(HaveOccurred())
+
+		Expect(routesDeleted).ToNot(BeEmpty(),
+			"policy routes/rules must be cleaned up even when the shm unlink fails")
+
+		lb.nfqlbPath = "/bin/true"
+		inst2, addErr := lb.AddInstance(ctx, "dg-2", WithMaxTargets(4))
+		Expect(addErr).ToNot(HaveOccurred())
+		Expect(inst2.offset).ToNot(Equal(firstOffset),
+			"a failed deletion must not free its offset for reuse while "+
+				"leftover routes for it still exist")
 	})
 })
