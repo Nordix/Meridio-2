@@ -34,6 +34,7 @@ type LoadBalancerConfig struct {
 	ProbeAddr        string
 	LogLevel         string
 	LogLevelAPI      string
+	PprofBindAddress string
 	MetricsAddr      string
 	SecureMetrics    bool
 	MetricsCertPath  string
@@ -63,6 +64,10 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Log level (debug, info, warn, error)")
 	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
 		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
+	fs.StringVar(&c.PprofBindAddress, "pprof-bind-address", "",
+		"Loopback address for the Go pprof HTTP endpoint (e.g., 127.0.0.1:6060). "+
+			"Empty disables the feature. Must be a loopback address (127.0.0.1 or [::1]); "+
+			"access it via kubectl port-forward.")
 	fs.StringVar(&c.MetricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	fs.BoolVar(&c.SecureMetrics, "metrics-secure", true,
@@ -86,6 +91,7 @@ func (c *LoadBalancerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
+	bindString(fs, "pprof-bind-address", "MERIDIO_PPROF_ADDR", &c.PprofBindAddress)
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)

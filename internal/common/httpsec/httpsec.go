@@ -33,6 +33,8 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+
+	"github.com/go-logr/logr"
 )
 
 // ValidateLoopbackAddr validates that addr is a well-formed host:port whose
@@ -66,4 +68,56 @@ func ValidateLoopbackAddr(addr string) error {
 	}
 
 	return nil
+}
+
+// ResolvePprofBindAddress applies the shared fail-safe policy for the pprof
+// endpoint and returns the address a binary should hand to
+// controller-runtime's manager.Options.PprofBindAddress.
+//
+// pprof is unauthenticated and lets callers dump memory and trigger expensive
+// profiles, so it follows the same opt-in, loopback-only model as the dynamic
+// log-level server:
+//
+//   - An empty addr means the feature is disabled (the default); it returns ""
+//     without logging.
+//   - A non-loopback or malformed addr is rejected via ValidateLoopbackAddr;
+//     the error is logged and "" is returned so the manager starts with pprof
+//     disabled rather than exposing the endpoint on the network. (controller-
+//     runtime's PprofBindAddress binds whatever it is given and enforces no
+//     loopback and no auth, so this is the only gate.)
+//   - A valid loopback addr is returned unchanged and a startup line is logged.
+//
+// Returning "" (never an error) keeps pprof an auxiliary, non-fatal feature:
+// a bad value disables profiling but never prevents the process from starting.
+func ResolvePprofBindAddress(addr string, logger logr.Logger) string {
+	if addr == "" {
+		return "" // disabled by default
+	}
+
+	log := logger.WithName("pprof")
+
+	if err := ValidateLoopbackAddr(addr); err != nil {
+		log.Error(err, "Refusing to enable pprof endpoint",
+			"addr", addr,
+			"hint", "expected a loopback host:port like 127.0.0.1:6060 or [::1]:6060")
+		return "" // FAIL SAFE: do not enable pprof
+	}
+
+	log.Info("pprof endpoint enabled",
+		"addr", addr,
+		"security_note", "unauthenticated; loopback-only, reach it via kubectl port-forward",
+		"usage", "kubectl port-forward <pod> "+portOf(addr)+":"+portOf(addr)+
+			" then: go tool pprof http://"+addr+"/debug/pprof/heap")
+
+	return addr
+}
+
+// portOf returns the port component of a validated host:port address, or the
+// address itself if it cannot be split (ValidateLoopbackAddr already ran, so
+// this is purely defensive for the log line).
+func portOf(addr string) string {
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		return port
+	}
+	return addr
 }
