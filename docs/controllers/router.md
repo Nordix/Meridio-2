@@ -310,6 +310,7 @@ All flags support environment variable overrides following the precedence: flags
 | `--bird-log` | `MERIDIO_BIRD_LOG` | _(none)_ | BIRD log destination (repeatable; env var semicolon-separated) |
 | `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 | `--log-level-api` | `MERIDIO_LOG_LEVEL_API` | _(empty)_ | Address for dynamic log level HTTP endpoint (e.g., `127.0.0.1:9902`). Empty disables the feature. |
+| `--pprof-bind-address` | `MERIDIO_PPROF_ADDR` | _(empty)_ | Loopback address for the Go pprof HTTP endpoint (e.g., `127.0.0.1:6060`). Empty disables the feature; must be a loopback address. See [Runtime profiling with pprof](../operations/profiling.md). |
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8082` | Health/readiness probe bind address |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` | Metrics endpoint bind address (0 = disabled) |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | Serve metrics over HTTPS |
