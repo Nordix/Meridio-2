@@ -38,6 +38,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/controller/sidecar"
@@ -144,6 +145,7 @@ func runSidecar(cfg *config.SidecarConfig) error {
 		},
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
+		PprofBindAddress:       httpsec.ResolvePprofBindAddress(cfg.PprofBindAddress, setupLog),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
