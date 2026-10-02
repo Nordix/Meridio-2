@@ -24,8 +24,8 @@ import (
 // secondary interface within the Pod.
 type NetworkIdentity struct {
 	// Subnet: The network prefix expected on the target interface (e.g., "192.168.1.0/24").
-	// The processing entity MUST verify this subnet matches the interface's primary IP
-	// to ensure configuration is applied to the correct network segment.
+	// The processing entity identifies the target interface as the one holding an address
+	// within this subnet, ensuring configuration is applied to the correct network segment.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=64
 	Subnet string `json:"subnet"`
@@ -41,8 +41,7 @@ type NetworkIdentity struct {
 // +kubebuilder:validation:XValidation:rule="cidr(self.network.subnet).ip().family() == (self.ipFamily == 'IPv4' ? 4 : 6)",message="Subnet IP family mismatch"
 type NetworkDomain struct {
 	// Name: A unique logical identifier for this domain (e.g., "sllb-a-v4").
-	// The consumer uses this name to maintain local resource state, such as
-	// routing table ID mapping.
+	// The consumer may use this name to identify the domain in local state and logs.
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
@@ -105,8 +104,6 @@ type EndpointNetworkConfigurationStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=type
-	// +patchStrategy=merge
-	// +patchMergeKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
