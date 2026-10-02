@@ -231,7 +231,7 @@ undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
 ##@ Suite: bfd-detection
 ################################################################################
 
-# Standalone single-gateway suite (VLAN 1500, gw-bfd). The GatewayRouter starts
+# Standalone single-gateway suite (VLAN 1300, gw-bfd). The GatewayRouter starts
 # with BFD enabled; the test compares BGP-down detection time with BFD (~0.9s)
 # against the BGP hold timer (~15s) by patching the router at runtime, and
 # restores BFD afterwards.
@@ -474,7 +474,7 @@ dual-stack-simple: deploy-dual-stack-simple test-dual-stack-simple ## Deploy and
 
 .PHONY: deploy-dual-stack-simple
 deploy-dual-stack-simple: cluster ## Deploy dual-stack topology.
-	$(call deploy-suite,e2e-dual-stack,$(shell pwd)/suites/dual-stack,dual-stack,sllbr-gw-ds)
+	$(call deploy-suite,e2e-dual-stack-simple,$(shell pwd)/suites/dual-stack-simple,dual-stack-simple,sllbr-gw-ds)
 
 .PHONY: test-dual-stack-simple
 test-dual-stack-simple: ## Run e2e tests for dual-stack suite.
@@ -482,8 +482,8 @@ test-dual-stack-simple: ## Run e2e tests for dual-stack suite.
 
 .PHONY: undeploy-dual-stack-simple
 undeploy-dual-stack-simple: ## Undeploy dual-stack topology.
-	@NS=e2e-dual-stack; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack --ignore-not-found=true; \
+	@NS=e2e-dual-stack-simple; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack-simple --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################

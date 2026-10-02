@@ -73,8 +73,8 @@ var ipv6TestCases = []suiteTestCase{
 		targetApp:      "target-v6a",
 		targetReplicas: 2,
 		gateways: []gwTestCase{
-			{name: "gw-v6a1", vip: "fd00:cafe:7::1", targets: 2, dgName: "dg-v6a1"},
-			{name: "gw-v6a2", vip: "fd00:cafe:7::2", targets: 2, dgName: "dg-v6a2"},
+			{name: "gw-v6a1", vip: "fd00:cafe:1::1", targets: 2, dgName: "dg-v6a1"},
+			{name: "gw-v6a2", vip: "fd00:cafe:1::2", targets: 2, dgName: "dg-v6a2"},
 		},
 	},
 }
@@ -666,6 +666,24 @@ var _ = Describe("E2E IPv6 Test Suites", Label("ipv6"), func() {
 					By("waiting for BGP routes to propagate to VPN gateway")
 					for _, gw := range suite.gateways {
 						Eventually(func() error { return e2eutils.Ping(gw.vip) }).Should(Succeed())
+					}
+
+					By("waiting for IPv6 load balancing path to converge")
+					for _, gw := range suite.gateways {
+						gw := gw
+						Eventually(func() error {
+							lasting, lost, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
+							if err != nil {
+								return err
+							}
+							if lost > 0 {
+								return fmt.Errorf("%d connections lost", lost)
+							}
+							if len(lasting) < gw.targets {
+								return fmt.Errorf("expected %d targets, got %d", gw.targets, len(lasting))
+							}
+							return nil
+						}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 					}
 				})
 

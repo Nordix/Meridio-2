@@ -32,7 +32,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// Standalone bfd-detection suite: a single gateway (gw-bfd) on VLAN 1500, whose
+// Standalone bfd-detection suite: a single gateway (gw-bfd) on VLAN 1300, whose
 // GatewayRouter (gw-bfd-router-v4) starts WITH BFD enabled. The test compares
 // how quickly the SLLBR router detects an abrupt, silent peer failure in two
 // sequential phases against the same router:
@@ -41,7 +41,7 @@ import (
 //	Phase B (no BFD): only when the BGP hold timer (15s) expires
 //
 // The failure is injected by bringing the VPN gateway's VLAN subinterface down
-// (ip link set vlan15 down) — no BGP NOTIFICATION or TCP teardown reaches the
+// (ip link set vlan13 down) — no BGP NOTIFICATION or TCP teardown reaches the
 // peer, so the receiver must rely on its own timers. Between the phases the
 // router is patched at runtime to remove the `bfd` block; the original config
 // (with BFD) is restored in AfterAll.
@@ -50,8 +50,8 @@ const (
 	bfdGateway   = "gw-bfd"
 	bfdRouter    = "gw-bfd-router-v4"
 	bfdDG        = "dg-bfd"
-	bfdVlanIf    = "vlan15" // VPN gateway VLAN 1500 subinterface
-	bfdVIP       = "80.0.0.1"
+	bfdVlanIf    = "vlan13" // VPN gateway VLAN 1300 subinterface
+	bfdVIP       = "70.0.0.1"
 	bfdTargetApp = "target-bfd"
 
 	// Number of target Pods (targets.yaml replicas) and TCP connections used by
