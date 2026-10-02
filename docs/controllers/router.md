@@ -106,6 +106,8 @@ BIRD config is generated using `text/template` and assembled from these parts:
 
 VIPs arrive as plain IPs from `Gateway.status.addresses` (filtered to `IPAddressType` only) and are converted to CIDRs (`/32` or `/128`) inside the BIRD package via `vipsToCidr()`.
 
+**VIP scale / BGP max-prefix:** each VIP is advertised as an individual `/32` or `/128` static route (host routes cannot be aggregated), so the number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit**. Exceeding it causes the peer to tear down the BGP session — a session-wide failure affecting all VIPs on that Gateway, not detectable at admission. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on CIDR limits and VIP scaling).
+
 #### Static Routing
 
 When `spec.protocol` is `Static`, the controller generates a BIRD static protocol block with a default route pointing to the GatewayRouter's address via its interface. If `spec.static.bfd` is set, the route is supervised with BFD (`route ... bfd;`).

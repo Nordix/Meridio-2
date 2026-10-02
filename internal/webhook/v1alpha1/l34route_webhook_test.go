@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -243,6 +245,54 @@ var _ = Describe("L34Route Webhook", func() {
 			_, err := validator.ValidateCreate(ctx, obj)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("overlapping CIDR"))
+		})
+	})
+
+	Context("When validating the data-plane CIDR count limit", func() {
+		// distinctIPv4CIDRs returns n distinct, non-overlapping /32 CIDRs so the
+		// overlap check passes and only the per-field count guard is exercised.
+		distinctIPv4CIDRs := func(n int) []string {
+			cidrs := make([]string, 0, n)
+			for i := range n {
+				cidrs = append(cidrs, fmt.Sprintf("10.%d.%d.%d/32", (i>>16)&0xff, (i>>8)&0xff, i&0xff))
+			}
+			return cidrs
+		}
+
+		It("Should accept the maximum number of destination CIDRs", func() {
+			obj.Spec.DestinationCIDRs = distinctIPv4CIDRs(32) // maxCIDRsPerFlow
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should reject too many destination CIDRs", func() {
+			obj.Spec.DestinationCIDRs = distinctIPv4CIDRs(33) // maxCIDRsPerFlow + 1
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("too many destination CIDRs"))
+		})
+
+		It("Should accept the maximum number of source CIDRs", func() {
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.SourceCIDRs = distinctIPv4CIDRs(32) // maxCIDRsPerFlow
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should reject too many source CIDRs", func() {
+			obj.Spec.DestinationCIDRs = []string{"192.168.1.1/32"}
+			obj.Spec.SourceCIDRs = distinctIPv4CIDRs(33) // maxCIDRsPerFlow + 1
+			obj.Spec.Protocols = []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP}
+			obj.Spec.Priority = 1
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("too many source CIDRs"))
 		})
 	})
 
