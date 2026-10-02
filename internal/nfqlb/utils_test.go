@@ -95,6 +95,14 @@ var _ = Describe("anyPortRange", func() {
 		Expect(anyPortRange([]string{"80", "0-65535"})).To(BeTrue())
 	})
 
+	It("should return true when \"any\" is present", func() {
+		Expect(anyPortRange([]string{"80", "any"})).To(BeTrue())
+	})
+
+	It("should return true for a lone \"any\"", func() {
+		Expect(anyPortRange([]string{"any"})).To(BeTrue())
+	})
+
 	It("should return false for specific ports", func() {
 		Expect(anyPortRange([]string{"80", "443"})).To(BeFalse())
 	})

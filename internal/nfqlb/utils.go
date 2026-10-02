@@ -79,7 +79,11 @@ func anyIPRange(ips []string) bool {
 	return true
 }
 
-// anyPortRange returns true if ANY of the possible input port ranges cover all the possible ports (0-65535).
+// anyPortRange returns true if ANY of the input port entries covers all ports.
+// Both the explicit full range (MaxPortRange, "0-65535") and the user-facing
+// spelling (AnyPort, "any") are recognized, so callers agree on what "all ports"
+// means regardless of which spelling reached this point. When true, the caller
+// omits the --sports/--dports flag entirely so nfqlb matches all ports.
 func anyPortRange(ports []string) bool {
-	return slices.Contains(ports, maxPortRange)
+	return slices.Contains(ports, MaxPortRange) || slices.Contains(ports, AnyPort)
 }
