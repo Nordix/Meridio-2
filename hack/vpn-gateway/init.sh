@@ -79,10 +79,10 @@ ip addr add 169.254.111.150/24 dev vlan12
 # VLAN 1300 — bfd-detection gw-bfd
 ip link add link eth0 name vlan13 type vlan id 1300
 ip link set vlan13 up
-ip addr add 169.254.80.150/24 dev vlan13
+ip addr add 169.254.70.150/24 dev vlan13
 
 ethtool -K eth0 tx off
 
-echo "VPN Gateway ready on VLAN 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300"
+echo "VPN Gateway ready"
 
 /usr/sbin/bird -d -c /etc/bird/bird-gw.conf

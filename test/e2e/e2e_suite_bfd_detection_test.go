@@ -51,7 +51,7 @@ const (
 	bfdRouter    = "gw-bfd-router-v4"
 	bfdDG        = "dg-bfd"
 	bfdVlanIf    = "vlan13" // VPN gateway VLAN 1300 subinterface
-	bfdVIP       = "80.0.0.1"
+	bfdVIP       = "70.0.0.1"
 	bfdTargetApp = "target-bfd"
 
 	// Number of target Pods (targets.yaml replicas) and TCP connections used by

@@ -82,19 +82,19 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | 1000 | tcp-ao | IPv4 | gw-t2 | `169.254.61.0/24` | — | `169.111.60.0/24` | — | `60.0.0.2/32` | 64521 | 4200000000 |
 | 1100 | separate-static-appnetwork | IPv4 | gw-a1 | `169.254.110.0/24` | — | `169.111.110.0/24` | — | `110.0.0.1/32` | — (static+BFD) | — |
 | 1200 | separate-static-appnetwork | IPv4 | gw-a2 | `169.254.111.0/24` | — | `169.111.110.0/24` | — | `110.0.0.2/32` | — (static+BFD) | — |
-| 1300 | bfd-detection | IPv4 | gw-bfd | `169.254.80.0/24` | — | `169.111.80.0/24` | — | `80.0.0.1/32` | 64522 | 4200000000 |
-
-**Next available:** VLAN 1400, ASN 64523, external `169.254.90.0/24` / `fd00:cafe:90::/64`, internal `169.111.90.0/24` / `fd00:cafe:190::/64`, VIP `90.0.0.1/32` / `fd00:cafe:9::1/128`
+| 1300 | bfd-detection | IPv4 | gw-bfd | `169.254.70.0/24` | — | `169.111.70.0/24` | — | `70.0.0.1/32` | 64522 | 4200000000 |
 
 ## Adding a New Suite
 
 ### 1. Choose identifiers
 
-Pick the next available VLAN ID, ASN, and address group from the table above.
-Follow the numeric progression:
+Scan the VLAN & ASN Allocation Table above and pick the next unused VLAN ID,
+ASN, and address group (or, per the VLAN-reuse rule below, reuse an existing
+VLAN ID if your suite is a different IP Family from everything already on
+it). Follow the numeric progression:
 
-- VLAN: increment by 100
-- ASN: increment by 1 from 64519
+- VLAN: increment by 100 from the highest VLAN ID in the table (or reuse an existing one per the rule below)
+- ASN: increment by 1 from the highest ASN in the table
 - External IPv4: `169.254.{next_group}.0/24` (next_group = 60, 70, ...)
 - Internal IPv4: `169.111.{next_group}.0/24`
 - VIP IPv4: `{next_group}.0.0.{N}/32`
@@ -202,8 +202,7 @@ Use `e2e-{suite-name}` (e.g., `e2e-dual-stack-simple`, `e2e-separate-appnetwork-
 ## Maintaining This Document
 
 Update this README whenever you add, remove, or modify a test suite. Specifically:
-- Add new rows to the VLAN & ASN Allocation Table (including the suite's IP Family)
-- Update the "Next available" line
+- Add/update rows in the VLAN & ASN Allocation Table (including the suite's IP Family)
 - Document any new addressing patterns or conventions introduced
 
 ## Notes

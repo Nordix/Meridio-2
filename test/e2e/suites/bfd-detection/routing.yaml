@@ -14,7 +14,7 @@ spec:
   gatewayRef:
     name: gw-bfd
   interface: "vlan-1300"
-  address: "169.254.80.150"
+  address: "169.254.70.150"
   protocol: "BGP"
   bgp:
     localASN: 64522
@@ -39,7 +39,7 @@ spec:
     kind: DistributionGroup
     name: dg-bfd
   destinationCIDRs:
-  - "80.0.0.1/32"
+  - "70.0.0.1/32"
   protocols:
   - TCP
   - UDP

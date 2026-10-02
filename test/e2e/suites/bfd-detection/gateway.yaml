@@ -38,6 +38,6 @@ spec:
       interface: net-bfd
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.80.0/24"
+    cidr: "169.111.70.0/24"
   horizontalScaling:
     replicas: 1
