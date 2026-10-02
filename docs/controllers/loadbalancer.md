@@ -220,6 +220,8 @@ nftables (shared across all DGs in this LB Pod)
 
 **Flow naming:** The flow name is the L34Route's metadata name (e.g., `my-http-route`). The flow is bound to its NFQLB instance via the `--target` flag which receives the DistributionGroup name.
 
+**Port count limit (data plane):** An L34Route's `sourcePorts`/`destinationPorts` are passed to nfqlb as a single comma-joined `--sports`/`--dports` value, which nfqlb copies with `strndupa(str, 1024)` and thus truncates at 1024 bytes (~85 port entries). The L34Route CRD allows `MaxItems=1000`, but the validating webhook rejects port sets whose joined form would exceed the nfqlb buffer, so the effective limit is the data-plane buffer, not the CRD. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on the port-string buffer). `byteMatches` has no such data-plane cap.
+
 **Track flows:** Stored in `controller.flows` map for next reconcile comparison.
 
 ### 6. Return Result
