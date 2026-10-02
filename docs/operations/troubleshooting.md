@@ -235,7 +235,13 @@ This is the most reliable way to run privileged networking tools (`nft`, `tcpdum
 
 ## Router (BIRD)
 
-The router container runs BIRD 3.x for BGP session management.
+The router container runs BIRD 3.3.2 for BGP session management. It is built from
+source (pinned in `build/router/Dockerfile` via `ARG BIRD_VERSION`) rather than from
+the Alpine package, to pick the latest upstream release — which includes a memory-leak
+fix not present in the older BIRD packaged by current Alpine releases (e.g. 3.2.3 on
+alpine:3.24) — and to keep the version reproducible. The full set of TCP-AO MAC
+algorithms exposed by the GatewayRouter API (notably `cmac aes128`) additionally
+requires BIRD 3.3.1+.
 
 ### Check BIRD is running
 
@@ -253,7 +259,7 @@ kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl sh
 
 Expected output shows BGP sessions in `Established` state:
 ```
-BIRD 3.1.5 ready.
+BIRD 3.3.2 ready.
 Name       Proto      Table      State  Since         Info
 VIP4       Static     master4    up     2026-03-29    
 VIP6       Static     master6    up     2026-03-29    
