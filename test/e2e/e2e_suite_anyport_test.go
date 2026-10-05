@@ -30,21 +30,22 @@ import (
 	"github.com/nordix/meridio-2/test/utils"
 )
 
-// "any" port normalization (issue #262).
+// "any" port conversion (issue #262).
 //
 // Verifies that an L34Route using the documented "any" port spelling actually
 // programs a working all-ports match in the data plane — not just that it is
 // admitted. Historically "any" was passed unchanged to nfqlb, whose numeric
 // port parser rejected it, so the flow failed to program silently. The fix
-// normalizes "any" -> "0-65535" in the LB controller's flow adapter, so nfqlb
-// receives a full-range set and omits the port filter (matching all ports).
+// converts "any" -> "0-65535" in the LB controller's flow adapter
+// (anyPortToExplicitRange), so nfqlb receives a full-range set and omits the
+// port filter (matching all ports).
 //
 // This reuses the already-deployed ipv4-simple infrastructure (VIP 40.0.0.1,
 // route-m1, TCP on port 5000). It is a standalone Ordered Describe that patches
 // route-m1's destinationPorts to ["any"] and restores the baseline
 // (["5000-5001"]) in DeferCleanup, so it neither depends on nor perturbs the
 // other ipv4 specs. Serial ensures it does not run concurrently with them.
-var _ = Describe("Any Port Normalization", Label("ipv4"), Serial, Ordered, func() {
+var _ = Describe("Any Port Conversion", Label("ipv4"), Serial, Ordered, func() {
 	const (
 		namespace = "e2e-ipv4-simple"
 		routeName = "route-m1"

@@ -650,17 +650,20 @@ nfqlb flow-set \
     --dports=80,443
 ```
 
-### Port Normalization
+### Port Conversion
 
 The `"any"` port spelling (documented on the L34Route API as "all ports, 0-65535")
-is normalized to the explicit range `0-65535` in the `l34RouteFlow` adapter
-(`normalizePorts`) before it reaches nfqlb. This is required because nfqlb's port
-parser only understands numeric ranges and would reject the literal token `any`.
-After normalization, a full-range port set causes the `--sports`/`--dports` flag
-to be omitted entirely (`anyPortRange`), so nfqlb matches all ports. The
-`AnyPort` (`"any"`) and `MaxPortRange` (`"0-65535"`) constants live in the
-`internal/nfqlb` package so the controller (and other consumers) share a single
-definition of "all ports".
+is converted to the explicit range `0-65535` in the `l34RouteFlow` adapter
+(`anyPortToExplicitRange`) before it reaches nfqlb. This is required because
+nfqlb's port parser only understands numeric ranges and would reject the literal
+token `any`. Because any entry covering all ports means the whole set covers all
+ports, a port set containing `"any"` (or an explicit `"0-65535"`) collapses to a
+single `0-65535` element. That full-range port set then causes the
+`--sports`/`--dports` flag to be omitted entirely (`anyPortRange`), so nfqlb
+matches all ports. The common path — no full-range entry — returns the input
+unchanged with no allocation. The `AnyPort` (`"any"`) and `MaxPortRange`
+(`"0-65535"`) constants live in the `internal/nfqlb` package so the controller
+(and other consumers) share a single definition of "all ports".
 
 ### VIP Aggregation
 
