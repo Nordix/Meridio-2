@@ -17,26 +17,32 @@ limitations under the License.
 package config
 
 import (
+	"time"
+
 	"github.com/spf13/pflag"
+
+	"github.com/nordix/meridio-2/internal/common/metrics"
 )
 
 // SidecarConfig holds configuration for the network sidecar
 type SidecarConfig struct {
-	PodName            string
-	PodNamespace       string
-	PodUID             string
-	ProbeAddr          string
-	LogLevel           string
-	LogLevelAPI        string
-	MinTableID         int
-	MaxTableID         int
-	TableIDMappingFile string
-	MetricsAddr        string
-	SecureMetrics      bool
-	MetricsCertPath    string
-	MetricsCertName    string
-	MetricsCertKey     string
-	EnableHTTP2        bool
+	PodName               string
+	PodNamespace          string
+	PodUID                string
+	ProbeAddr             string
+	LogLevel              string
+	LogLevelAPI           string
+	MinTableID            int
+	MaxTableID            int
+	TableIDMappingFile    string
+	MetricsAddr           string
+	SecureMetrics         bool
+	MetricsCertPath       string
+	MetricsCertName       string
+	MetricsCertKey        string
+	MetricsPrefix         string
+	MetricsCollectTimeout time.Duration
+	EnableHTTP2           bool
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -70,6 +76,12 @@ func (c *SidecarConfig) AddFlags(fs *pflag.FlagSet) {
 		"The name of the metrics server certificate file.")
 	fs.StringVar(&c.MetricsCertKey, "metrics-cert-key", "tls.key",
 		"The name of the metrics server key file.")
+	fs.StringVar(&c.MetricsPrefix, "metrics-prefix", metrics.DefaultPrefix,
+		"Prefix for custom Meridio-2 metric names. Must start with a lowercase letter and contain only "+
+			"lowercase letters, digits, and underscores. Maximum 10 characters.")
+	fs.DurationVar(&c.MetricsCollectTimeout, "metrics-collect-timeout", 5*time.Second,
+		"Maximum time a single metrics scrape waits for the informer cache to finish its initial "+
+			"sync before reporting a collection error. Keep below Prometheus's scrape_timeout (default 10s).")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics server")
 }
@@ -91,6 +103,8 @@ func (c *SidecarConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
+	bindString(fs, "metrics-prefix", "MERIDIO_METRICS_PREFIX", &c.MetricsPrefix)
+	bindDuration(fs, "metrics-collect-timeout", "MERIDIO_METRICS_COLLECT_TIMEOUT", &c.MetricsCollectTimeout)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
 }
 

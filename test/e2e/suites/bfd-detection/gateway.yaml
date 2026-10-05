@@ -2,14 +2,14 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: gw-ds
+  name: gw-bfd
 spec:
   gatewayClassName: meridio
   infrastructure:
     parametersRef:
       group: meridio-2.nordix.org
       kind: GatewayConfiguration
-      name: gwconfig-ds
+      name: gwconfig-bfd
   listeners:
   - name: default
     protocol: TCP
@@ -18,28 +18,26 @@ spec:
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayConfiguration
 metadata:
-  name: gwconfig-ds
+  name: gwconfig-bfd
 spec:
   networkAttachments:
   - type: NAD
     nad:
       name: sysctl-tuning
-      namespace: e2e-dual-stack
+      namespace: e2e-bfd-detection
       interface: dummy
   - type: NAD
     nad:
-      name: vlan-100
-      namespace: e2e-dual-stack
-      interface: vlan-100
+      name: vlan-1300
+      namespace: e2e-bfd-detection
+      interface: vlan-1300
   - type: NAD
     nad:
-      name: app-net-ds
-      namespace: e2e-dual-stack
-      interface: net-ds
+      name: app-net-bfd
+      namespace: e2e-bfd-detection
+      interface: net-bfd
   internalSubnets:
   - attachmentType: NAD
-    cidr: "169.111.10.0/24"
-  - attachmentType: NAD
-    cidr: "fd00:cafe:110::/64"
+    cidr: "169.111.70.0/24"
   horizontalScaling:
-    replicas: 2
+    replicas: 1

@@ -11,6 +11,7 @@ The Router controller runs inside the LB Pod's router container. It reconciles G
 - Runs as a sidecar container alongside the `stateless-load-balancer` container in each LB Pod
 - Each instance is scoped to a single Gateway (receives `--gateway-name` and `--gateway-namespace` at startup)
 - Multiple LB Pod replicas each run their own independent Router controller instance, all reconciling the same GatewayRouter CRs
+- The container ships **BIRD 3.3.2**, built from source and pinned via `ARG BIRD_VERSION` in `build/router/Dockerfile`. It is built from source rather than installed from the Alpine package to pick the latest upstream release (which includes a memory-leak fix not present in the older BIRD packaged by current Alpine releases, e.g. 3.2.3 on alpine:3.24) and to guarantee a reproducible version. The full set of TCP-AO MAC algorithms exposed by the GatewayRouter API — notably `cmac aes128` — also requires a recent BIRD (3.3.1+); TCP-AO itself is available earlier in the BIRD 3 series. BIRD is built with a portable per-architecture CPU baseline (not `-march=native`) so it runs on any node of the target architecture.
 
 ### Resource Relationships
 
@@ -104,6 +105,65 @@ BIRD config is generated using `text/template` and assembled from these parts:
 4. **Static router protocols**: One `protocol static 'NBR-<name>'` per Static GatewayRouter, with a default route (`0.0.0.0/0` or `0::/0`) via the router's address/interface and optional BFD supervision
 
 VIPs arrive as plain IPs from `Gateway.status.addresses` (filtered to `IPAddressType` only) and are converted to CIDRs (`/32` or `/128`) inside the BIRD package via `vipsToCidr()`.
+
+### Router ID
+
+BIRD requires a router ID for its operation. The generated `bird.conf` ([`internal/bird/config.go`](../../internal/bird/config.go)) does not set one explicitly, so BIRD determines it itself at startup, based on the interfaces and IPv4 addresses available on the Pod.
+
+Typically, this results in BIRD selecting the primary interface's IPv4 address. However, on a true IPv4-less (single-stack IPv6-only) cluster, this automatic selection fails and BIRD refuses to start:
+
+```
+<FATAL> Cannot determine router ID, please configure it manually
+```
+
+This only affects clusters with no IPv4 address anywhere on the Pod. It does **not** affect dual-stack clusters that merely carry IPv6-only application traffic over secondary Multus interfaces — the primary network still provides an IPv4 address for BIRD to use in that case.
+
+#### Workaround for IPv4-less Clusters
+
+Attach an additional NetworkAttachmentDefinition to the LB Deployment (via `GatewayConfiguration.spec.networkAttachments`) using the `dummy` CNI plugin with IPv4 IPAM (e.g. [whereabouts](https://github.com/k8snetworkplumbingwg/whereabouts)). This gives BIRD a throwaway IPv4 address purely for router ID derivation; it carries no real traffic. Alternatively, ensure the NAD provisioning the external (BGP) interface itself also assigns an IPv4 address.
+
+Example NAD:
+
+```yaml
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: bird-router-id-v6
+spec:
+  config: |
+    {
+      "cniVersion": "1.0.0",
+      "name": "bird-router-id-v6",
+      "plugins": [
+        {
+          "type": "dummy",
+          "ipam": {
+            "type": "whereabouts",
+            "range": "169.254.254.0/24"
+          }
+        }
+      ]
+    }
+```
+
+Referenced in `GatewayConfiguration.spec.networkAttachments`:
+
+```yaml
+networkAttachments:
+- type: NAD
+  nad:
+    name: bird-router-id-v6
+    namespace: <namespace>
+    interface: bird-rid
+```
+
+A full worked example is in `test/e2e/suites/separate-appnetwork-v6/{nad,gateway}.yaml` (NAD `bird-router-id-v6`), used by the e2e `separate-appnetwork-v6` suite's IPv6-only kind cluster.
+
+The following log line confirms BIRD picked up the dummy interface's address as its router ID:
+
+```
+<INFO> Chosen router ID 169.254.254.2 according to interface bird-rid
+```
 
 #### Static Routing
 

@@ -32,13 +32,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/log"
+	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/controller/sidecar"
+	sidecarmetrics "github.com/nordix/meridio-2/internal/metrics/networksidecar"
 )
 
 var (
@@ -99,6 +102,12 @@ func runSidecar(cfg *config.SidecarConfig) error {
 		return fmt.Errorf("pod-name, pod-namespace and pod-uid are required")
 	}
 
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+			return fmt.Errorf("metrics-prefix: %w", err)
+		}
+	}
+
 	var tlsOpts []func(*tls.Config)
 	if !cfg.EnableHTTP2 {
 		tlsOpts = append(tlsOpts, func(c *tls.Config) {
@@ -140,15 +149,43 @@ func runSidecar(cfg *config.SidecarConfig) error {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
 
+	// Construct the push-style config-error counter early (before controller setup) when metrics
+	// are enabled, so it can be injected into the controller. When disabled it stays a nil
+	// *ConfigErrors and the controller's increments are no-ops via its nil-safe Inc. Registered
+	// alongside the collector below.
+	var configErrors *sidecarmetrics.ConfigErrors
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		configErrors = sidecarmetrics.NewConfigErrors(cfg.MetricsPrefix)
+	}
+
 	if err := (&sidecar.Controller{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		PodName:    cfg.PodName,
-		PodUID:     cfg.PodUID,
-		MinTableID: cfg.MinTableID,
-		MaxTableID: cfg.MaxTableID,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		PodName:      cfg.PodName,
+		PodUID:       cfg.PodUID,
+		MinTableID:   cfg.MinTableID,
+		MaxTableID:   cfg.MaxTableID,
+		ConfigErrors: configErrors, // nil when metrics disabled; Inc is nil-safe
 	}).SetupWithManager(mgr, cfg); err != nil {
 		return fmt.Errorf("failed to setup controller: %w", err)
+	}
+
+	// Register all custom metrics collectors together when metrics are enabled. Must run before
+	// mgr.Start: controller-runtime brings the metrics HTTP server up early (before caches), so
+	// registering after Start could let a scrape hit /metrics before the collector exists. The
+	// collector's own sync-gate handles the cache-not-yet-synced window on the scrape side.
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := ctrlmetrics.Registry.Register(configErrors.Collector()); err != nil {
+			return fmt.Errorf("register sidecar ConfigErrors: %w", err)
+		}
+		collector := sidecarmetrics.NewSidecarCollector(
+			mgr.GetClient(), mgr.GetCache(), cfg.MetricsCollectTimeout, cfg.PodName, cfg.PodNamespace, cfg.MetricsPrefix,
+		)
+		if err := ctrlmetrics.Registry.Register(collector); err != nil {
+			return fmt.Errorf("register SidecarCollector: %w", err)
+		}
+		setupLog.Info("Registered custom metrics collector",
+			"collector", "SidecarCollector", "metricsPrefix", cfg.MetricsPrefix, "collectTimeout", cfg.MetricsCollectTimeout)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
