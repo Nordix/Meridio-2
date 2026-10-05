@@ -65,9 +65,19 @@ import (
 
 const (
 	// nodeDrainEndpoints is the endpoint count established before the drain
-	// (step 2). Four endpoints across a 4-worker Kind cluster make co-location
-	// of a gateway LB pod and a target endpoint on one node highly likely.
+	// (step 2). Combined with the hard requirement of nodeDrainMinWorkers
+	// schedulable workers, four endpoints make co-location of a gateway LB pod
+	// and a target endpoint on one node reliable.
 	nodeDrainEndpoints = 4
+
+	// nodeDrainMinWorkers is the minimum number of schedulable worker nodes the
+	// test requires. This is a hard contract of the e2e environment (the Kind
+	// cluster provides 4 workers): with fewer, the scenario cannot reliably
+	// co-locate an LB pod (and the controller-manager) with a target endpoint,
+	// so the LB-eviction / controller-recovery coverage would be silently lost.
+	// The BeforeAll fails fast if this is not met, rather than skipping, because
+	// a short cluster is a broken environment, not an optional condition.
+	nodeDrainMinWorkers = 4
 
 	// controllerLabel / controllerContainer identify the Meridio
 	// controller-manager. In the e2e deploy model each suite gets its own
@@ -310,6 +320,17 @@ var _ = Describe("Node Drain", Label("dual-stack"), Serial, Ordered, func() {
 		SetDefaultEventuallyTimeout(5 * time.Minute)
 		SetDefaultEventuallyPollingInterval(2 * time.Second)
 
+		// Hard environment precondition: the Node Drain scenario requires at
+		// least nodeDrainMinWorkers schedulable workers to co-locate an LB pod
+		// (and ideally the controller-manager) with a target endpoint. The e2e
+		// Kind cluster guarantees this, so a short cluster is a broken
+		// environment and must fail loudly rather than pass a degraded run or
+		// skip silently.
+		By(fmt.Sprintf("verifying at least %d schedulable worker nodes are present", nodeDrainMinWorkers))
+		Expect(e2eutils.SchedulableWorkerCount()).To(BeNumerically(">=", nodeDrainMinWorkers),
+			"Node Drain requires >= %d schedulable workers (hard e2e environment contract)",
+			nodeDrainMinWorkers)
+
 		By("verifying gateways are Programmed")
 		for _, gw := range []string{"gw-bds1", "gw-bds2"} {
 			gw := gw
@@ -360,6 +381,31 @@ var _ = Describe("Node Drain", Label("dual-stack"), Serial, Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 		GinkgoWriter.Printf("selected node %q via Tier %d (hostsController=%v)\n",
 			selection.node, selection.tier, selection.hostsController)
+
+		// Coverage enforcement. The whole point of this test is to drain a node
+		// that takes down an LB pod (and ideally the controller-manager) along
+		// with a target endpoint. On the guaranteed >= nodeDrainMinWorkers
+		// cluster, selection must reach at least Tier 2 (LB + target
+		// co-located); a fall to Tier 3 (target only) means no LB eviction is
+		// exercised, so the run would pass green without testing its core
+		// scenario — fail loudly instead.
+		Expect(selection.tier).To(BeNumerically("<=", 2),
+			"node selection fell to Tier %d (target-only): no LB pod was co-located "+
+				"with a target, so this run would not exercise LB eviction. On the "+
+				"required %d-worker cluster this indicates an environment/scheduling "+
+				"problem rather than acceptable degradation.",
+			selection.tier, nodeDrainMinWorkers)
+
+		// Tier 2 (LB + target but no controller-manager co-located) is accepted:
+		// controller co-location is less deterministic, and controller-recovery
+		// is asserted conditionally below only when it was co-located. Make the
+		// reduced coverage obvious in the run log.
+		if selection.tier == 2 {
+			GinkgoWriter.Printf("WARNING: node selection reached Tier 2 (LB+target) but not Tier 1: " +
+				"the controller-manager was not co-located with a drained LB+target node, so this " +
+				"run does NOT exercise controller-manager recovery. LB eviction and endpoint " +
+				"reschedule are still covered.\n")
+		}
 
 		if selection.hostsController {
 			controllerPod = e2eutils.GetPodName(scalingNamespace, controllerLabel)
