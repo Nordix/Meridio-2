@@ -255,28 +255,78 @@ var _ = Describe("Start", func() {
 	})
 })
 
-// Regression coverage: maxEndpoints is accepted by the API with no upper
-// bound today (minimum=1, no maximum), so a single DistributionGroup can
-// exhaust the fwmark/offset space and permanently wedge AddInstance for
-// that DG. The fix should reject this earlier (CRD maximum and/or webhook
-// validation against the LB's remaining offset budget) rather than let the
-// reconciler retry an unwinnable request forever. This spec currently FAILS
-// because AddInstance has no upper validation on maxTargets.
+// AddInstance validates maxTargets against the fwmark budget a single
+// instance can occupy (MaxOffset - startingOffset()). This is deliberately
+// kept distinguishable from errIdentifierOffset: an over-budget request is an
+// invalid input, whereas errIdentifierOffset means a legitimately-sized
+// instance could not be placed because existing instances filled the range.
+// Different causes, different fixes — collapsing both into one error made the
+// reconciler's "Failed to reconcile NFQLB instance" loop undiagnosable from
+// logs alone.
+//
+// Note: this is the package-level guard. The API/CRD still has no upper bound
+// on spec.maglev.maxEndpoints (minimum=1, no maximum), so an unsatisfiable
+// value can still be admitted by the API server and wedge that one DG's
+// reconcile — see the deferred follow-up for a CRD maximum / webhook check.
 var _ = Describe("AddInstance", func() {
-	It("rejects a maxEndpoints value that cannot fit instead of looping forever", func() {
+	It("rejects a maxTargets value that can never fit, distinguishably from range exhaustion", func() {
 		ctx := context.Background()
 
 		lb, err := New(WithNFQLBPath("/bin/true"))
 		Expect(err).ToNot(HaveOccurred())
 		lb.running.Store(true)
 
-		_, err = lb.AddInstance(ctx, "dg-too-big", WithMaxTargets(99000))
+		// Budget with default fwmarkBase: MaxOffset(100000) - startingOffset(5002).
+		available := MaxOffset - lb.startingOffset()
+
+		_, err = lb.AddInstance(ctx, "dg-too-big", WithMaxTargets(available+1))
 		Expect(err).To(HaveOccurred())
 		Expect(err).ToNot(MatchError(errIdentifierOffset),
-			"an oversized maxEndpoints should be rejected with a clear, "+
-				"actionable validation error — not the generic offset-exhaustion "+
-				"error that also fires for legitimate capacity exhaustion across "+
-				"many DGs, and should ideally be caught before reaching this layer")
+			"an unsatisfiable maxTargets must not be reported as generic "+
+				"offset exhaustion — that error also fires for real capacity "+
+				"exhaustion across many DGs and would be misdiagnosed")
+		Expect(err.Error()).To(ContainSubstring("cannot fit"))
+		Expect(err.Error()).To(ContainSubstring("dg-too-big"),
+			"the error should name the offending instance for log diagnosis")
+
+		// The largest value that does fit must still be accepted, so the
+		// bound is off-by-one correct rather than merely conservative.
+		_, err = lb.AddInstance(ctx, "dg-at-limit", WithMaxTargets(available))
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("rejects a non-positive maxTargets", func() {
+		ctx := context.Background()
+
+		lb, err := New(WithNFQLBPath("/bin/true"))
+		Expect(err).ToNot(HaveOccurred())
+		lb.running.Store(true)
+
+		for _, bad := range []int{0, -1} {
+			_, err = lb.AddInstance(ctx, "dg-bad", WithMaxTargets(bad))
+			Expect(err).To(HaveOccurred(), "maxTargets=%d must be rejected", bad)
+			Expect(err.Error()).To(ContainSubstring("must be >= 1"))
+		}
+	})
+
+	It("still reports genuine fwmark range exhaustion as errIdentifierOffset", func() {
+		ctx := context.Background()
+
+		lb, err := New(WithNFQLBPath("/bin/true"))
+		Expect(err).ToNot(HaveOccurred())
+		lb.running.Store(true)
+
+		available := MaxOffset - lb.startingOffset()
+
+		// Each instance is individually valid, but together they exceed the
+		// range — this must remain errIdentifierOffset, not a validation error.
+		_, err = lb.AddInstance(ctx, "dg-fills-range", WithMaxTargets(available))
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = lb.AddInstance(ctx, "dg-no-room-left", WithMaxTargets(1))
+		Expect(err).To(MatchError(errIdentifierOffset),
+			"a validly-sized instance that cannot be placed is capacity "+
+				"exhaustion, not an invalid request")
 	})
 
 	// Regression coverage: DeleteInstance currently removes the instance

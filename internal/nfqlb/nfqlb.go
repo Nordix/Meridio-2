@@ -309,6 +309,10 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 		opt(config)
 	}
 
+	if err := validateMaxTargets(config.maxTargets, MaxOffset-nfqlb.startingOffset()); err != nil {
+		return nil, fmt.Errorf("invalid instance config for %q: %w", name, err)
+	}
+
 	offset, err := getOffset(nfqlb.startingOffset(), nfqlb.instances, config.maxTargets)
 	if err != nil {
 		return nil, err
