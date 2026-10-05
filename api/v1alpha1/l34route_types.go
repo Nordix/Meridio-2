@@ -97,9 +97,9 @@ type L34RouteSpec struct {
 	// - "any", which is equivalent to port range 0-65535.
 	//
 	// The number of ports that actually take effect is bounded by the data
-	// plane (nfqlb), which is smaller than MaxItems here. The webhook rejects
-	// port sets that would exceed the data-plane capacity. MaxItems is a
-	// generous CRD-level ceiling only; see docs/operations/constraints-and-limitations.md.
+	// plane, which may be smaller than MaxItems here. Downstream checks (such
+	// as a validating webhook or post-admission validation) may reject port
+	// sets that would exceed the data-plane capacity.
 	// +optional
 	// +kubebuilder:validation:MaxItems=1000
 	// +kubebuilder:validation:items:MaxLength=11
@@ -114,9 +114,9 @@ type L34RouteSpec struct {
 	// - "any", which is equivalent to port range 0-65535.
 	//
 	// The number of ports that actually take effect is bounded by the data
-	// plane (nfqlb), which is smaller than MaxItems here. The webhook rejects
-	// port sets that would exceed the data-plane capacity. MaxItems is a
-	// generous CRD-level ceiling only; see docs/operations/constraints-and-limitations.md.
+	// plane, which may be smaller than MaxItems here. Downstream checks (such
+	// as a validating webhook or post-admission validation) may reject port
+	// sets that would exceed the data-plane capacity.
 	// +optional
 	// +kubebuilder:validation:MaxItems=1000
 	// +kubebuilder:validation:items:MaxLength=11
