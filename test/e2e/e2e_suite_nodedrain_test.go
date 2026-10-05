@@ -79,9 +79,18 @@ const (
 	controllerLabel     = "control-plane=controller-manager"
 	controllerContainer = "manager"
 
+	// nodeDrainDrainTimeout bounds how long `kubectl drain` waits for eviction
+	// to converge before giving up. A modest cap keeps a stuck eviction from
+	// hanging the suite.
+	nodeDrainDrainTimeout = 120 * time.Second
 	// nodeDrainTrafficDuration is how long in-flight traffic runs while the
-	// node is drained; it must outlast cordon+drain converging.
-	nodeDrainTrafficDuration = 120 * time.Second
+	// node is drained. It MUST exceed nodeDrainDrainTimeout by a clear margin so
+	// traffic is still flowing when cordon+drain finishes converging (even under
+	// slow eviction that uses the full drain timeout), preserving the "traffic
+	// spanned the transition" guarantee and leaving room to observe continuity
+	// just after the drain completes. Derived from the drain timeout so the two
+	// cannot silently drift to equality.
+	nodeDrainTrafficDuration = nodeDrainDrainTimeout + 60*time.Second
 	// nodeDrainSettleBeforeDrain lets connections establish before draining.
 	nodeDrainSettleBeforeDrain = 5 * time.Second
 	// nodeDrainRetries bounds ctraffic reconnect attempts so a drain-induced
@@ -284,7 +293,7 @@ func drainNode(node string) {
 	By(fmt.Sprintf("draining node %s", node))
 	cmd := exec.Command("kubectl", "drain", node,
 		"--ignore-daemonsets", "--delete-emptydir-data", "--force",
-		"--timeout=120s")
+		fmt.Sprintf("--timeout=%s", nodeDrainDrainTimeout.String()))
 	out, err := utils.Run(cmd)
 	GinkgoWriter.Printf("kubectl drain %s output:\n%s\n", node, out)
 	Expect(err).NotTo(HaveOccurred(), "drain node %s", node)
