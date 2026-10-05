@@ -97,6 +97,44 @@ func NodesForPods(namespace, label string) map[string]struct{} {
 	return nodes
 }
 
+// SchedulableWorkerCount returns the number of schedulable worker nodes: nodes
+// that are Ready and not cordoned (spec.unschedulable != true), excluding
+// control-plane nodes. This is the capacity that matters for the Node Drain
+// test's co-location assumptions (target endpoints and LB pods spread across
+// workers). Returns 0 if the node list cannot be read.
+//
+// Control-plane nodes are excluded server-side with the label selector
+// '!node-role.kubernetes.io/control-plane', which is reliable regardless of the
+// (typically empty) label value — avoiding brittle jsonpath present/absent
+// detection.
+func SchedulableWorkerCount() int {
+	cmd := exec.Command("kubectl", "get", "nodes",
+		"-l", "!node-role.kubernetes.io/control-plane",
+		"-o", "jsonpath={range .items[*]}"+
+			"{.spec.unschedulable}{\"|\"}"+
+			"{.status.conditions[?(@.type=='Ready')].status}"+
+			"{\"\\n\"}{end}")
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, line := range utils.GetNonEmptyLines(out) {
+		fields := strings.Split(line, "|")
+		if len(fields) != 2 {
+			continue
+		}
+		unschedulable := strings.TrimSpace(fields[0]) // "true" when cordoned, else empty
+		ready := strings.TrimSpace(fields[1])         // "True" when Ready
+		if unschedulable == "true" || ready != "True" {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
 // GetContainerRestarts returns the restart count of containerName inside
 // podName, or -1 if the Pod/container cannot be found or the count cannot be
 // parsed.
