@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,12 +52,28 @@ func (p ProtocolStatus) IsEstablished() bool {
 	return p.State.IsUp() && strings.Contains(p.Info, BgpInfoEstablished)
 }
 
-// ProtocolStatus represents the status of a BIRD protocol
+// ProtocolStatus represents the status of a BIRD protocol.
+//
+// RoutesImported, RoutesExported, and EstablishedUnix are populated only for
+// BGP protocols (Proto == "BGP"), parsed from the detail block of `show
+// protocols all` output. They are left nil for all other protocol types
+// (e.g. Static) — nil means "not applicable", not "zero". See
+// docs/design/router-metrics-source-of-truth.md for why these are BGP-only
+// and must not be defaulted to a real zero value for non-BGP protocols.
 type ProtocolStatus struct {
 	Name  string
 	Proto string // Protocol type (BGP, Static)
 	State ProtocolState
 	Info  string
+
+	// RoutesImported is the protocol's imported route count, BGP only.
+	RoutesImported *int
+	// RoutesExported is the protocol's exported route count, BGP only.
+	RoutesExported *int
+	// EstablishedUnix is the protocol's `Since` timestamp as Unix epoch
+	// seconds, BGP only. Requires `timeformat protocol "%s";` in bird.conf —
+	// see docs/design/router-metrics-source-of-truth.md.
+	EstablishedUnix *int64
 }
 
 // MonitorStatus represents the overall monitoring status
@@ -143,32 +160,121 @@ func GetProtocolStatuses(ctx context.Context, socketPath string) ([]ProtocolStat
 func parseShowProtocolsOutput(output string) []ProtocolStatus {
 	var protocols []ProtocolStatus
 
-	for line := range strings.SplitSeq(output, "\n") {
-		line = strings.TrimSpace(line)
+	lines := strings.Split(output, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
 		if line == "" || strings.HasPrefix(line, "BIRD") ||
 			strings.HasPrefix(line, "Name") || strings.HasPrefix(line, "name") {
 			continue
 		}
 
 		fields := strings.Fields(line)
-		if len(fields) < 5 {
+		if len(fields) < 5 || !strings.HasPrefix(fields[0], "NBR-") {
 			continue
 		}
 
-		if strings.HasPrefix(fields[0], "NBR-") {
-			protocol := ProtocolStatus{
-				Name:  fields[0],
-				Proto: fields[1],
-				State: ProtocolState(fields[3]),
-			}
-			if len(fields) > 5 {
-				protocol.Info = strings.Join(fields[5:], " ")
-			}
-			protocols = append(protocols, protocol)
+		protocol := ProtocolStatus{
+			Name:  fields[0],
+			Proto: fields[1],
+			State: ProtocolState(fields[3]),
 		}
+		if len(fields) > 5 {
+			protocol.Info = strings.Join(fields[5:], " ")
+		}
+
+		if protocol.Proto == "BGP" {
+			// Since (field 4) is a Unix epoch only when bird.conf set
+			// `timeformat protocol "%s";`; otherwise it's BIRD's default
+			// human-readable form and is left unparsed (EstablishedUnix nil).
+			if epoch, err := strconv.ParseInt(fields[4], 10, 64); err == nil {
+				protocol.EstablishedUnix = &epoch
+			}
+			// Consume this protocol's detail block in the same pass; i advances
+			// to the last consumed line so the outer loop resumes at the block end.
+			i = parseBGPDetail(lines, i, &protocol)
+		}
+
+		protocols = append(protocols, protocol)
 	}
 
 	return protocols
+}
+
+// parseBGPDetail scans the detail block following the BGP summary line at
+// lines[summaryIdx], summing the route counts of every Channel sub-block into
+// protocol. It returns the index of the last line belonging to this block, so
+// the caller resumes immediately after it.
+//
+// Route counts are summed across all channels rather than selecting the
+// "active" one. The counts are post-filter, so a disabled channel (import
+// none/export none) always reports "0 imported, 0 exported" and contributes
+// nothing — making the sum equal the active channel's counts without any
+// brittle filter/REJECT detection, and independent of channel order. In this
+// architecture a BGP protocol is single-family (the template declares only its
+// own channel; older configs additionally carried a disabled second channel),
+// so at most one channel is ever non-zero.
+//
+// The detail block is the run of indented lines after the summary line. It
+// ends at the first non-detail line: a blank line (BIRD's separator between
+// entries) or a non-indented line (the next top-level protocol entry) or at
+// EOF.
+func parseBGPDetail(lines []string, summaryIdx int, protocol *ProtocolStatus) int {
+	var imported, exported int
+	var found bool
+
+	last := summaryIdx
+	for j := summaryIdx + 1; j < len(lines); j++ {
+		if strings.TrimSpace(lines[j]) == "" {
+			break // blank line: BIRD's separator between top-level entries
+		}
+		// A detail line is indented; a line starting at column 0 is the next
+		// top-level protocol entry, so it ends this block. BIRD indents detail
+		// lines with spaces (tab tolerated defensively). The blank check above
+		// guarantees lines[j] is non-empty here.
+		if lines[j][0] != ' ' && lines[j][0] != '\t' {
+			break
+		}
+		last = j
+
+		if imp, exp, ok := parseRoutesLine(strings.TrimSpace(lines[j])); ok {
+			imported += imp
+			exported += exp
+			found = true
+		}
+	}
+
+	if found {
+		protocol.RoutesImported = &imported
+		protocol.RoutesExported = &exported
+	}
+	return last
+}
+
+// parseRoutesLine parses a BIRD "Routes: N imported, N exported, N preferred"
+// detail line. Returns ok=false if it isn't a Routes: line or the counts
+// aren't parseable.
+func parseRoutesLine(trimmed string) (imported, exported int, ok bool) {
+	rest, found := strings.CutPrefix(trimmed, "Routes:")
+	if !found {
+		return 0, 0, false
+	}
+	for part := range strings.SplitSeq(rest, ",") {
+		f := strings.Fields(part)
+		if len(f) != 2 {
+			continue
+		}
+		n, err := strconv.Atoi(f[0])
+		if err != nil {
+			continue
+		}
+		switch f[1] {
+		case "imported":
+			imported, ok = n, true
+		case "exported":
+			exported, ok = n, true
+		}
+	}
+	return imported, exported, ok
 }
 
 // BfdSession represents the state of a BIRD BFD session.
