@@ -36,6 +36,22 @@ import (
 // log is for logging in this package.
 var l34routelog = logf.Log.WithName("l34route-resource")
 
+// maxCIDRsPerFlow is the maximum number of CIDRs the data plane (nfqlb) accepts
+// per field for a single flow. It mirrors nfqlb's MAX_CIDRS (src/lib/flow.c):
+// parseCidrs() rejects a list longer than this (returns NULL), which makes the
+// nfqlb flow-set command fail — so the flow is not programmed. nfqlb applies the
+// limit independently to the --dsts and --srcs lists, so it is enforced per field
+// here (destinationCIDRs and sourceCIDRs separately).
+//
+// The CRD MaxItems on these fields is a higher ceiling; this is the real,
+// load-bearing limit and is enforced at admission so oversized sets are rejected
+// with a clear error rather than silently failing to program at runtime.
+//
+// Raising the effective limit requires increasing nfqlb's MAX_CIDRS AND this
+// constant together — no CRD change is needed.
+// See docs/operations/constraints-and-limitations.md.
+const maxCIDRsPerFlow = 32
+
 // SetupL34RouteWebhookWithManager registers the webhook for L34Route in the manager.
 func SetupL34RouteWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &meridio2v1alpha1.L34Route{}).
@@ -102,6 +118,20 @@ func (v *L34RouteCustomValidator) validateL34Route(r *meridio2v1alpha1.L34Route)
 	if cidr, err := validateCIDRs(r.Spec.DestinationCIDRs); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("destinationCIDRs"), cidr,
 			fmt.Sprintf("destination CIDR%s", err.Error())))
+	}
+
+	// Validate that the CIDR counts fit the data-plane (nfqlb) per-field limit.
+	// The CRD MaxItems is a higher ceiling; the effective limit is nfqlb's
+	// MAX_CIDRS (see maxCIDRsPerFlow), enforced per field.
+	if n := len(r.Spec.SourceCIDRs); n > maxCIDRsPerFlow {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("sourceCIDRs"), n,
+			fmt.Sprintf("too many source CIDRs: %d exceeds the data-plane limit of %d per L34Route",
+				n, maxCIDRsPerFlow)))
+	}
+	if n := len(r.Spec.DestinationCIDRs); n > maxCIDRsPerFlow {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("destinationCIDRs"), n,
+			fmt.Sprintf("too many destination CIDRs: %d exceeds the data-plane limit of %d per L34Route",
+				n, maxCIDRsPerFlow)))
 	}
 
 	// Validate source ports for overlaps
