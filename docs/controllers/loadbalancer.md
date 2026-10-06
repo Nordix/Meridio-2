@@ -222,6 +222,8 @@ nftables (shared across all DGs in this LB Pod)
 
 **CIDR count limit (data plane):** An L34Route's `destinationCIDRs`/`sourceCIDRs` are passed to nfqlb as `--dsts`/`--srcs`, and nfqlb accepts at most 32 CIDRs per field per flow (`MAX_CIDRS`). Exceeding it makes the flow-set command fail, so the flow is not programmed. The L34Route webhook rejects more than 32 CIDRs per field, so the effective limit is the data-plane cap rather than the CRD `MaxItems`. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on the CIDR count limit).
 
+**Port count limit (data plane):** An L34Route's `sourcePorts`/`destinationPorts` are passed to nfqlb as a single comma-joined `--sports`/`--dports` value, which nfqlb copies with `strndupa(str, 1024)` and thus truncates at 1024 bytes (~85 port entries). The L34Route CRD allows `MaxItems=1000`, but the validating webhook rejects port sets whose joined form would exceed the nfqlb buffer, so the effective limit is the data-plane buffer, not the CRD. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on the port-string buffer). `byteMatches` has no such data-plane cap.
+
 **Track flows:** Stored in `controller.flows` map for next reconcile comparison.
 
 ### 6. Return Result
