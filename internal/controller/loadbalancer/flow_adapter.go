@@ -33,13 +33,35 @@ func newL34RouteFlow(name string, route *meridio2v1alpha1.L34Route) *l34RouteFlo
 	return &l34RouteFlow{name: name, route: route}
 }
 
-func (f *l34RouteFlow) GetName() string                    { return f.name }
-func (f *l34RouteFlow) GetSourceCIDRs() []string           { return f.route.Spec.SourceCIDRs }
-func (f *l34RouteFlow) GetDestinationCIDRs() []string      { return f.route.Spec.DestinationCIDRs }
-func (f *l34RouteFlow) GetSourcePortRanges() []string      { return f.route.Spec.SourcePorts }
-func (f *l34RouteFlow) GetDestinationPortRanges() []string { return f.route.Spec.DestinationPorts }
-func (f *l34RouteFlow) GetByteMatches() []string           { return f.route.Spec.ByteMatches }
-func (f *l34RouteFlow) GetPriority() int32                 { return f.route.Spec.Priority }
+func (f *l34RouteFlow) GetName() string               { return f.name }
+func (f *l34RouteFlow) GetSourceCIDRs() []string      { return f.route.Spec.SourceCIDRs }
+func (f *l34RouteFlow) GetDestinationCIDRs() []string { return f.route.Spec.DestinationCIDRs }
+func (f *l34RouteFlow) GetSourcePortRanges() []string {
+	return anyPortToExplicitRange(f.route.Spec.SourcePorts)
+}
+func (f *l34RouteFlow) GetDestinationPortRanges() []string {
+	return anyPortToExplicitRange(f.route.Spec.DestinationPorts)
+}
+func (f *l34RouteFlow) GetByteMatches() []string { return f.route.Spec.ByteMatches }
+func (f *l34RouteFlow) GetPriority() int32       { return f.route.Spec.Priority }
+
+// anyPortToExplicitRange converts a full-range port set to the single explicit
+// range "0-65535" that both anyPortRange and nfqlb understand. If any entry
+// already covers all ports — the user-facing "any" spelling or the explicit
+// "0-65535" — the whole set covers all ports, so it collapses to a single
+// MaxPortRange element. This keeps the literal "any" (which nfqlb's numeric-only
+// port parser would reject) away from the data plane while giving anyPortRange a
+// representation it recognizes (so it omits the port flag). The common path —
+// no full-range entry — returns the input unchanged with no allocation. Returns
+// nil for a nil input so the nfqlb.Flow "no ports specified" semantics hold.
+func anyPortToExplicitRange(ports []string) []string {
+	for _, p := range ports {
+		if p == nfqlb.AnyPort || p == nfqlb.MaxPortRange {
+			return []string{nfqlb.MaxPortRange}
+		}
+	}
+	return ports
+}
 
 func (f *l34RouteFlow) GetProtocols() []string {
 	protocols := make([]string, len(f.route.Spec.Protocols))

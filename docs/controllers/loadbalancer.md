@@ -220,6 +220,10 @@ nftables (shared across all DGs in this LB Pod)
 
 **Flow naming:** The flow name is the L34Route's metadata name (e.g., `my-http-route`). The flow is bound to its NFQLB instance via the `--target` flag which receives the DistributionGroup name.
 
+**CIDR count limit (data plane):** An L34Route's `destinationCIDRs`/`sourceCIDRs` are passed to nfqlb as `--dsts`/`--srcs`, and nfqlb accepts at most 32 CIDRs per field per flow (`MAX_CIDRS`). Exceeding it makes the flow-set command fail, so the flow is not programmed. The L34Route webhook rejects more than 32 CIDRs per field, so the effective limit is the data-plane cap rather than the CRD `MaxItems`. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on the CIDR count limit).
+
+**Port count limit (data plane):** An L34Route's `sourcePorts`/`destinationPorts` are passed to nfqlb as a single comma-joined `--sports`/`--dports` value, which nfqlb copies with `strndupa(str, 1024)` and thus truncates at 1024 bytes (~85 port entries). The L34Route CRD allows `MaxItems=1000`, but the validating webhook rejects port sets whose joined form would exceed the nfqlb buffer, so the effective limit is the data-plane buffer, not the CRD. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on the port-string buffer). `byteMatches` has no such data-plane cap.
+
 **Track flows:** Stored in `controller.flows` map for next reconcile comparison.
 
 ### 6. Return Result
@@ -630,8 +634,8 @@ The `l34RouteFlow` adapter (`internal/controller/loadbalancer/flow_adapter.go`) 
 | `spec.protocols` | `--protocols` | Comma-separated (e.g., `tcp,udp`) |
 | `spec.destinationCIDRs` | `--dsts` | Omitted if nil |
 | `spec.sourceCIDRs` | `--srcs` | Omitted if all CIDRs have `/0` mask (any-IP) |
-| `spec.destinationPorts` | `--dports` | Omitted if contains `0-65535` (any-port) |
-| `spec.sourcePorts` | `--sports` | Omitted if contains `0-65535` (any-port) |
+| `spec.destinationPorts` | `--dports` | `"any"` is normalized to `0-65535`; omitted if the set covers all ports (`"any"`/`0-65535`) |
+| `spec.sourcePorts` | `--sports` | `"any"` is normalized to `0-65535`; omitted if the set covers all ports (`"any"`/`0-65535`) |
 | `spec.byteMatches` | `--match` | L4 header byte matching patterns |
 
 **Example resulting command:**
@@ -645,6 +649,21 @@ nfqlb flow-set \
     --dsts=10.0.0.1/32,fd00::1/128 \
     --dports=80,443
 ```
+
+### Port Conversion
+
+The `"any"` port spelling (documented on the L34Route API as "all ports, 0-65535")
+is converted to the explicit range `0-65535` in the `l34RouteFlow` adapter
+(`anyPortToExplicitRange`) before it reaches nfqlb. This is required because
+nfqlb's port parser only understands numeric ranges and would reject the literal
+token `any`. Because any entry covering all ports means the whole set covers all
+ports, a port set containing `"any"` (or an explicit `"0-65535"`) collapses to a
+single `0-65535` element. That full-range port set then causes the
+`--sports`/`--dports` flag to be omitted entirely (`anyPortRange`), so nfqlb
+matches all ports. The common path — no full-range entry — returns the input
+unchanged with no allocation. The `AnyPort` (`"any"`) and `MaxPortRange`
+(`"0-65535"`) constants live in the `internal/nfqlb` package so the controller
+(and other consumers) share a single definition of "all ports".
 
 ### VIP Aggregation
 

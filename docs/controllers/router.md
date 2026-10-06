@@ -106,6 +106,8 @@ BIRD config is generated using `text/template` and assembled from these parts:
 
 VIPs arrive as plain IPs from `Gateway.status.addresses` (filtered to `IPAddressType` only) and are converted to CIDRs (`/32` or `/128`) inside the BIRD package via `vipsToCidr()`.
 
+**VIP scale / BGP max-prefix:** each VIP is advertised as an individual `/32` or `/128` static route (host routes cannot be aggregated), so the number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit**. Exceeding it causes the peer to tear down the BGP session — a session-wide failure affecting all VIPs on that Gateway, not detectable at admission. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on CIDR limits and VIP scaling).
+
 ### Router ID
 
 BIRD requires a router ID for its operation. The generated `bird.conf` ([`internal/bird/config.go`](../../internal/bird/config.go)) does not set one explicitly, so BIRD determines it itself at startup, based on the interfaces and IPv4 addresses available on the Pod.

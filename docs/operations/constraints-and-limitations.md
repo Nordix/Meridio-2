@@ -52,6 +52,31 @@ The LB controller assigns fwmarks and routing table IDs dynamically per Distribu
 
 Fixed in PR #110. The `belongsToGateway` check now also inspects `DistributionGroup.spec.parentRefs` in addition to L34Route references.
 
+**30. L34Route CIDR count is limited to 32 per field by the nfqlb data plane** *(architectural constraint)*
+
+`L34Route.spec.destinationCIDRs` and `spec.sourceCIDRs` allow `MaxItems=100` at the CRD level, but the data plane (nfqlb) accepts at most **32 CIDRs per field per flow** (`MAX_CIDRS` in nfqlb `src/lib/flow.c`). nfqlb's `parseCidrs()` rejects a longer list, which makes the `nfqlb flow-set` command fail — so the flow is **not programmed**. The limit is applied independently to the `--dsts` and `--srcs` lists, i.e. it is a per-field limit (32 destinationCIDRs and 32 sourceCIDRs separately).
+
+To prevent silently non-functional configuration, the L34Route validating webhook rejects an L34Route with more than 32 entries in either CIDR field (constant `maxCIDRsPerFlow` in `internal/webhook/v1alpha1/l34route_webhook.go`, mirroring nfqlb's `MAX_CIDRS`). The CRD `MaxItems=100` is a higher ceiling that is intentionally left unchanged; the webhook is the load-bearing limit.
+
+Raising the effective limit requires an **nfqlb change** (increase `MAX_CIDRS`) plus bumping the webhook constant — no CRD change is required.
+
+**Planned/deferred:** raising the CRD `MaxItems` (e.g. to 1000) was considered but deferred; it would only widen the gap above the data-plane cap without increasing what actually works. Any such increase should follow (not precede) an increase of nfqlb's `MAX_CIDRS`.
+
+**Related scaling considerations for VIPs (`destinationCIDRs`):**
+
+- **nftables** imposes no practical limit — VIPs populate a dynamic named interval set matched by a single `ip daddr @vip-set` rule (O(1) per packet); it scales cleanly well beyond the nfqlb per-flow cap.
+- **BGP is the practical ceiling for total VIPs per Gateway.** Each VIP is advertised as an individual `/32` or `/128` static route (see the router controller); host routes cannot be aggregated. The number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit** (operator/peer configured). Exceeding it causes the peer to tear down the BGP session — a session-wide failure affecting all VIPs on that Gateway, and not detectable at admission. Note the nfqlb `MAX_CIDRS` limit is per L34Route flow, whereas the BGP/nftables cost scales with the union of all VIPs across the Gateway.
+
+**31. L34Route port count is bounded by the nfqlb data-plane port-string buffer (~85 entries)** *(architectural constraint)*
+
+`L34Route.spec.sourcePorts` and `destinationPorts` accept up to `MaxItems=1000` at the CRD level, but the number of ports that actually take effect is smaller and bounded by the data plane. The LB controller passes a DistributionGroup's ports to nfqlb as a single comma-joined `--sports`/`--dports` value (see `internal/nfqlb` `Instance.AddFlow`), and nfqlb copies that value with `strndupa(str, 1024)` in `rangeSetAddStr()` (`src/lib/rangeset.c`) — anything beyond **1024 bytes is silently truncated in the data plane**. With the 11-byte-per-entry CRD item limit (`"65535-65535"`), roughly **85 port entries** fit before truncation.
+
+To prevent silently-truncated configuration, the L34Route validating webhook rejects a port set whose comma-joined form exceeds the nfqlb buffer (constant `nfqlbPortStringMaxBytes` in `internal/webhook/v1alpha1/l34route_webhook.go`, mirroring nfqlb's `strndupa` size). `"any"` is excluded from this accounting because the controller does not serialize a full-range/any port set to nfqlb.
+
+Raising the effective port capacity is a **data-plane change**: increase nfqlb's buffer and bump `nfqlbPortStringMaxBytes` together. No CRD change is required — the CRD `MaxItems` is deliberately a generous ceiling above this limit.
+
+By contrast, `L34Route.spec.byteMatches` (`MaxItems=100`) has no fixed nfqlb data-plane cap; nfqlb stores matches in a dynamically-grown list. The `byteMatches` limit is a CRD-level ceiling only.
+
 ## Router Controller
 
 **10. ~~VIPs advertised regardless of LB distribution readiness~~ (Resolved)**
