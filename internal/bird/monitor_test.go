@@ -308,6 +308,41 @@ NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Establish
 	}
 }
 
+// TestGetProtocolStatuses_InvalidSocket verifies that a birdc failure (e.g. no
+// BIRD instance listening on the socket) is surfaced as an error rather than
+// silently swallowed, since GetProtocolStatuses is now called by callers (e.g.
+// an independent metrics collector) that need to distinguish "fetch failed"
+// from "no protocols configured".
+func TestGetProtocolStatuses_InvalidSocket(t *testing.T) {
+	_, err := GetProtocolStatuses(context.Background(), "/nonexistent/bird.ctl")
+	if err == nil {
+		t.Fatal("expected error for nonexistent socket, got nil")
+	}
+}
+
+// TestGetBfdSessions_InvalidSocket mirrors TestGetProtocolStatuses_InvalidSocket
+// for the BFD sessions query.
+func TestGetBfdSessions_InvalidSocket(t *testing.T) {
+	_, err := GetBfdSessions(context.Background(), "/nonexistent/bird.ctl")
+	if err == nil {
+		t.Fatal("expected error for nonexistent socket, got nil")
+	}
+}
+
+// TestGetProtocolStatuses_ContextCanceled verifies that a canceled context is
+// honored (the exec is not even attempted to run to completion), confirming
+// callers can bound these calls with a timeout independent of any Bird
+// instance's own lifecycle.
+func TestGetProtocolStatuses_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := GetProtocolStatuses(ctx, "/nonexistent/bird.ctl")
+	if err == nil {
+		t.Fatal("expected error for canceled context, got nil")
+	}
+}
+
 func TestMonitorChannelClosure(t *testing.T) {
 	b := &Bird{
 		running: false,

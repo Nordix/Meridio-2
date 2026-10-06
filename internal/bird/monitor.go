@@ -18,6 +18,7 @@ package bird
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -107,25 +108,35 @@ func (b *Bird) checkStatus(ctx context.Context) MonitorStatus {
 		return status
 	}
 
-	cmd := exec.CommandContext(ctx, "birdc", "-s", b.SocketPath, "show", "protocols", "all", `"NBR-*"`)
+	protocols, err := GetProtocolStatuses(ctx, b.SocketPath)
+	if err != nil {
+		return status
+	}
+	status.Protocols = protocols
+
+	bfdSessions, err := GetBfdSessions(ctx, b.SocketPath)
+	if err != nil {
+		return status
+	}
+	status.BfdSessions = bfdSessions
+
+	return status
+}
+
+// GetProtocolStatuses runs `birdc show protocols all "NBR-*"` against the BIRD
+// instance listening on socketPath and parses the result into ProtocolStatus
+// values. Exported, independent of any Bird instance's lifecycle (mutex/running
+// state), so it can be reused by callers that have no relationship to the
+// monitor's control loop (e.g. an independent metrics collector) and must only
+// honor ctx's deadline.
+func GetProtocolStatuses(ctx context.Context, socketPath string) ([]ProtocolStatus, error) {
+	cmd := exec.CommandContext(ctx, "birdc", "-s", socketPath, "show", "protocols", "all", `"NBR-*"`)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.V(1).Info("birdc command failed", "cmd", cmd.String(), "error", err, "output", strings.TrimSpace(string(out)))
-		return status
+		return nil, fmt.Errorf("%s: %w: %s", cmd.String(), err, strings.TrimSpace(string(out)))
 	}
-
-	status.Protocols = parseShowProtocolsOutput(string(out))
-
-	cmd = exec.CommandContext(ctx, "birdc", "-s", b.SocketPath, "show", "bfd", "sessions")
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		log.V(1).Info("birdc command failed", "cmd", cmd.String(), "error", err, "output", strings.TrimSpace(string(out)))
-		return status
-	}
-
-	status.BfdSessions = parseShowBfdSessionsOutput(string(out))
-
-	return status
+	return parseShowProtocolsOutput(string(out)), nil
 }
 
 // parseShowProtocolsOutput parses birdc protocol output
@@ -170,6 +181,19 @@ type BfdSession struct {
 // IsUp returns true if the BFD session state is "Up".
 func (b BfdSession) IsUp() bool {
 	return b.State == "Up"
+}
+
+// GetBfdSessions runs `birdc show bfd sessions` against the BIRD instance listening
+// on socketPath and parses the result into BfdSession values. Same independence
+// rationale as GetProtocolStatuses.
+func GetBfdSessions(ctx context.Context, socketPath string) ([]BfdSession, error) {
+	cmd := exec.CommandContext(ctx, "birdc", "-s", socketPath, "show", "bfd", "sessions")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.V(1).Info("birdc command failed", "cmd", cmd.String(), "error", err, "output", strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("%s: %w: %s", cmd.String(), err, strings.TrimSpace(string(out)))
+	}
+	return parseShowBfdSessionsOutput(string(out)), nil
 }
 
 // parseShowBfdSessionsOutput parses the output of `birdc show bfd sessions`.
