@@ -95,6 +95,17 @@ var tmplFuncs = template.FuncMap{
 		}
 		return defaultRouteIPv4
 	},
+	// bgpTemplateName selects the per-family BGP template so a protocol only
+	// declares the channel it actually uses. BIRD advertises one multiprotocol
+	// AFI/SAFI capability per configured channel (see BIRD user guide, "Channel
+	// configuration"), so a template declaring both ipv4{} and ipv6{} would
+	// advertise both capabilities to the peer even for a single-family session.
+	"bgpTemplateName": func(ipFamily string) string {
+		if ipFamily == ipFamilyIPv6 {
+			return "BGP_TEMPLATE_V6"
+		}
+		return "BGP_TEMPLATE_V4"
+	},
 }
 
 //nolint:lll
@@ -124,8 +135,8 @@ filter announced_routes {
 	else reject;
 }
 
-template bgp BGP_TEMPLATE {
-	debug {events, states};
+template bgp BGP_TEMPLATE_V4 {
+	debug {events, states, interfaces};
 	direct;
 	bfd off;
 	graceful restart off;
@@ -135,6 +146,14 @@ template bgp BGP_TEMPLATE {
 		export none;
 		next hop self;
 	};
+}
+
+template bgp BGP_TEMPLATE_V6 {
+	debug {events, states, interfaces};
+	direct;
+	bfd off;
+	graceful restart off;
+	setkey off;
 	ipv6 {
 		import none;
 		export none;
@@ -192,7 +211,7 @@ protocol static VIP6 {
 {{- end}}
 {{- range .BGPRouters}}
 
-protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
+protocol bgp 'NBR-{{.Name}}' from {{bgpTemplateName .IPFamily}} {
 	interface "{{.Interface}}";
 	local port {{.LocalPort}} as {{.LocalASN}};
 	neighbor {{.Address}} port {{.RemotePort}} as {{.RemoteASN}};
