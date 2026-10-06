@@ -63,6 +63,78 @@ func IsPodReady(namespace, podName string) bool {
 	return strings.TrimSpace(out) == "True"
 }
 
+// GetPodNode returns the node name a Pod is scheduled on (.spec.nodeName),
+// or "" if the Pod cannot be found or is not yet scheduled.
+func GetPodNode(namespace, podName string) string {
+	cmd := exec.Command("kubectl", "get", "pod", podName, "-n", namespace,
+		"-o", "jsonpath={.spec.nodeName}")
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// NodesForPods returns the set of node names hosting Running Pods matching
+// label in namespace. Pods not yet scheduled (empty nodeName) are skipped.
+// The result is a set (map to struct{}) so callers can test co-location with
+// a simple membership check.
+func NodesForPods(namespace, label string) map[string]struct{} {
+	nodes := make(map[string]struct{})
+	cmd := exec.Command("kubectl", "get", "pods", "-n", namespace,
+		"-l", label, "--field-selector=status.phase=Running",
+		"-o", "jsonpath={range .items[*]}{.spec.nodeName}{\"\\n\"}{end}")
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return nodes
+	}
+	for _, n := range utils.GetNonEmptyLines(out) {
+		n = strings.TrimSpace(n)
+		if n != "" {
+			nodes[n] = struct{}{}
+		}
+	}
+	return nodes
+}
+
+// SchedulableWorkerCount returns the number of schedulable worker nodes: nodes
+// that are Ready and not cordoned (spec.unschedulable != true), excluding
+// control-plane nodes. This is the capacity that matters for the Node Drain
+// test's co-location assumptions (target endpoints and LB pods spread across
+// workers). Returns 0 if the node list cannot be read.
+//
+// Control-plane nodes are excluded server-side with the label selector
+// '!node-role.kubernetes.io/control-plane', which is reliable regardless of the
+// (typically empty) label value — avoiding brittle jsonpath present/absent
+// detection.
+func SchedulableWorkerCount() int {
+	cmd := exec.Command("kubectl", "get", "nodes",
+		"-l", "!node-role.kubernetes.io/control-plane",
+		"-o", "jsonpath={range .items[*]}"+
+			"{.spec.unschedulable}{\"|\"}"+
+			"{.status.conditions[?(@.type=='Ready')].status}"+
+			"{\"\\n\"}{end}")
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, line := range utils.GetNonEmptyLines(out) {
+		fields := strings.Split(line, "|")
+		if len(fields) != 2 {
+			continue
+		}
+		unschedulable := strings.TrimSpace(fields[0]) // "true" when cordoned, else empty
+		ready := strings.TrimSpace(fields[1])         // "True" when Ready
+		if unschedulable == "true" || ready != "True" {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
 // GetContainerRestarts returns the restart count of containerName inside
 // podName, or -1 if the Pod/container cannot be found or the count cannot be
 // parsed.

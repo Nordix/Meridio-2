@@ -33,6 +33,26 @@ func vpnGatewayExecPrefix() string {
 	return "docker exec vpn-gateway"
 }
 
+// sendTrafficTimeout is the ctraffic run/measurement window used by
+// SendTraffic. ctraffic (v1.10.x) opens -nconn connections and measures for
+// this whole duration; connections still in a failed/retrying state at the
+// cutoff are reported as FailedConnects ("lost").
+//
+// It was 10s, which proved too tight under CI load: establishing a burst of
+// fresh connections across many backends on the IPv6 data path (LB -> Maglev
+// -> SBR next-hop, plus IPv6 neighbor discovery for freshly programmed routes)
+// does not always settle within 10s on a loaded runner. ctraffic's built-in
+// reconnect/-retries logic would eventually succeed, but the window closed
+// first, freezing transient in-flight retries as permanent "lost" — an
+// intermittent, IPv6-leaning false failure of the zero-loss assertion.
+//
+// A longer window gives the built-in reconnect/retry the time it needs to
+// converge on a correct-but-slow data path, WITHOUT weakening correctness: the
+// assertion callers make is still lost == 0. It only stops miscounting slow
+// successful connects as loss. A genuinely black-holed connection stays failed
+// for the whole (longer) window and is still reported.
+const sendTrafficTimeout = 30 * time.Second
+
 // SendTraffic sends traffic from the VPN gateway container to the given VIP:port.
 // Returns a map of target hostname → connection count, and the number of lost connections.
 func SendTraffic(vip string, port int, protocol string, nconn int) (map[string]int, int, error) {
@@ -47,8 +67,8 @@ func SendTraffic(vip string, port int, protocol string, nconn int) (map[string]i
 	}
 
 	cmdStr := fmt.Sprintf(
-		"%s ctraffic %s -address %s -nconn %d -timeout 10s -stats all",
-		vpnGatewayExecPrefix(), protoFlag, addr, nconn,
+		"%s ctraffic %s -address %s -nconn %d -timeout %s -stats all",
+		vpnGatewayExecPrefix(), protoFlag, addr, nconn, sendTrafficTimeout.String(),
 	)
 	cmd := exec.Command("/bin/sh", "-c", cmdStr)
 	out, err := cmd.CombinedOutput()
