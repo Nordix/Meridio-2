@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -45,8 +46,10 @@ import (
 	"github.com/nordix/meridio-2/internal/bird"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/log"
+	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/router"
+	routermetrics "github.com/nordix/meridio-2/internal/metrics/router"
 )
 
 // NewRunCmd creates the run subcommand
@@ -105,6 +108,12 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	}
 
 	setupLog.Info("Starting Router controller", "config", cfg)
+
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+			return fmt.Errorf("metrics-prefix: %w", err)
+		}
+	}
 
 	// Configure TLS options
 	var tlsOpts []func(*tls.Config)
@@ -171,6 +180,23 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to create controller", "controller", "GatewayRouter")
 		return err
+	}
+
+	// Register custom metrics collectors when metrics are enabled. Must run before mgr.Start:
+	// controller-runtime brings the metrics HTTP server up early, so registering afterwards could
+	// let a scrape hit /metrics before the collector exists. The collector is lazy — it queries
+	// BIRD only when a scrape calls Collect — so registering before BIRD is up is safe: early
+	// scrapes simply report the collection as failed via its collect-success gauge.
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		collector := routermetrics.NewRouterCollector(
+			cfg.BirdSocket, cfg.MetricsCollectTimeout, cfg.GatewayName, cfg.MetricsPrefix,
+		)
+		if err := ctrlmetrics.Registry.Register(collector); err != nil {
+			return fmt.Errorf("register RouterCollector: %w", err)
+		}
+		setupLog.Info("Registered custom metrics collector",
+			"collector", "RouterCollector", "metricsPrefix", cfg.MetricsPrefix,
+			"collectTimeout", cfg.MetricsCollectTimeout)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

@@ -76,12 +76,21 @@ different identities.
 
 | Metric | Key labels | Notes |
 |--------|-----------|-------|
-| `bgp_session_up` | `gateway`, `peer` | `peer` = BIRD protocol name with the `NBR-` prefix stripped. This equals the `GatewayRouter` name but is read from BIRD (the protocol's own key), not resolved against the CRD. |
-| `bgp_routes_imported` | `gateway`, `peer` | BGP only. From the active (non-`none`) channel's `Routes:` line. |
-| `bgp_prefixes_announced` | `gateway`, `peer` | BGP only. Exported-route count. |
-| `bgp_session_last_established_timestamp_seconds` | `gateway`, `peer` | BGP only. See "timeformat" below. |
-| `bfd_session_up` | `gateway`, `peer`, `interface` | `peer` = neighbor IP; `interface` = BIRD session interface. Together they form the BFD session key; a session may underlie multiple protocols and must not be tied to a `GatewayRouter`. |
+| `bgp_session_up` | `gateway`, `gateway_router` | `gateway_router` = BIRD protocol name with the `NBR-` prefix stripped. This equals the `GatewayRouter` name but is read from BIRD (the protocol's own key), not resolved against the CRD. |
+| `bgp_routes_imported` | `gateway`, `gateway_router` | BGP only. Imported-route count, summed across the protocol's channels (see "Route counts" below). |
+| `bgp_prefixes_announced` | `gateway`, `gateway_router` | BGP only. Exported-route count, summed the same way. |
+| `bgp_session_last_established_timestamp_seconds` | `gateway`, `gateway_router` | BGP only. See "timeformat" below. |
+| `bfd_session_up` | `gateway`, `neighbor`, `interface` | `neighbor` = neighbor IP; `interface` = BIRD session interface. Together they form the BFD session key; a session may underlie multiple protocols and must not be tied to a `GatewayRouter`. |
+| `router_metrics_collect_success` | `gateway`, `source` | Per-scrape outcome of this collector's own fetch. `source` ∈ {`bgp_sessions`, `bfd_sessions`}. See "Fetch-failure handling" below. |
 | `router_route_config_errors_total` | `gateway`, `reason` | Push counter (netlink failures). `reason` ∈ {`rule`, `route`}. |
+
+Each metric is keyed by its own BIRD object, and **each label name denotes
+exactly one kind of identity**. #153 proposed a single `peer` label for both
+families, but that would have named the `GatewayRouter` on the `bgp_*` metrics
+and a neighbor IP on `bfd_session_up` — one label meaning two different things
+depending on the metric, and therefore useless for joining across them. Hence
+`gateway_router` (BGP protocol, keyed by name) vs. `neighbor` + `interface`
+(BFD session, keyed by its endpoint).
 
 - `gateway` is kept on all metrics (semantically meaningful, not auto-injected;
   a router Pod serves exactly one Gateway).
@@ -106,8 +115,8 @@ to the session metrics directly. That distinction matters:
   address="169.254.10.150", interface="vlan-100"} 1`. An operator joins it onto
   a session metric at query time:
   ```promql
-  bgp_session_up * on(peer) group_left(name, address)
-    label_replace(gatewayrouter_info, "peer", "$1", "name", "(.*)")
+  bgp_session_up * on(gateway_router) group_left(address, interface)
+    label_replace(gatewayrouter_info, "gateway_router", "$1", "name", "(.*)")
   ```
 - **Why not bake `GatewayRouter` labels into the session metrics instead:**
   doing so would silently reopen Option 2's problems.
@@ -166,11 +175,58 @@ PR #233 — do not fabricate state on a failed fetch. Because scrapes have no
 actuation, serving no/stale session series for one scrape is benign (unlike the
 connectivity gate, which does actuate and is handled separately).
 
-**Not built now — possible future improvement:** a dedicated scrape-health
-signal (e.g. a `*_scrape_errors_total` counter or a `..._up`-style gauge) could
-make *persistent* `birdc` fetch failure observable, rather than silently
-absent gauges. Left out of the initial implementation; add only if a concrete
-need for distinguishing "transient miss" from "stuck fetch" emerges.
+**Why not report the failure to the registry.** The cache-backed collectors
+(controller-manager, network-sidecar) surface a failed read via
+`prometheus.NewInvalidMetric`. That is deliberately **not** done here:
+controller-runtime's metrics handler uses `promhttp.HTTPErrorOnError`, so a
+`Gather` error serves HTTP 500 instead of the payload, and Prometheus treats a
+failed scrape as an *empty* one — writing stale markers for **every** series on
+the endpoint, including the router's controller-runtime, Go-runtime and process
+metrics (verified in `scrape.go`: "A failed scrape is the same as an empty
+scrape, we still call sl.append to trigger stale markers"). Since `birdc` is a
+subprocess call against a Unix socket and can fail transiently, that collateral
+loss is worse than the absence of the session series alone.
+
+**Scrape-health signal.** To keep the failure observable without failing the
+scrape, the collector emits `router_metrics_collect_success{gateway,source}`
+(gauge, `1`/`0`) for each source on every scrape. This keeps "nothing
+configured" (`success=1`, no series) distinguishable from "could not read"
+(`success=0`, no series) — the gap that emitting nothing would otherwise leave.
+A stuck fetch alerts on `== 0 for 5m`; a transient blip is a single `0` sample.
+
+It is a gauge rather than a counter because the collector only queries BIRD
+*during* `Collect`: every attempt is created and observed by the same scrape, so
+there are no unobserved attempts between scrapes for a counter to capture, and
+no cross-scrape state is needed. It is emitted from within `Collect` rather than
+as a separately registered `CounterVec` because the registry gathers collectors
+concurrently — a separate counter incremented inside `Collect` could be gathered
+before the increment lands, reporting the failure a scrape late.
+
+The name is scoped to the collection path on purpose: the router also runs
+`birdc` continuously for connectivity monitoring, so a name like
+`bird_query_success` would read as reporting that operational path's health. A
+`0` here means these metrics could not be gathered — not that BGP/BFD
+connectivity is down.
+
+## Route counts
+
+`bgp_routes_imported` / `bgp_prefixes_announced` come from the `Routes:` line of
+the protocol's detail block in `birdc show protocols all`. A BGP protocol may
+declare more than one channel, so the parser **sums the counts across all
+channels** of the protocol rather than trying to identify the active one.
+
+This works because BIRD's `imported`/`exported` counts are **post-filter**
+(accepted routes only, verified against the BIRD 3.x user guide): a channel
+disabled via `REJECT` filters always reports `0 imported, 0 exported`, so it
+contributes nothing and the sum equals the active channel's counts. Summing is
+preferred over detecting the active channel because the latter would require
+sniffing filter names / `REJECT` markers out of the detail block, which is
+brittle; the sum needs no such inference and stays correct if a protocol ever
+legitimately has multiple active channels.
+
+Note that the per-family BGP templates (`BGP_TEMPLATE_V4`/`BGP_TEMPLATE_V6`)
+mean each generated protocol normally declares only its own channel; the summing
+behavior is what makes the parser robust regardless.
 
 ## `timeformat` dependency
 
@@ -189,6 +245,7 @@ timeformat purposes (log, base, route) are unchanged.
   parsing truth; both the monitor and the metrics collector consume the parsed
   structs (no duplicated parsing, no raw-text parsing in the metrics package).
 - The BGP detail parser extracts route counts and the established timestamp
-  **only for `Proto == "BGP"`**, and only from the active (non-`none`) channel.
+  **only for `Proto == "BGP"`**, summing the route counts across the protocol's
+  channels (see "Route counts" above).
 - The metrics collector is independent of `monitorConnectivity`; it does not
   take the `Bird` instance's lifecycle mutex and is unaffected by `Configure`.

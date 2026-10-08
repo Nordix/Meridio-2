@@ -22,35 +22,38 @@ import (
 	"time"
 
 	"github.com/nordix/meridio-2/internal/bird"
+	"github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/spf13/pflag"
 )
 
 // RouterConfig holds configuration for the router
 type RouterConfig struct {
-	GatewayName          string
-	GatewayNamespace     string
-	PodName              string
-	PodNamespace         string
-	PodUID               string
-	ConnectivityHoldTime time.Duration
-	ProbeAddr            string
-	LogLevel             string
-	LogLevelAPI          string
-	MetricsAddr          string
-	SecureMetrics        bool
-	MetricsCertPath      string
-	MetricsCertName      string
-	MetricsCertKey       string
-	EnableHTTP2          bool
-	BirdLogs             bird.BirdLogParams
-	BirdKernelScanTime   int
-	LBReadinessDir       string
-	TableID              int
-	RulePriority         int
-	BirdSocket           string
-	BirdConfig           string
-	MonitorInterval      time.Duration
+	GatewayName           string
+	GatewayNamespace      string
+	PodName               string
+	PodNamespace          string
+	PodUID                string
+	ConnectivityHoldTime  time.Duration
+	ProbeAddr             string
+	LogLevel              string
+	LogLevelAPI           string
+	MetricsAddr           string
+	SecureMetrics         bool
+	MetricsCertPath       string
+	MetricsCertName       string
+	MetricsCertKey        string
+	MetricsPrefix         string
+	MetricsCollectTimeout time.Duration
+	EnableHTTP2           bool
+	BirdLogs              bird.BirdLogParams
+	BirdKernelScanTime    int
+	LBReadinessDir        string
+	TableID               int
+	RulePriority          int
+	BirdSocket            string
+	BirdConfig            string
+	MonitorInterval       time.Duration
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -84,6 +87,12 @@ func (c *RouterConfig) AddFlags(fs *pflag.FlagSet) {
 		"The name of the metrics server certificate file.")
 	fs.StringVar(&c.MetricsCertKey, "metrics-cert-key", "tls.key",
 		"The name of the metrics server key file.")
+	fs.StringVar(&c.MetricsPrefix, "metrics-prefix", metrics.DefaultPrefix,
+		"Prefix for custom Meridio-2 metric names. Must start with a lowercase letter and contain only "+
+			"lowercase letters, digits, and underscores. Maximum 10 characters.")
+	fs.DurationVar(&c.MetricsCollectTimeout, "metrics-collect-timeout", 5*time.Second,
+		"Maximum time a single metrics scrape spends querying BIRD before giving up and reporting "+
+			"the collection as failed. Keep below Prometheus's scrape_timeout (default 10s).")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	fs.IntVar(&c.BirdKernelScanTime, "bird-kernel-scan-time", 10,
@@ -139,6 +148,8 @@ func (c *RouterConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
+	bindString(fs, "metrics-prefix", "MERIDIO_METRICS_PREFIX", &c.MetricsPrefix)
+	bindDuration(fs, "metrics-collect-timeout", "MERIDIO_METRICS_COLLECT_TIMEOUT", &c.MetricsCollectTimeout)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
 	bindInt(fs, "bird-kernel-scan-time", "MERIDIO_BIRD_KERNEL_SCAN_TIME", &c.BirdKernelScanTime)
 	bindString(fs, "readiness-dir", "MERIDIO_READINESS_DIR", &c.LBReadinessDir)

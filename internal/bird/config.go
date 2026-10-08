@@ -108,10 +108,24 @@ var tmplFuncs = template.FuncMap{
 	},
 }
 
+// birdConfigTmpl renders the full bird.conf.
+//
+// Note the `timeformat protocol "%s"` directive: it makes 'show protocols' report protocol times as
+// Unix epoch seconds, which the metrics collector parses into
+// bgp_session_last_established_timestamp_seconds. BIRD's default for protocol times is
+// 'iso short ms', a shorthand for "%T" 72000 "%F" — a time of day for the last 20 hours and a bare
+// date beyond that — so the representation changes with age and loses either the date or the time,
+// which cannot be parsed reliably into a timestamp. Only protocol times are overridden; route, base
+// and log formats keep their defaults. The trade-off is that 'birdc show protocols' is less
+// human-readable (epoch instead of clock time). See docs/design/router-metrics-source-of-truth.md.
+//
 //nolint:lll
 var birdConfigTmpl = template.Must(template.New("bird.conf").Funcs(tmplFuncs).Parse(`{{- range .LogParams}}
 {{.FmtParams}}
 {{- end}}
+
+# Unix epoch seconds, for machine-readable 'show protocols' timestamps.
+timeformat protocol "%s";
 
 protocol device {}
 
