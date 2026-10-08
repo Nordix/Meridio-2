@@ -266,13 +266,13 @@ var _ = Describe("BFD Detection", Label("ipv4", "bfd-detection"), Serial, Ordere
 			}).Should(Succeed())
 		})
 
-		It("should have the DistributionGroup Ready", func() {
+		It("should have the DistributionGroup Available", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "distg", bfdDG, "-n", bfdNamespace,
-					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+					"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("True"), "%s should be Ready", bfdDG)
+				g.Expect(out).To(Equal("True"), "%s should be Available", bfdDG)
 			}).Should(Succeed())
 		})
 

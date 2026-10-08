@@ -105,10 +105,10 @@ var _ = Describe("OpenShift CRC", Label("openshift-crc"), Ordered, func() {
 			}).Should(Succeed())
 		})
 
-		It("should have DistributionGroup Ready", func() {
+		It("should have DistributionGroup Available", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "distg", "dg-ocp", "-n", suite.namespace,
-					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+					"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("True"))

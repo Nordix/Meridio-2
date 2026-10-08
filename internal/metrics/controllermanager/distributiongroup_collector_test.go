@@ -61,14 +61,14 @@ func dcNewFakeClient(objs ...client.Object) client.Client {
 		Build()
 }
 
-// dcReadyCondition builds a Ready condition using the same Type/Reason literals the
-// distributiongroup package itself writes (ConditionTypeReady, ReasonEndpointsAvailable).
-func dcReadyCondition(status metav1.ConditionStatus) metav1.Condition {
+// dcAvailableCondition builds an Available condition using the same Type/Reason literals the
+// distributiongroup package itself writes (ConditionTypeAvailable, ReasonEndpointsAvailable).
+func dcAvailableCondition(status metav1.ConditionStatus) metav1.Condition {
 	return metav1.Condition{
-		Type:               distributiongroup.ConditionTypeReady,
+		Type:               distributiongroup.ConditionTypeAvailable,
 		Status:             status,
 		Reason:             distributiongroup.ReasonEndpointsAvailable,
-		Message:            "ready",
+		Message:            "available",
 		LastTransitionTime: metav1.Now(),
 	}
 }
@@ -132,42 +132,42 @@ func TestResolveMaxEndpoints_UnknownType_ReturnsPositiveInf(t *testing.T) {
 	require.True(t, math.IsInf(got, 1), "expected +Inf for an unrecognized DistributionGroupType, got %v", got)
 }
 
-// --- Collect: ready condition ---
+// --- Collect: available condition ---
 
-func TestDistributionGroupCollector_Ready(t *testing.T) {
+func TestDistributionGroupCollector_Available(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
 		Spec:       meridio2v1alpha1.DistributionGroupSpec{Type: meridio2v1alpha1.DistributionGroupTypeMaglev},
-		Status:     meridio2v1alpha1.DistributionGroupStatus{Conditions: []metav1.Condition{dcReadyCondition(metav1.ConditionTrue)}},
+		Status:     meridio2v1alpha1.DistributionGroupStatus{Conditions: []metav1.Condition{dcAvailableCondition(metav1.ConditionTrue)}},
 	}
 
 	fakeClient := dcNewFakeClient(dg)
 	collector := NewDistributionGroupCollector(fakeClient, alwaysSyncedWaiter{}, time.Second, "", testControllerName, "meridio_2")
 
 	expected := `
-# HELP meridio_2_distributiongroup_ready Whether the DistributionGroup's Ready status condition is currently True, as 0 or 1. DG-wide (no Gateway dimension).
-# TYPE meridio_2_distributiongroup_ready gauge
-meridio_2_distributiongroup_ready{dg="dg-a",namespace="ns-a"} 1
+# HELP meridio_2_distributiongroup_available Whether the DistributionGroup's Available status condition is currently True, as 0 or 1. DG-wide (no Gateway dimension).
+# TYPE meridio_2_distributiongroup_available gauge
+meridio_2_distributiongroup_available{dg="dg-a",namespace="ns-a"} 1
 `
-	require.NoError(t, testutil.CollectAndCompare(collector, strings.NewReader(expected), "meridio_2_distributiongroup_ready"))
+	require.NoError(t, testutil.CollectAndCompare(collector, strings.NewReader(expected), "meridio_2_distributiongroup_available"))
 }
 
-func TestDistributionGroupCollector_NotReady(t *testing.T) {
+func TestDistributionGroupCollector_NotAvailable(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
 		Spec:       meridio2v1alpha1.DistributionGroupSpec{Type: meridio2v1alpha1.DistributionGroupTypeMaglev},
-		// No Ready condition at all: IsReady must report false, not panic/default-true.
+		// No Available condition at all: IsAvailable must report false, not panic/default-true.
 	}
 
 	fakeClient := dcNewFakeClient(dg)
 	collector := NewDistributionGroupCollector(fakeClient, alwaysSyncedWaiter{}, time.Second, "", testControllerName, "meridio_2")
 
 	expected := `
-# HELP meridio_2_distributiongroup_ready Whether the DistributionGroup's Ready status condition is currently True, as 0 or 1. DG-wide (no Gateway dimension).
-# TYPE meridio_2_distributiongroup_ready gauge
-meridio_2_distributiongroup_ready{dg="dg-a",namespace="ns-a"} 0
+# HELP meridio_2_distributiongroup_available Whether the DistributionGroup's Available status condition is currently True, as 0 or 1. DG-wide (no Gateway dimension).
+# TYPE meridio_2_distributiongroup_available gauge
+meridio_2_distributiongroup_available{dg="dg-a",namespace="ns-a"} 0
 `
-	require.NoError(t, testutil.CollectAndCompare(collector, strings.NewReader(expected), "meridio_2_distributiongroup_ready"))
+	require.NoError(t, testutil.CollectAndCompare(collector, strings.NewReader(expected), "meridio_2_distributiongroup_available"))
 }
 
 // --- Collect: Gateway-union resolution + per-Gateway endpoint counting ---
@@ -347,5 +347,5 @@ func TestDistributionGroupCollector_NoDistributionGroups_NoSeries(t *testing.T) 
 	collector := NewDistributionGroupCollector(fakeClient, alwaysSyncedWaiter{}, time.Second, "", testControllerName, "meridio_2")
 
 	require.NoError(t, testutil.CollectAndCompare(collector, strings.NewReader(""),
-		"meridio_2_distributiongroup_ready", "meridio_2_distributiongroup_endpoints", "meridio_2_distributiongroup_max_endpoints"))
+		"meridio_2_distributiongroup_available", "meridio_2_distributiongroup_endpoints", "meridio_2_distributiongroup_max_endpoints"))
 }

@@ -29,9 +29,9 @@ import (
 func (r *DistributionGroupReconciler) updateStatus(ctx context.Context, dg *meridio2v1alpha1.DistributionGroup, hasEndpoints bool, capacityInfo *maglevCapacityInfo, message string) error {
 	changed := false
 
-	// Set Ready condition
-	readyCondition := buildReadyCondition(hasEndpoints, dg.Generation, message)
-	changed = meta.SetStatusCondition(&dg.Status.Conditions, readyCondition) || changed
+	// Set Available condition
+	availableCondition := buildAvailableCondition(hasEndpoints, dg.Generation, message)
+	changed = meta.SetStatusCondition(&dg.Status.Conditions, availableCondition) || changed
 
 	// Handle CapacityExceeded condition (Maglev only)
 	if capacityInfo != nil && capacityInfo.excluded > 0 {
@@ -47,16 +47,16 @@ func (r *DistributionGroupReconciler) updateStatus(ctx context.Context, dg *meri
 	return nil
 }
 
-// IsReady reports whether the DistributionGroup's Ready status condition (set by updateStatus
-// above based on endpoint availability) is currently True. Exported for reuse.
-func IsReady(dg *meridio2v1alpha1.DistributionGroup) bool {
-	return meta.IsStatusConditionTrue(dg.Status.Conditions, conditionTypeReady)
+// IsAvailable reports whether the DistributionGroup's Available status condition (set by
+// updateStatus above based on endpoint availability) is currently True. Exported for reuse.
+func IsAvailable(dg *meridio2v1alpha1.DistributionGroup) bool {
+	return meta.IsStatusConditionTrue(dg.Status.Conditions, conditionTypeAvailable)
 }
 
-// buildReadyCondition creates the Ready condition based on endpoint availability
-func buildReadyCondition(hasEndpoints bool, generation int64, message string) metav1.Condition {
+// buildAvailableCondition creates the Available condition based on endpoint availability
+func buildAvailableCondition(hasEndpoints bool, generation int64, message string) metav1.Condition {
 	condition := metav1.Condition{
-		Type:               conditionTypeReady,
+		Type:               conditionTypeAvailable,
 		ObservedGeneration: generation,
 	}
 

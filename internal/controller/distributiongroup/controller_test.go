@@ -268,9 +268,9 @@ func TestReconcile_NoMatchingPods(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
 
-	// Status should be Ready=False with "No Pods match selector"
+	// Status should be Available=False with "No Pods match selector"
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, reasonNoEndpoints, cond.Reason)
@@ -293,7 +293,7 @@ func TestReconcile_NoAcceptedGateways(t *testing.T) {
 	assert.Equal(t, ctrl.Result{}, result)
 
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, messageNoAcceptedGateways, cond.Message)
@@ -312,7 +312,7 @@ func TestReconcile_NoReferencedGateways(t *testing.T) {
 	assert.Equal(t, ctrl.Result{}, result)
 
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, messageNoReferencedGateways, cond.Message)
@@ -335,7 +335,7 @@ func TestReconcile_MultipleGateways_SkipsReconciliation(t *testing.T) {
 	assert.Equal(t, ctrl.Result{}, result)
 
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, reasonMultipleGateways, cond.Reason)
@@ -358,11 +358,11 @@ func TestReconcile_MultipleGateways_RecoveryAfterConflictResolved(t *testing.T) 
 
 	r, c := tcSetupReconciler(dg, gw1, gw2, gwConfig, route1, route2, pod)
 
-	// First reconcile: multiple Gateways → Ready=False
+	// First reconcile: multiple Gateways → Available=False
 	_, err := r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, reasonMultipleGateways, cond.Reason)
@@ -370,11 +370,11 @@ func TestReconcile_MultipleGateways_RecoveryAfterConflictResolved(t *testing.T) 
 	// Resolve conflict: delete the second route
 	require.NoError(t, c.Delete(context.Background(), route2))
 
-	// Second reconcile: single Gateway → Ready=True
+	// Second reconcile: single Gateway → Available=True
 	_, err = r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	updated = tcGetDG(t, c)
-	cond = tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond = tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionTrue, cond.Status)
 	assert.Equal(t, reasonEndpointsAvailable, cond.Reason)
@@ -396,7 +396,7 @@ func TestReconcile_NoNetworkContext(t *testing.T) {
 	require.NoError(t, err)
 
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, messageNoNetworkContext, cond.Message)
@@ -448,9 +448,9 @@ func TestReconcile_HappyPath_CreatesSlice(t *testing.T) {
 	// Labels
 	assert.Equal(t, managedByValue, slices[0].Labels[labelManagedBy])
 
-	// Status should be Ready=True
+	// Status should be Available=True
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionTrue, cond.Status)
 	assert.Equal(t, reasonEndpointsAvailable, cond.Reason)
@@ -656,7 +656,7 @@ func TestReconcile_PodIPOutsideSubnet_Excluded(t *testing.T) {
 	assert.Empty(t, tcListSlices(t, c))
 
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 }
@@ -806,7 +806,7 @@ func TestReconcile_CapacityExceededConditionRemovedOnRecovery(t *testing.T) {
 	updated = tcGetDG(t, c)
 	assert.Nil(t, tcFindCondition(updated.Status.Conditions, conditionTypeCapacityExceeded),
 		"CapacityExceeded condition should be removed when capacity recovers")
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionTrue, cond.Status)
 }
@@ -836,7 +836,7 @@ func TestReconcile_CleanupWhenPodsDisappear(t *testing.T) {
 	assert.Empty(t, tcListSlices(t, c))
 
 	updated := tcGetDG(t, c)
-	cond := tcFindCondition(updated.Status.Conditions, conditionTypeReady)
+	cond := tcFindCondition(updated.Status.Conditions, conditionTypeAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, messageNoMatchingPods, cond.Message)
