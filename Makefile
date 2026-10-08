@@ -136,6 +136,10 @@ vet: ## Run go vet against code.
 test: generate setup-envtest ## Run the unit tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+.PHONY: test-integration
+test-integration: ## Run the integration tests (require CAP_NET_ADMIN; tagged //go:build integration).
+	go test -tags integration ./internal/nftables/... ./internal/nfqlb/...
+
 .PHONY: e2e
 e2e: ## Run end-to-end tests.
 	$(MAKE) -C test/e2e REGISTRY=$(REGISTRY) VERSION=$(VERSION) ipv4
