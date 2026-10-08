@@ -162,6 +162,9 @@ func testMatchesReferenceConfig() func(t *testing.T) {
 log stderr { info, warning, error, fatal };
 log "/var/log/bird.log" 1048576 "/var/log/bird.log.1" all;
 
+# Unix epoch seconds, for machine-readable 'show protocols' timestamps.
+timeformat protocol "%s";
+
 protocol device {}
 
 filter gateway_routes {
