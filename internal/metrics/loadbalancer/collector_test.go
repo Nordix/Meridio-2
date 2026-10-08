@@ -23,9 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/nordix/meridio-2/internal/nfqlb"
@@ -53,7 +51,11 @@ func (f *fakeStats) ActiveTargets(_ context.Context) (map[string]int, error) {
 }
 
 func newTestCollector(stats StatsReader) *Collector {
-	return NewCollector(stats, testGateway, testPrefix, time.Second)
+	return NewCollector(stats, testGateway, testPrefix, time.Second, newFakeCollectorErrors())
+}
+
+func newTestCollectorWithErrs(stats StatsReader, errs errorRecorder) *Collector {
+	return NewCollector(stats, testGateway, testPrefix, time.Second, errs)
 }
 
 func TestCollector_FlowMatchesAndActiveTargets(t *testing.T) {
@@ -86,40 +88,48 @@ func TestCollector_NoFlowsNoTargets_NoSeries(t *testing.T) {
 }
 
 // A failure reading one source must not suppress the other: active_targets is still produced
-// even when flow-list errors. The errored source yields an invalid metric (which a real registry
-// Gather would surface as an error), so we collect directly from the channel and assert that the
-// healthy active_targets series is present alongside the invalid flow-matches metric.
+// even when flow-list errors. Under the skip-and-count strategy the errored source emits NO
+// series (so CollectAndCompare over both names sees only active_targets) and the collector-errors
+// counter records the failure.
 func TestCollector_FlowMatchesError_ActiveTargetsStillCollected(t *testing.T) {
 	stats := &fakeStats{
 		flowsErr: errors.New("nfqlb flow-list failed"),
 		targets:  map[string]int{"dg-a": 2},
 	}
-	c := newTestCollector(stats)
+	errs := newFakeCollectorErrors()
+	c := newTestCollectorWithErrs(stats, errs)
 
-	ch := make(chan prometheus.Metric, 16)
-	c.Collect(ch)
-	close(ch)
+	expected := `
+# HELP meridio_2_lb_active_targets Number of backends currently receiving traffic for the DistributionGroup (active Maglev targets, from nfqlb show).
+# TYPE meridio_2_lb_active_targets gauge
+meridio_2_lb_active_targets{dg="dg-a",gateway="gw-a"} 2
+`
+	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected),
+		"meridio_2_lb_flow_matches_total", "meridio_2_lb_active_targets"))
+	require.Equal(t, 1, errs.count(CollectorNfqlb, CollectorReasonFlowMatches))
+	require.Equal(t, 0, errs.count(CollectorNfqlb, CollectorReasonActiveTargets))
+}
 
-	var activeTargetsSeen, invalidSeen int
-	for m := range ch {
-		desc := m.Desc().String()
-		if strings.Contains(desc, "meridio_2_lb_active_targets") {
-			// A valid const metric writes successfully; an invalid one errors on Write.
-			var dm dto.Metric
-			if err := m.Write(&dm); err == nil {
-				activeTargetsSeen++
-				require.Equal(t, 2.0, dm.GetGauge().GetValue())
-			}
-		}
-		if strings.Contains(desc, "meridio_2_lb_flow_matches_total") {
-			var dm dto.Metric
-			if err := m.Write(&dm); err != nil {
-				invalidSeen++ // the errored flow-matches source emits an invalid metric
-			}
-		}
+// Symmetric to the above: when active-targets (nfqlb show) errors, flow_matches is still
+// produced, the active_targets series is absent, and the collector-errors counter records the
+// active_targets failure.
+func TestCollector_ActiveTargetsError_FlowMatchesStillCollected(t *testing.T) {
+	stats := &fakeStats{
+		flows:      []nfqlb.FlowMatch{{Name: "route-a", MatchesCount: 9}},
+		targetsErr: errors.New("nfqlb show failed"),
 	}
-	require.Equal(t, 1, activeTargetsSeen, "active_targets must still be collected when flow-list errors")
-	require.Equal(t, 1, invalidSeen, "flow-matches must surface as an invalid metric on error")
+	errs := newFakeCollectorErrors()
+	c := newTestCollectorWithErrs(stats, errs)
+
+	expected := `
+# HELP meridio_2_lb_flow_matches_total Number of packets matched per L34Route flow by nfqlb (from flow-list matches_count). Resets if the flow is re-created; consume via rate()/increase().
+# TYPE meridio_2_lb_flow_matches_total counter
+meridio_2_lb_flow_matches_total{gateway="gw-a",l34route="route-a"} 9
+`
+	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected),
+		"meridio_2_lb_flow_matches_total", "meridio_2_lb_active_targets"))
+	require.Equal(t, 1, errs.count(CollectorNfqlb, CollectorReasonActiveTargets))
+	require.Equal(t, 0, errs.count(CollectorNfqlb, CollectorReasonFlowMatches))
 }
 
 func TestCollector_MultipleDGsAndRoutes(t *testing.T) {

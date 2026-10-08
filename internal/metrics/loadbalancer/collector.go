@@ -17,8 +17,8 @@ limitations under the License.
 // Package loadbalancer implements the stateless-load-balancer binary's custom Prometheus
 // metrics.
 //
-// Phase 1 exposes two nfqlb-sourced metrics, both read lazily (pull-based) at scrape time via
-// the nfqlb subprocess — never from a background loop or the reconcile/packet path:
+// This collector exposes two nfqlb-sourced metrics, both read lazily (pull-based) at scrape time
+// via the nfqlb subprocess — never from a background loop or the reconcile/packet path:
 //
 //   - <prefix>_lb_flow_matches_total (Counter, labels: gateway, l34route) — packets matched per
 //     L34Route, from `nfqlb flow-list` (matches_count). Monotonic while a flow exists; resets if
@@ -64,6 +64,7 @@ type Collector struct {
 	stats          StatsReader
 	gatewayName    string
 	collectTimeout time.Duration
+	errs           errorRecorder
 
 	// mu serializes Collect so overlapping scrapes do not spawn concurrent nfqlb subprocesses.
 	mu sync.Mutex
@@ -75,12 +76,14 @@ type Collector struct {
 // NewCollector creates a Collector. prefix must already be validated (see
 // internal/common/metrics.ValidatePrefix). gatewayName is the bare Gateway name this LB serves
 // (used as the constant "gateway" label). collectTimeout bounds each scrape's nfqlb subprocess
-// work.
-func NewCollector(stats StatsReader, gatewayName, prefix string, collectTimeout time.Duration) *Collector {
+// work. errs records read failures (nil-safe); on a read error the data series is skipped and the
+// failure counted, so one failing read does not fail the whole scrape.
+func NewCollector(stats StatsReader, gatewayName, prefix string, collectTimeout time.Duration, errs errorRecorder) *Collector {
 	return &Collector{
 		stats:          stats,
 		gatewayName:    gatewayName,
 		collectTimeout: collectTimeout,
+		errs:           errs,
 		flowMatchesDesc: prometheus.NewDesc(
 			prefix+"_lb_flow_matches_total",
 			"Number of packets matched per L34Route flow by nfqlb (from flow-list matches_count). "+
@@ -103,10 +106,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector. It reads nfqlb state fresh on every scrape, bounded
-// by collectTimeout and serialized by mu (see package doc). A failure to read either source
-// emits an invalid metric for that source rather than returning silently — Collect has no error
-// return, so this is the only way to surface a collection failure to the registry's Gather.
-// The two sources are independent: a failure in one does not suppress the other.
+// by collectTimeout and serialized by mu (see package doc). On a read failure it SKIPS that
+// source's series and increments the collector-errors counter, rather than emitting an invalid
+// metric — under controller-runtime's HTTPErrorOnError an invalid metric would fail the entire
+// scrape. The two sources are independent: a failure in one does not suppress the other.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -116,7 +119,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 
 	// Flow matches (per L34Route).
 	if flows, err := c.stats.FlowMatches(ctx); err != nil {
-		ch <- prometheus.NewInvalidMetric(c.flowMatchesDesc, err)
+		c.errs.Inc(CollectorNfqlb, CollectorReasonFlowMatches)
 	} else {
 		for _, f := range flows {
 			ch <- prometheus.MustNewConstMetric(
@@ -128,7 +131,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 
 	// Active targets (per DistributionGroup).
 	if targets, err := c.stats.ActiveTargets(ctx); err != nil {
-		ch <- prometheus.NewInvalidMetric(c.activeTargetsDesc, err)
+		c.errs.Inc(CollectorNfqlb, CollectorReasonActiveTargets)
 	} else {
 		for dg, count := range targets {
 			ch <- prometheus.MustNewConstMetric(
