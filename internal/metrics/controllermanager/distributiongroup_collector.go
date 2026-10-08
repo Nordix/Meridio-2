@@ -35,25 +35,25 @@ import (
 // DistributionGroupCollector is a prometheus.Collector exposing DistributionGroup-derived metrics:
 //   - <prefix>_distributiongroup_endpoints: current endpoint count for this DG under a given Gateway
 //   - <prefix>_distributiongroup_max_endpoints: upper bound on endpoint count for this DG under a given Gateway
-//   - <prefix>_distributiongroup_ready: 0/1 per DG, from the Ready status condition (DG-wide, no Gateway dimension)
+//   - <prefix>_distributiongroup_available: 0/1 per DG, from the Available status condition (DG-wide, no Gateway dimension)
 //
 // # Namespace disambiguation
 //
-// ready carries a "namespace" label (the DG's); endpoints and max_endpoints additionally carry a
+// available carries a "namespace" label (the DG's); endpoints and max_endpoints additionally carry a
 // separate "gateway_namespace" alongside "gateway". This follows the kube-state-metrics
 // convention of a name label paired with its own namespace label rather than folding namespace
 // into the name. It matters because the controller-manager can watch all namespaces (empty
 // --namespace), and a DG's resolved Gateway can live in a different namespace than the DG — so
 // "gateway"/"dg" names alone are not unique across the metric stream.
 //
-// # ready has no Gateway dimension
+// # available has no Gateway dimension
 //
-// Ready is DG-wide, not per-Gateway: DistributionGroupReconciler.updateStatus sets it from
+// Available is DG-wide, not per-Gateway: DistributionGroupReconciler.updateStatus sets it from
 // hasEndpoints := len(desiredSlices) > 0, an OR across every Gateway's slices — the reconciler
-// has no "Ready under Gateway A but not B" concept. So ready carries only "dg"/"namespace", one
-// series per DG, reflecting distributiongroup.IsReady(dg) as-is.
+// has no "Available under Gateway A but not B" concept. So available carries only "dg"/"namespace", one
+// series per DG, reflecting distributiongroup.IsAvailable(dg) as-is.
 //
-// Note: IsReady currently means "has any assigned endpoint" (a slice exists), not "has any ready
+// Note: IsAvailable currently means "has any assigned endpoint" (a slice exists), not "has any ready
 // endpoint" — per-endpoint LoadBalancerEndpoint.Ready is not consulted. This metric mirrors the
 // existing condition as-is rather than inventing a metrics-only readiness under the same name;
 // whether the condition itself should consider per-endpoint readiness is a separate open design
@@ -107,7 +107,7 @@ type DistributionGroupCollector struct {
 
 	endpointsDesc    *prometheus.Desc
 	maxEndpointsDesc *prometheus.Desc
-	readyDesc        *prometheus.Desc
+	availableDesc    *prometheus.Desc
 }
 
 // gatewayRef identifies a Gateway by name and namespace, used both as the map key for
@@ -145,9 +145,9 @@ func NewDistributionGroupCollector(
 				"capacity concept.",
 			gatewayLabels, nil,
 		),
-		readyDesc: prometheus.NewDesc(
-			prefix+"_distributiongroup_ready",
-			"Whether the DistributionGroup's Ready status condition is currently True, as 0 or 1. "+
+		availableDesc: prometheus.NewDesc(
+			prefix+"_distributiongroup_available",
+			"Whether the DistributionGroup's Available status condition is currently True, as 0 or 1. "+
 				"DG-wide (no Gateway dimension).",
 			[]string{"dg", "namespace"}, nil,
 		),
@@ -158,7 +158,7 @@ func NewDistributionGroupCollector(
 func (c *DistributionGroupCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.endpointsDesc
 	ch <- c.maxEndpointsDesc
-	ch <- c.readyDesc
+	ch <- c.availableDesc
 }
 
 // Collect implements prometheus.Collector. It lists DistributionGroups (and per DG resolves
@@ -171,7 +171,7 @@ func (c *DistributionGroupCollector) Collect(ch chan<- prometheus.Metric) {
 	defer cancel()
 
 	if !c.syncGate.Wait(ctx) {
-		ch <- prometheus.NewInvalidMetric(c.readyDesc, fmt.Errorf("informer cache did not sync within %s", c.collectTimeout))
+		ch <- prometheus.NewInvalidMetric(c.availableDesc, fmt.Errorf("informer cache did not sync within %s", c.collectTimeout))
 		return
 	}
 
@@ -181,7 +181,7 @@ func (c *DistributionGroupCollector) Collect(ch chan<- prometheus.Metric) {
 		listOpts = append(listOpts, client.InNamespace(c.namespace))
 	}
 	if err := c.client.List(ctx, &dgList, listOpts...); err != nil {
-		ch <- prometheus.NewInvalidMetric(c.readyDesc, err)
+		ch <- prometheus.NewInvalidMetric(c.availableDesc, err)
 		return
 	}
 
@@ -190,17 +190,17 @@ func (c *DistributionGroupCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// collectDG emits the DistributionGroup metrics for a single DG: ready once (DG-wide, no
+// collectDG emits the DistributionGroup metrics for a single DG: available once (DG-wide, no
 // Gateway dimension), and endpoints/max_endpoints once per Gateway in the resolved union (see
 // the "Gateway label semantics" section of the DistributionGroupCollector doc).
 func (c *DistributionGroupCollector) collectDG(
 	ctx context.Context, ch chan<- prometheus.Metric, dg *meridio2v1alpha1.DistributionGroup,
 ) {
-	ready := 0.0
-	if distributiongroup.IsReady(dg) {
-		ready = 1.0
+	available := 0.0
+	if distributiongroup.IsAvailable(dg) {
+		available = 1.0
 	}
-	ch <- prometheus.MustNewConstMetric(c.readyDesc, prometheus.GaugeValue, ready, dg.Name, dg.Namespace)
+	ch <- prometheus.MustNewConstMetric(c.availableDesc, prometheus.GaugeValue, available, dg.Name, dg.Namespace)
 
 	endpointsByGateway, err := c.countOwnedEndpointsByGateway(ctx, dg)
 	if err != nil {
