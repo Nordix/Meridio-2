@@ -710,6 +710,7 @@ The `stateless-load-balancer` binary accepts the following flags:
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8081` | Address the health/ready probe endpoint binds to |
 | `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
 | `--log-level-api` | `MERIDIO_LOG_LEVEL_API` | *(empty)* | Address for dynamic log level HTTP endpoint (e.g., `127.0.0.1:9901`). Empty disables the feature. |
+| `--pprof-bind-address` | `MERIDIO_PPROF_ADDR` | *(empty)* | Loopback address for the Go pprof HTTP endpoint (e.g., `127.0.0.1:6060`). Empty disables the feature; must be a loopback address. See [Runtime profiling with pprof](../operations/profiling.md). |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` (disabled) | Address the metrics endpoint binds to. Use `:8443` for HTTPS or `:8080` for HTTP. |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | Serve metrics endpoint via HTTPS |
 | `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | `""` | Directory containing the metrics server TLS certificate |

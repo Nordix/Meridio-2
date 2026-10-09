@@ -19,14 +19,14 @@ package log
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/nordix/meridio-2/internal/common/httpsec"
 )
 
 // StartDynamicLevelServer starts an HTTP server to serve zap.AtomicLevel
@@ -65,38 +65,11 @@ func StartDynamicLevelServer(ctx context.Context, addr string, level zap.AtomicL
 
 	log := logger.WithName("loglevel-api")
 
-	// Parse and validate address
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		log.Error(err, "Invalid log-level-api address",
-			"addr", addr,
-			"hint", "expected format: 127.0.0.1:9901")
-		return nil
-	}
-
-	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
-		log.Error(err, "Invalid port in log-level-api address",
-			"addr", addr,
-			"port", port,
-			"hint", "expected format: 127.0.0.1:9901")
-		return nil
-	}
-
 	// SECURITY: Reject non-loopback addresses
-	ip := net.ParseIP(host)
-	if ip == nil {
-		log.Error(nil, "Invalid IP address in log-level-api",
-			"host", host,
-			"addr", addr)
-		return nil
-	}
-
-	if !ip.IsLoopback() {
-		log.Error(nil, "SECURITY VIOLATION: log-level-api must bind to loopback interface only",
-			"rejected_address", addr,
-			"correct_format_ipv4", "127.0.0.1:"+port,
-			"correct_format_ipv6", "[::1]:"+port,
-			"security_note", "non-loopback binding exposes unauthenticated endpoint to network")
+	if err := httpsec.ValidateLoopbackAddr(addr); err != nil {
+		log.Error(err, "Refusing to start log-level-api",
+			"addr", addr,
+			"hint", "expected a loopback host:port like 127.0.0.1:9901 or [::1]:9901")
 		return nil // FAIL SAFE: do not start server
 	}
 

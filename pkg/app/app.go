@@ -55,6 +55,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/prerequisites"
@@ -328,6 +329,7 @@ func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 		Metrics:                       metricsServerOptions,
 		WebhookServer:                 webhook.NewServer(webhookServerOptions),
 		HealthProbeBindAddress:        cfg.ProbeAddr,
+		PprofBindAddress:              httpsec.ResolvePprofBindAddress(cfg.PprofBindAddress, ctrl.Log),
 		LeaderElection:                cfg.EnableLeaderElection,
 		LeaderElectionID:              "e9d059a3.nordix.org",
 		LeaseDuration:                 &cfg.LeaseDuration,
