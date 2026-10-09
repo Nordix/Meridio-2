@@ -130,6 +130,15 @@ const (
 // LoadBalancerEndpointSlice defines a set of endpoints for a DistributionGroup
 // scoped to a specific Gateway. It is the contract between the DG controller
 // (producer) and the LB controller (consumer) for endpoint discovery.
+//
+// No /status subresource: this is a spec-only data object, not an independently
+// reconciled resource. This mirrors upstream discovery/v1.EndpointSlice, which has
+// no status field either — a single writer (the DG controller, like the upstream
+// EndpointSlice controller) produces the whole object, and many potentially
+// ephemeral consumers read it. Per-endpoint state is carried inline on each endpoint
+// rather than in an object-level status. A conditions list would invite per-consumer
+// status that recreates the multi-writer problem and accumulates stale entries as
+// consumers churn.
 type LoadBalancerEndpointSlice struct {
 	metav1.TypeMeta `json:",inline"`
 

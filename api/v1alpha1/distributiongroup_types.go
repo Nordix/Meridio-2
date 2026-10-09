@@ -24,8 +24,8 @@ type DistributionGroupType string
 
 const (
 	DistributionGroupTypeMaglev DistributionGroupType = "Maglev"
-	// DefaultMaglevMaxEndpoints is the default capacity for Maglev hash table
-	// when MaglevConfig is omitted from the DistributionGroup spec.
+	// DefaultMaglevMaxEndpoints is the default maximum number of endpoints (N in
+	// Maglev terms) when MaglevConfig is omitted from the DistributionGroup spec.
 	DefaultMaglevMaxEndpoints int32 = 102
 )
 
