@@ -191,7 +191,7 @@ reference the same DG as a backendRef (the `parentRefs maxItems=1` only restrict
 reference). The DG controller handles this by:
 
 1. Resolving all Gateways for the DG (direct parentRef + indirect via L34Routes)
-2. If more than one Gateway is found: set `Ready=False, Reason=MultipleGatewaysDetected,
+2. If more than one Gateway is found: set `Available=False, Reason=MultipleGateways,
    Message="DistributionGroup is referenced by multiple Gateways; only a single Gateway
    is supported"` and skip reconciliation. Existing EndpointSlices are preserved (no
    teardown — avoids disrupting traffic if the conflict is transient or accidental).

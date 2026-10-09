@@ -202,14 +202,14 @@ EOF
 After this, expect `gateway_count 1`, `gateway_programmed{gateway="sllb-sample",...} 1`,
 and both DGs' `endpoints`/`max_endpoints` series now labeled with
 `gateway="sllb-sample", gateway_namespace="default"` (the referenced-and-accepted
-Gateway branch of the union), with `endpoints 0` and `ready 0` until targets
+Gateway branch of the union), with `endpoints 0` and `available 0` until targets
 exist.
 
 > Creating an accepted Gateway triggers LB Deployment creation from the template.
 > On a bare cluster its Pods will not run (missing image/NADs) — this is harmless
 > for metrics testing.
 
-### 2. Target Pods to populate `endpoints` and `ready`
+### 2. Target Pods to populate `endpoints` and `available`
 
 The DistributionGroup reconciler discovers endpoints by reading each matching
 Pod's `k8s.v1.cni.cncf.io/network-status` annotation and CIDR-matching the

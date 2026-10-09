@@ -580,15 +580,15 @@ kubectl get distg -n <ns> <dg-name> -o jsonpath='{.status.conditions}' | jq .
 
 Two condition types are used:
 
-**`Ready`** — indicates whether the DG has active endpoints:
-- `Ready=True`, reason `EndpointsAvailable` — LoadBalancerEndpointSlices have been reconciled with at least one endpoint.
-- `Ready=False`, reason `NoEndpoints` — no endpoints are available. The `message` field explains why:
+**`Available`** — indicates whether the DG has active endpoints:
+- `Available=True`, reason `EndpointsAvailable` — LoadBalancerEndpointSlices have been reconciled with at least one endpoint.
+- `Available=False`, reason `NoEndpoints` — no endpoints are available. The `message` field explains why:
   - `"No Pods match selector"` — no Pods match the DG's label selector.
   - `"No Gateways reference this DistributionGroup"` — no L34Route links this DG to a Gateway (check `parentRefs` or L34Route `backendRefs`).
   - `"No accepted Gateways found"` — referenced Gateways don't have `Accepted=True` (Gateway may not exist or GatewayConfiguration is invalid).
   - `"No network context available"` — the GatewayConfiguration has no `internalSubnets` configured.
   - `"No endpoints available"` — Pods exist but none have an IP matching the network subnets.
-- `Ready=False`, reason `MultipleGateways` — the DG is referenced by more than one accepted Gateway. Reconciliation is skipped until the conflict is resolved.
+- `Available=False`, reason `MultipleGateways` — the DG is referenced by more than one accepted Gateway. Reconciliation is skipped until the conflict is resolved.
 
 **`CapacityExceeded`** (Maglev only) — present only when the number of matching Pods exceeds `maxEndpoints`:
 - `CapacityExceeded=True`, reason `MaglevCapacityExceeded` — some Pods were excluded from LoadBalancerEndpointSlices because the Maglev table is full. The message lists affected networks with counts (e.g., `"10.0.0.0/24: 5/37 pods excluded (32 capacity)"`).
