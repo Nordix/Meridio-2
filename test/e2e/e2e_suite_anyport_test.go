@@ -33,7 +33,7 @@ import (
 // "any" port conversion (issue #262).
 //
 // Verifies that an L34Route using the documented "any" port spelling actually
-// programs a working all-ports match in the data plane — not just that it is
+// programs a working all-ports match in the data plane - not just that it is
 // admitted. Historically "any" was passed unchanged to nfqlb, whose numeric
 // port parser rejected it, so the flow failed to program silently. The fix
 // converts "any" -> "0-65535" in the LB controller's flow adapter

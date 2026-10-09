@@ -2,7 +2,7 @@
 
 ## Overview
 
-The LoadBalancer controller manages NFQLB (nfqueue-loadbalancer) instances for traffic distribution within a Gateway. It watches **DistributionGroup** as its primary resource — mirroring the Kubernetes Service/kube-proxy pattern — and creates corresponding NFQLB shared-memory instances, configures policy routing, nftables rules, and readiness signaling.
+The LoadBalancer controller manages NFQLB (nfqueue-loadbalancer) instances for traffic distribution within a Gateway. It watches **DistributionGroup** as its primary resource - mirroring the Kubernetes Service/kube-proxy pattern - and creates corresponding NFQLB shared-memory instances, configures policy routing, nftables rules, and readiness signaling.
 
 The controller runs inside the `stateless-load-balancer` container in each LB Pod (one Pod per Gateway).
 
@@ -11,8 +11,8 @@ The controller runs inside the `stateless-load-balancer` container in each LB Po
 ### Deployment Model
 
 **One SLLB Pod per Gateway**, containing 2 containers:
-- `stateless-load-balancer` — runs the LoadBalancer controller
-- `router` — runs Bird3 for BGP/routing protocol advertisement
+- `stateless-load-balancer` - runs the LoadBalancer controller
+- `router` - runs Bird3 for BGP/routing protocol advertisement
 
 ### NFQLB Architecture
 
@@ -94,7 +94,7 @@ The controller mirrors the Kubernetes Service/kube-proxy architectural pattern:
 
 ## Design Principles
 
-- **No finalizers**: In-memory state only (shared memory, policy routes, nftables). DistributionGroup deletion triggers cleanup via the NotFound path — no external resources require finalization.
+- **No finalizers**: In-memory state only (shared memory, policy routes, nftables). DistributionGroup deletion triggers cleanup via the NotFound path - no external resources require finalization.
 - **Reconcile loop is authoritative**: Mappers enqueue broadly, reconcile decides via `belongsToGateway()`. Multiple Gateways coexist without interference.
 - **Idempotent reconciliation**: Safe to run multiple times. `RouteReplace` and `ensureRule` are idempotent kernel operations.
 - **DistributionGroup as primary resource**: Mirrors kube-proxy/Service pattern (see ADR-001). Each DG maps 1:1 with an NFQLB shared-memory instance.
@@ -158,7 +158,7 @@ nftables (shared across all DGs in this LB Pod)
 ### 2. Check Gateway Ownership
 
 - Call `belongsToGateway()`:
-  1. **Direct parentRefs**: Check `DistributionGroup.Spec.ParentRefs` — if any entry references this controller's Gateway (by group, kind, name, namespace), return true immediately
+  1. **Direct parentRefs**: Check `DistributionGroup.Spec.ParentRefs` - if any entry references this controller's Gateway (by group, kind, name, namespace), return true immediately
   2. **Indirect via L34Routes**: List L34Routes in GatewayNamespace, check if any L34Route has both:
      - `parentRefs` referencing this controller's Gateway (by name)
      - `backendRefs` referencing this DistributionGroup (by name, group, kind)
@@ -182,7 +182,7 @@ nftables (shared across all DGs in this LB Pod)
 ### 4. Reconcile Targets
 
 - List LoadBalancerEndpointSlices via field indexers (`spec.distributionGroupName` + `spec.gatewayRef.name`)
-- Filter to slices owned by this DistributionGroup (ownerReference check — defends against manually-created slices and stale slices from a previous DG incarnation with the same name but different UID)
+- Filter to slices owned by this DistributionGroup (ownerReference check - defends against manually-created slices and stale slices from a previous DG incarnation with the same name but different UID)
 - Sort by name for deterministic processing
 - Extract target identifiers from `endpoint.Identifier` (int pointer, Maglev slot index)
 - Extract target IPs from `endpoint.Addresses[].IP`
@@ -190,13 +190,13 @@ nftables (shared across all DGs in this LB Pod)
 - First occurrence of an identifier wins (duplicates across slices during transients are logged and skipped)
 
 **Deactivate removed targets:**
-- `Instance.DeleteTarget(identifier)` — deactivates in shared memory + deletes policy routes
+- `Instance.DeleteTarget(identifier)` - deactivates in shared memory + deletes policy routes
 
 **Activate/update desired targets:**
-- `Instance.AddTarget(ips, identifier)` — creates policy routes (`RouteReplace` + `ensureRule`), then activates in shared memory
+- `Instance.AddTarget(ips, identifier)` - creates policy routes (`RouteReplace` + `ensureRule`), then activates in shared memory
 - For existing targets: re-applies routes idempotently (drift recovery)
 - For IP changes (Pod reschedule): cleans old neighbor entries, removes old routes, creates new routes
-- For broken targets: full retry — re-applies policy routes AND re-activates in nfqlb shared memory (see [Broken Target Semantics](#broken-target-semantics))
+- For broken targets: full retry - re-applies policy routes AND re-activates in nfqlb shared memory (see [Broken Target Semantics](#broken-target-semantics))
 
 **Readiness signaling:**
 - Create readiness file when at least one target successfully activated
@@ -209,7 +209,7 @@ nftables (shared across all DGs in this LB Pod)
 
 - List L34Routes matching this Gateway AND this DistributionGroup
 
-**If no L34Routes found:** Delete all flows for this DG. The shared nftables VIP set is **not** cleared — it is synced from `Gateway.status.addresses` (shared across all DGs on the Gateway), so it must not be flushed just because one DG lost its routes. This only happens when L34Routes are explicitly removed — flows are never deleted based on endpoint availability.
+**If no L34Routes found:** Delete all flows for this DG. The shared nftables VIP set is **not** cleared - it is synced from `Gateway.status.addresses` (shared across all DGs on the Gateway), so it must not be flushed just because one DG lost its routes. This only happens when L34Routes are explicitly removed - flows are never deleted based on endpoint availability.
 - Delete removed flows from NFQLB instance
 - Add/update flows: maps L34Route → `nfqlb.Flow` via `l34RouteFlow` adapter
 - Configure the shared nftables VIP set from `Gateway.status.addresses` via `applyGatewayVIPs()`
@@ -277,10 +277,10 @@ Called by `reconcileNFQLBInstance()` when a new DistributionGroup is first seen.
 - `M` = `maxEndpoints × 100` (Maglev hash table size, via `maglevMMultiplier`)
 - `N` = `maxEndpoints` from DG spec (default: 102)
 - `--ownfw=0`: disabled (no fwmark reserved for LB's own traffic); hardcoded constant
-- Offset dynamically allocated via `getOffset()` — finds first non-overlapping fwmark range
+- Offset dynamically allocated via `getOffset()` - finds first non-overlapping fwmark range
 
 **Behavior:**
-- Returns existing instance if already created (idempotent — checked in both the controller's `c.instances` map and `NFQueueLoadBalancer.instances`)
+- Returns existing instance if already created (idempotent - checked in both the controller's `c.instances` map and `NFQueueLoadBalancer.instances`)
 - Fails with error if the nfqlb process is not running (`running.Load() == false`)
 - Validates name (alphanumeric, dash, underscore, dot; no leading dash; non-empty)
 - Instance tracked in `NFQueueLoadBalancer.instances` map (protected by mutex)
@@ -291,10 +291,10 @@ Called from `cleanupDistributionGroup()` when a DG no longer belongs to this Gat
 
 **Sequence:**
 1. Remove instance from `nfqlb.instances` map (under `nfqlb.mu`)
-2. `nfqlb delete --shm=<name>` — unlinks shared memory file
+2. `nfqlb delete --shm=<name>` - unlinks shared memory file
 3. Deactivate all targets (with policy route cleanup via `deleteTargetNoLock`)
 4. List all flows (`flow-list`) and delete those matching `user_ref == name`
-5. Uses `errors.Join` for error accumulation — all cleanup attempted regardless of individual failures
+5. Uses `errors.Join` for error accumulation - all cleanup attempted regardless of individual failures
 
 ## Offset Allocation
 
@@ -310,7 +310,7 @@ Where:
 - `identifier` = Maglev slot index from LoadBalancerEndpointSlice `endpoint.Identifier` field (`0` to `maxTargets-1`)
 - `instance.offset` = dynamically allocated starting fwmark for this DG
 
-**Key property:** `fwmark == routing table ID` — the same value is used for both the fwmark and the ip rule table, simplifying kernel configuration.
+**Key property:** `fwmark == routing table ID` - the same value is used for both the fwmark and the ip rule table, simplifying kernel configuration.
 
 ### Allocation Algorithm (`getOffset()`)
 
@@ -318,30 +318,30 @@ Where:
 2. For each existing instance, check if candidate range `[offset, offset+maxTargets-1]` overlaps with `[instance.offset, instance.offset+instance.maxTargets-1]`
 3. If overlap found, advance past that instance's range (`offset = instance.offset + instance.maxTargets`) and restart the search
 4. First non-overlapping position wins
-5. Capped at `maxOffset = 100000` — returns error if exceeded
+5. Capped at `maxOffset = 100000` - returns error if exceeded
 
 Contiguous packing: ranges are sized by actual `maxTargets` per DG (not a fixed block size).
 
 **Known limitation:** `maxOffset` is hardcoded and not configurable by users. Should be exposed via a CLI flag or `WithMaxOffset` option for clusters with many DistributionGroups.
 
-**Fragmentation:** The allocation algorithm does not compact or defragment freed ranges. In deployments with aggressive DG churn and varied `maxEndpoints` values, fragmentation can exhaust the offset range earlier than the raw `maxOffset` ceiling would suggest — small gaps between allocations may be too small for new DGs with larger `maxEndpoints`.
+**Fragmentation:** The allocation algorithm does not compact or defragment freed ranges. In deployments with aggressive DG churn and varied `maxEndpoints` values, fragmentation can exhaust the offset range earlier than the raw `maxOffset` ceiling would suggest - small gaps between allocations may be too small for new DGs with larger `maxEndpoints`.
 
 ### Example
 
 ```
-DG-1 (maxTargets=32):  offset=5000, fwmarks 5000–5031
-DG-2 (maxTargets=100): offset=5032, fwmarks 5032–5131
-DG-3 (maxTargets=32):  offset=5132, fwmarks 5132–5163
+DG-1 (maxTargets=32):  offset=5000, fwmarks 5000-5031
+DG-2 (maxTargets=100): offset=5032, fwmarks 5032-5131
+DG-3 (maxTargets=32):  offset=5132, fwmarks 5132-5163
 
-If DG-2 is deleted: offset range 5032–5131 becomes available
-New DG-4 (maxTargets=50): offset=5032, fwmarks 5032–5081 (reuses freed space)
+If DG-2 is deleted: offset range 5032-5131 becomes available
+New DG-4 (maxTargets=50): offset=5032, fwmarks 5032-5081 (reuses freed space)
 ```
 
 ## Target Management
 
 ### AddTarget (Activation)
 
-Called on every reconcile for each desired target. The nfqlb layer handles idempotency — the controller calls `AddTarget` unconditionally for all desired targets.
+Called on every reconcile for each desired target. The nfqlb layer handles idempotency - the controller calls `AddTarget` unconditionally for all desired targets.
 
 **Sequence:**
 
@@ -359,7 +359,7 @@ Called on every reconcile for each desired target. The nfqlb layer handles idemp
    - `cleanNeighbor` for all old IPs (flush stale ARP/NDP entries)
    - `deletePolicyRoute` for IPs no longer in the set
 
-4. **Store new IPs** (`s.targets[identifier] = ips`) — committed regardless of whether subsequent steps succeed
+4. **Store new IPs** (`s.targets[identifier] = ips`) - committed regardless of whether subsequent steps succeed
 
 5. **Create policy routes** (for all target IPs):
    - `ensureRule`: add ip rule only if not already present (prevents duplicate accumulation)
@@ -370,13 +370,13 @@ Called on every reconcile for each desired target. The nfqlb layer handles idemp
    - `nfqlb activate --index=<id> --shm=<name> <fwmark>`
    - Writes fwmark into Maglev lookup table slot
 
-7. **Broken target tracking** (applies to errors from steps 3–6, not validation):
+7. **Broken target tracking** (applies to errors from steps 3-6, not validation):
    - On any error after lock: mark target as `broken` (will be retried with full activation on next reconcile)
    - On success: remove from `broken` set
 
 ### DeleteTarget (Deactivation)
 
-1. `nfqlb deactivate --index=<id> --shm=<name>` — removes fwmark from Maglev table
+1. `nfqlb deactivate --index=<id> --shm=<name>` - removes fwmark from Maglev table
 2. Delete policy routes for all stored IPs
 3. On error: keeps target in `broken` set; on success: removes from `targets` map
 
@@ -384,20 +384,20 @@ Called on every reconcile for each desired target. The nfqlb layer handles idemp
 
 **Route creation (`createPolicyRoute`):**
 ```
-ip rule add fwmark <fwmark> table <fwmark>      (ensureRule — skip if exists)
-ip route replace default via <target-ip> table <fwmark>   (RouteReplace — idempotent)
+ip rule add fwmark <fwmark> table <fwmark>      (ensureRule - skip if exists)
+ip route replace default via <target-ip> table <fwmark>   (RouteReplace - idempotent)
 ```
 
 **Route deletion (`deletePolicyRoute`):**
 ```
-ip rule del fwmark <fwmark> table <fwmark>      (ignore ENOENT — already gone)
-ip route del default via <target-ip> table <fwmark>   (ignore ESRCH — already gone)
+ip rule del fwmark <fwmark> table <fwmark>      (ignore ENOENT - already gone)
+ip route del default via <target-ip> table <fwmark>   (ignore ESRCH - already gone)
 ```
 
 **Why `RouteReplace` instead of `RouteAdd`:**
 - Container restart: kernel state (rules/routes) survives but in-memory state is lost
 - After `CleanupStaleRules` at startup removes everything, `RouteReplace` handles both fresh creation and stale route overwrite
-- Single atomic operation — no need to check if route exists first
+- Single atomic operation - no need to check if route exists first
 
 **Why `ensureRule` instead of `RuleAdd`:**
 - Linux allows duplicate ip rules (same mark + table)
@@ -428,7 +428,7 @@ ip route del default via <target-ip> table <fwmark>   (ignore ESRCH — already 
 - `RouteReplace` and `ensureRule` make rebuild safe (no duplicate rules, atomic route creation)
 - Brief period after startup where targets are being re-added is acceptable (BGP reconvergence happens anyway during container restart)
 
-**Caveat — nftables VIP set:** `CleanupStaleRules` clears only ip rules/routes, not the shared
+**Caveat - nftables VIP set:** `CleanupStaleRules` clears only ip rules/routes, not the shared
 nftables VIP set. That set lives in the kernel and can survive an ungraceful restart, while the
 controller's in-memory `currentVIPs` starts empty. If the first reconcile's desired VIP set is
 also empty, the change-detection skips the write and stale VIPs may linger in the set. This is
@@ -448,7 +448,7 @@ set. See the note on `configureNftables`.
 | `reconcileTargets` | `nfqlb activate` fails | Mark target as broken, accumulate error | Yes |
 | `AddTarget` | Route creation fails | Mark broken, cleanup rule, return error | Yes (via caller) |
 | `reconcileFlows` | `nfqlb flow-set` fails | Log error, accumulate | Yes |
-| `reconcileFlows` | `deleteAllFlows` fails (empty-routes path) | Log error, not propagated | No (retry would be in vain — see note) |
+| `reconcileFlows` | `deleteAllFlows` fails (empty-routes path) | Log error, not propagated | No (retry would be in vain - see note) |
 | `reconcileFlows` | Gateway not found (VIP config) | Log at V(1), skip VIP config | No (Gateway watch re-enqueues) |
 | `reconcileFlows` | nftables SetVIPs fails / other Gateway fetch error | Return error | Yes |
 | `cleanupDistributionGroup` | `nfqlb delete` fails | Log error, return error | Yes |
@@ -457,9 +457,9 @@ set. See the note on `configureNftables`.
 ### Broken Target Semantics
 
 - A target in the `broken` set means either route creation or nfqlb activation partially failed
-- Next reconcile calls `AddTarget` again — the `broken` flag forces full activation (routes + nfqlb activate) instead of the route-only fast path
+- Next reconcile calls `AddTarget` again - the `broken` flag forces full activation (routes + nfqlb activate) instead of the route-only fast path
 - Prevents targets stuck in inconsistent state (routes exist but not activated, or vice versa)
-- On `DeleteTarget` failure, the target remains in `broken` — next reconcile retries deletion
+- On `DeleteTarget` failure, the target remains in `broken` - next reconcile retries deletion
 
 ### Error Accumulation Pattern
 
@@ -476,7 +476,7 @@ All user-controlled inputs are validated before passing to `exec.Command`:
 |---|---|
 | Instance/flow names | Alphanumeric, dash, underscore, dot; no leading dash; non-empty |
 | CIDRs | Must pass `net.ParseCIDR` |
-| Port ranges | Numeric, 0–65535, start ≤ end |
+| Port ranges | Numeric, 0-65535, start ≤ end |
 | Protocols | Only `tcp`, `udp`, `sctp` |
 | Target IPs | Must pass `net.ParseIP` |
 | Target identifiers | Must be in `[0, maxTargets)` |
@@ -581,7 +581,7 @@ chain snat-local {
 **Matching logic** (both IPv4 and IPv6):
 
 1. Protocol must be ICMP/ICMPv6
-2. Packet mark must be non-zero (confirms the original packet was processed by NFQLB — requires `net.ipv4.fwmark_reflect=1` and `net.ipv6.fwmark_reflect=1` sysctls)
+2. Packet mark must be non-zero (confirms the original packet was processed by NFQLB - requires `net.ipv4.fwmark_reflect=1` and `net.ipv6.fwmark_reflect=1` sysctls)
 3. Destination is NOT a VIP (avoids mangling ICMP destined to VIPs, which are handled by the output chain)
 4. Source is NOT already a VIP (skip if already rewritten)
 5. ICMP type/code matches Frag Needed (IPv4) or Packet Too Big (IPv6)
@@ -660,7 +660,7 @@ token `any`. Because any entry covering all ports means the whole set covers all
 ports, a port set containing `"any"` (or an explicit `"0-65535"`) collapses to a
 single `0-65535` element. That full-range port set then causes the
 `--sports`/`--dports` flag to be omitted entirely (`anyPortRange`), so nfqlb
-matches all ports. The common path — no full-range entry — returns the input
+matches all ports. The common path - no full-range entry - returns the input
 unchanged with no allocation. The `AnyPort` (`"any"`) and `MaxPortRange`
 (`"0-65535"`) constants live in the `internal/nfqlb` package so the controller
 (and other consumers) share a single definition of "all ports".
@@ -742,15 +742,15 @@ Environment variables are only applied when the corresponding flag is not explic
 
 The stateless-load-balancer container requires:
 
-- **`NET_ADMIN` capability** — required for netlink operations, nftables rule management, and NFQLB queue attachment
-- **Access to `/dev/shm`** — NFQLB uses shared memory for the Maglev lookup tables
-- **`nfqlb` binary in `$PATH`** — the NFQLB userspace load balancer binary must be available in the container image
-- **Shared volume at `/var/run/meridio/`** — readiness files are written here to signal the router container that a DistributionGroup has ready targets (files prefixed with `lb-ready-`)
-- **No leader election** — each Pod runs its own independent load-balancer instance (leader election is disabled)
+- **`NET_ADMIN` capability** - required for netlink operations, nftables rule management, and NFQLB queue attachment
+- **Access to `/dev/shm`** - NFQLB uses shared memory for the Maglev lookup tables
+- **`nfqlb` binary in `$PATH`** - the NFQLB userspace load balancer binary must be available in the container image
+- **Shared volume at `/var/run/meridio/`** - readiness files are written here to signal the router container that a DistributionGroup has ready targets (files prefixed with `lb-ready-`)
+- **No leader election** - each Pod runs its own independent load-balancer instance (leader election is disabled)
 
 ## Readiness Signaling
 
-The LoadBalancer controller signals target availability to the router container via the filesystem. This gates VIP advertisement — BIRD only announces VIPs over BGP when at least one DistributionGroup has ready targets.
+The LoadBalancer controller signals target availability to the router container via the filesystem. This gates VIP advertisement - BIRD only announces VIPs over BGP when at least one DistributionGroup has ready targets.
 
 ### Mechanism
 
@@ -784,20 +784,20 @@ The router controller calls `Readiness.Watch(ctx)` which uses `fsnotify` to dete
 
 | Mock | Location | Purpose |
 |------|----------|---------|
-| `mockNFQLB` | `controller_test.go` (inline) | Implements `nfqlbManager` — tracks instances in a map |
-| `mockNFQLBInstance` | `controller_test.go` (inline) | Implements `nfqlbInstance` — records AddFlow/DeleteFlow/AddTarget/DeleteTarget calls |
-| `mockNftablesManager` | `nftables_mock.go` | Implements `nftablesManager` — tracks Setup/SetVIPs/Cleanup calls |
+| `mockNFQLB` | `controller_test.go` (inline) | Implements `nfqlbManager` - tracks instances in a map |
+| `mockNFQLBInstance` | `controller_test.go` (inline) | Implements `nfqlbInstance` - records AddFlow/DeleteFlow/AddTarget/DeleteTarget calls |
+| `mockNftablesManager` | `nftables_mock.go` | Implements `nftablesManager` - tracks Setup/SetVIPs/Cleanup calls |
 | `readiness.NewManager("")` | (disabled mode) | No-op readiness signaling for tests |
 
 **Test Categories:**
 
-- **`belongsToGateway`** — Direct parentRef matching, indirect L34Route matching, different-Gateway rejection
-- **`reconcileNFQLBInstance`** — Instance creation, idempotency, sequential ID assignment, freed ID reuse
-- **`reconcileTargets`** — Target activation/deactivation, non-ready endpoint filtering, missing identifier handling
-- **`reconcileFlows`** — Flow creation from L34Route, route filtering by Gateway/DG, flow deletion
-- **`endpointSliceEnqueue`** — GatewayRef filtering, ownerReference-based DG lookup
-- **`l34RouteEnqueue`** — Gateway+DG matching, wrong Gateway rejection
-- **Cleanup on deletion** — Full state cleanup when DG NotFound
+- **`belongsToGateway`** - Direct parentRef matching, indirect L34Route matching, different-Gateway rejection
+- **`reconcileNFQLBInstance`** - Instance creation, idempotency, sequential ID assignment, freed ID reuse
+- **`reconcileTargets`** - Target activation/deactivation, non-ready endpoint filtering, missing identifier handling
+- **`reconcileFlows`** - Flow creation from L34Route, route filtering by Gateway/DG, flow deletion
+- **`endpointSliceEnqueue`** - GatewayRef filtering, ownerReference-based DG lookup
+- **`l34RouteEnqueue`** - Gateway+DG matching, wrong Gateway rejection
+- **Cleanup on deletion** - Full state cleanup when DG NotFound
 
 **Running tests:**
 
@@ -929,9 +929,9 @@ internal/common/config/
 ## References
 
 - [ADR-001: DistributionGroup as Primary Resource](../architecture/adr-001-distributiongroup-primary-resource.md)
-- [NFQLB (nfqueue-loadbalancer)](https://github.com/Nordix/nfqueue-loadbalancer) — upstream documentation for the Maglev load balancer binary
-- [Gateway Controller](gateway.md) — manages LB Deployment lifecycle and Gateway status
-- [DistributionGroup Controller](distributiongroup.md) — manages LoadBalancerEndpointSlices consumed by this controller
-- [Router Controller](router.md) — consumes readiness files to gate VIP advertisement
-- [Troubleshooting Guide — Load Balancer](../operations/troubleshooting.md#load-balancer-nfqlb) — debugging commands for nfqlb, nftables, and policy routing
-- [Constraints and Limitations](../operations/constraints-and-limitations.md) — known limitations affecting LB behavior
+- [NFQLB (nfqueue-loadbalancer)](https://github.com/Nordix/nfqueue-loadbalancer) - upstream documentation for the Maglev load balancer binary
+- [Gateway Controller](gateway.md) - manages LB Deployment lifecycle and Gateway status
+- [DistributionGroup Controller](distributiongroup.md) - manages LoadBalancerEndpointSlices consumed by this controller
+- [Router Controller](router.md) - consumes readiness files to gate VIP advertisement
+- [Troubleshooting Guide - Load Balancer](../operations/troubleshooting.md#load-balancer-nfqlb) - debugging commands for nfqlb, nftables, and policy routing
+- [Constraints and Limitations](../operations/constraints-and-limitations.md) - known limitations affecting LB behavior

@@ -150,7 +150,7 @@ func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod
 
 		ifName := scrapeInterfaceForSubnet(pod, subnet)
 		if ifName == "" {
-			continue // Pod has no interface in this subnet — skip domain
+			continue // Pod has no interface in this subnet - skip domain
 		}
 
 		domains = append(domains, meridio2v1alpha1.NetworkDomain{
@@ -181,7 +181,7 @@ func (r *Reconciler) buildGatewayConnection(ctx context.Context, pod *corev1.Pod
 }
 
 // listMatchingDGs returns DistributionGroups whose selector matches the Pod's labels.
-// This is the reverse of the DG controller's Pod listing — O(DGs) per reconcile.
+// This is the reverse of the DG controller's Pod listing - O(DGs) per reconcile.
 func (r *Reconciler) listMatchingDGs(ctx context.Context, pod *corev1.Pod) ([]meridio2v1alpha1.DistributionGroup, error) {
 	var dgList meridio2v1alpha1.DistributionGroupList
 	listOpts := []client.ListOption{client.InNamespace(pod.Namespace)}

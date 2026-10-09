@@ -8,7 +8,7 @@ The Sidecar controller runs as a container in each application Pod, configuring 
 
 ### Core Concepts
 
-**EndpointNetworkConfiguration (ENC)**: A per-Pod CR (named after the Pod) that declares the desired network state — which Gateways the Pod connects to, which VIPs to assign, and which next-hops to use for source-based routing.
+**EndpointNetworkConfiguration (ENC)**: A per-Pod CR (named after the Pod) that declares the desired network state - which Gateways the Pod connects to, which VIPs to assign, and which next-hops to use for source-based routing.
 
 **GatewayConnection**: A section within the ENC representing connectivity to a single Gateway. Each Gateway gets a dedicated routing table ID.
 
@@ -20,7 +20,7 @@ The Sidecar controller runs as a container in each application Pod, configuring 
 
 - **Stateless**: All state is derived from the ENC spec on each reconcile. In-memory state (table ID allocations, managed VIP sets) is reconstructable.
 - **Partial failure tracking**: `syncVIPs` always returns the actual managed set, even on error, so the controller stays in sync with kernel state.
-- **Separate error semantics**: ENC content errors (invalid VIP, bad CIDR) don't requeue — wait for user fix. Interface-not-found is transient (interface may appear) — requeue with backoff. Netlink errors (transient) also requeue.
+- **Separate error semantics**: ENC content errors (invalid VIP, bad CIDR) don't requeue - wait for user fix. Interface-not-found is transient (interface may appear) - requeue with backoff. Netlink errors (transient) also requeue.
 - **No finalizers**: ENC deletion triggers `cleanupAll` via the NotFound path. No external resources to clean up beyond the Pod's own network namespace.
 - **OwnerReference validation**: The sidecar verifies the ENC's ownerReference points to its own Pod UID before acting. Prevents applying stale config from a previous Pod incarnation that shared the same name.
 - **Separate ServiceAccount**: Uses its own ServiceAccount, distinct from controller-manager and stateless-load-balancer. RBAC is hand-maintained separately from the controller-manager's Role/ClusterRole.
@@ -44,20 +44,20 @@ EndpointNetworkConfiguration (1:1 with Pod, same name)
 - Policy routing rules: `from <VIP> lookup <tableID>` (scoped per table)
 - Default routes in per-Gateway tables: `default via <nextHops>` (ECMP)
 
-**ECMP hashing:** Linux multipath routing uses Layer 3 hashing by default (`net.ipv4.fib_multipath_hash_policy=0`, `net.ipv6.fib_multipath_hash_policy=0`), so L4 port information is not included in the hash. This can result in poor distribution when many flows share the same source/destination IP pair. Setting the respective sysctl to `1` enables Layer 4 (5-tuple) hashing. The sidecar does not configure these sysctls — it is left to the cluster operator or Pod spec.
+**ECMP hashing:** Linux multipath routing uses Layer 3 hashing by default (`net.ipv4.fib_multipath_hash_policy=0`, `net.ipv6.fib_multipath_hash_policy=0`), so L4 port information is not included in the hash. This can result in poor distribution when many flows share the same source/destination IP pair. Setting the respective sysctl to `1` enables Layer 4 (5-tuple) hashing. The sidecar does not configure these sysctls - it is left to the cluster operator or Pod spec.
 
 ## Reconciliation Flow
 
 ### 1. Fetch ENC
 - Return early if not found → `cleanupAll` (flush all tables, remove all VIPs)
-- Verify ownerReference points to this Pod's UID — skip if not owned (stale ENC from previous Pod incarnation)
+- Verify ownerReference points to this Pod's UID - skip if not owned (stale ENC from previous Pod incarnation)
 - Initialize `tableIDAllocator` and `managedVIPs` on first reconcile
 - Default `netlinkOps` to real implementation if not injected (test hook)
 
 ### 2. Build Desired State (`buildDesiredState`)
 - For each Gateway: allocate a table ID (stable per gateway name)
 - For each Domain: resolve interface via `findInterfaceBySubnet`, parse VIPs and next-hops
-- **On error**: update status to `ConfigurationFailed`. Content errors (invalid VIP, bad CIDR) return `nil` (no requeue — wait for ENC fix). `InterfaceNotFoundError` returns the error (requeue — interface may appear).
+- **On error**: update status to `ConfigurationFailed`. Content errors (invalid VIP, bad CIDR) return `nil` (no requeue - wait for ENC fix). `InterfaceNotFoundError` returns the error (requeue - interface may appear).
 
 ### 3. Apply State (`applyState`)
 
@@ -127,11 +127,11 @@ The controller keeps `tableIDs`, `managedVIPs`, and `nl` in memory. On restart (
 | 2 | **Orphaned routes on table ID shift** | Medium |
 | 3 | **Orphaned rules on table ID shift** | Medium |
 
-Note: VIP re-add after restart is not an issue — `syncVIPs` tolerates `EEXIST` on add and `EADDRNOTAVAIL` on delete (see [Netlink Errno Tolerance](#netlink-errno-tolerance)).
+Note: VIP re-add after restart is not an issue - `syncVIPs` tolerates `EEXIST` on add and `EADDRNOTAVAIL` on delete (see [Netlink Errno Tolerance](#netlink-errno-tolerance)).
 
 #### Issue 1: VIP leak
 
-Without recovery, `managedVIPs` would be empty after restart, so VIPs from a previous run that are no longer desired would never be removed — `syncVIPs` only removes VIPs within its managed set.
+Without recovery, `managedVIPs` would be empty after restart, so VIPs from a previous run that are no longer desired would never be removed - `syncVIPs` only removes VIPs within its managed set.
 
 #### Issues 2 & 3: Orphaned routes and rules on table ID shift
 
@@ -146,17 +146,17 @@ Before restart:
 
 After restart, `gw-a` is removed from the ENC:
 - Without recovery, allocator starts fresh: `gw-b → 50000` (first and only allocation)
-- Controller writes gw-b's routes into table 50000 via `RouteReplace`, overwriting gw-a's old routes — this is fine
+- Controller writes gw-b's routes into table 50000 via `RouteReplace`, overwriting gw-a's old routes - this is fine
 - But table 50001 (gw-b's old table) is never allocated to any gateway
 - `flushTable` only runs for gateways removed from the *current* ENC spec, and the allocator doesn't know 50001 was ever used
 - `syncRules` only scans rules matching its own `tableID`, so rules pointing to 50001 are never cleaned
 - Result: table 50001 retains stale routes and rules indefinitely
 
-Table ID shift is a latent condition that builds up during normal operation through gateway add/remove cycles, but only manifests after a restart. For example: `gw-c → 50000`, `gw-d → 50001` are added first, then `gw-a → 50002`, `gw-b → 50003`. Later `gw-c` and `gw-d` are removed (properly cleaned, IDs 50000-50001 freed). Running state is now `gw-a → 50002`, `gw-b → 50003` — correct while the process is alive. After restart without recovery, the fresh allocator assigns `gw-a → 50000`, `gw-b → 50001`. Tables 50002 and 50003 are now orphaned with stale routes and rules.
+Table ID shift is a latent condition that builds up during normal operation through gateway add/remove cycles, but only manifests after a restart. For example: `gw-c → 50000`, `gw-d → 50001` are added first, then `gw-a → 50002`, `gw-b → 50003`. Later `gw-c` and `gw-d` are removed (properly cleaned, IDs 50000-50001 freed). Running state is now `gw-a → 50002`, `gw-b → 50003` - correct while the process is alive. After restart without recovery, the fresh allocator assigns `gw-a → 50000`, `gw-b → 50001`. Tables 50002 and 50003 are now orphaned with stale routes and rules.
 
-A simpler variant: the gateway set shrinks while the sidecar is down (e.g. `gw-b` removed from the ENC during a restart). The running sidecar would have cleaned table 50001 via the stale gateway path, but since it wasn't running, the cleanup never happened. After restart without recovery, only `gw-a → 50000` is allocated — table 50001 retains gw-b's old routes and rules with no code path to reach it.
+A simpler variant: the gateway set shrinks while the sidecar is down (e.g. `gw-b` removed from the ENC during a restart). The running sidecar would have cleaned table 50001 via the stale gateway path, but since it wasn't running, the cleanup never happened. After restart without recovery, only `gw-a → 50000` is allocated - table 50001 retains gw-b's old routes and rules with no code path to reach it.
 
-Note: a pure ID swap (same gateways, different assignment) is self-healing — `RouteReplace` overwrites old routes and `syncRules` cleans stale rules in all actively-allocated tables. The problem is only with *unallocated* tables that no gateway claims.
+Note: a pure ID swap (same gateways, different assignment) is self-healing - `RouteReplace` overwrites old routes and `syncRules` cleans stale rules in all actively-allocated tables. The problem is only with *unallocated* tables that no gateway claims.
 
 ### Fix Strategy
 
@@ -168,7 +168,7 @@ The core challenge is restoring the in-memory `gatewayName → tableID` mapping 
 Seed `managedVIPs` from kernel state (/32 and /128 addresses on secondary interfaces), scan rules in the managed table ID range, flush orphaned tables. Simple and correct, but causes a brief traffic disruption (VIPs removed and re-added in a single reconcile cycle) since the `gatewayName → tableID` mapping cannot be recovered from kernel state alone.
 
 **2. nftables maps (`VIP → tableID`):**
-Persist `VIP → tableID` in nftables maps (`ipv4_addr : mark`, `ipv6_addr : mark`). On restart, cross-reference with the current ENC to recover gateway-to-table mappings. The `google/nftables` Go library (already a dependency) supports this. However, VIPs are not stable gateway identifiers — if VIPs are reshuffled between gateways while the sidecar is down, the recovered mapping is incorrect.
+Persist `VIP → tableID` in nftables maps (`ipv4_addr : mark`, `ipv6_addr : mark`). On restart, cross-reference with the current ENC to recover gateway-to-table mappings. The `google/nftables` Go library (already a dependency) supports this. However, VIPs are not stable gateway identifiers - if VIPs are reshuffled between gateways while the sidecar is down, the recovered mapping is incorrect.
 
 **3. `emptyDir` volume (persist `gatewayName → tableID` file):**
 Write a mapping file to an `emptyDir` mount on each reconcile. `emptyDir` survives container restarts within the same Pod (matching network namespace lifetime). On restart, read the file to seed the allocator. Simple and reliable, but the file is easier to tamper with than kernel-resident state.
@@ -191,7 +191,7 @@ The mapping file is saved after each successful reconcile and loaded at startup.
 | `buildDesiredState` | Invalid VIP, bad CIDR, table ID exhausted | `ConfigurationFailed` | No | User must fix ENC |
 | `buildDesiredState` | Interface not found | `ConfigurationFailed` | Yes | Transient, interface may appear |
 | `applyState` | Netlink EPERM, ENOMEM, device not found | `ConfigurationFailed` | Yes | Transient, may resolve |
-| Status update conflict | Concurrent ENC update | — | Yes | Standard optimistic concurrency |
+| Status update conflict | Concurrent ENC update | - | Yes | Standard optimistic concurrency |
 
 ### Netlink Errno Tolerance
 
@@ -199,8 +199,8 @@ The mapping file is saved after each successful reconcile and loaded at startup.
 
 | Operation | Tolerated Errno | Kernel Constant | Rationale |
 |-----------|----------------|-----------------|-----------|
-| `AddrAdd` | `EEXIST` (errno 17) | `EEXIST` | Address already present on the interface — desired state achieved. |
-| `AddrDel` | `EADDRNOTAVAIL` (errno 99) | `EADDRNOTAVAIL` | Address not found on the interface — desired state achieved. |
+| `AddrAdd` | `EEXIST` (errno 17) | `EEXIST` | Address already present on the interface - desired state achieved. |
+| `AddrDel` | `EADDRNOTAVAIL` (errno 99) | `EADDRNOTAVAIL` | Address not found on the interface - desired state achieved. |
 
 Both errnos are returned by the kernel's netlink address management (`inet_rtm_newaddr` / `inet_rtm_deladdr` in `net/ipv4/devinet.c`, `inet6_addr_add` / `inet6_addr_del` in `net/ipv6/addrconf.c`). The behavior is consistent across IPv4 and IPv6.
 
@@ -256,11 +256,11 @@ tests the sidecar integrated with the full Gateway API stack.
 
 ---
 
-### Standalone Sidecar — Multi-Gateway via Hand-Crafted ENC
+### Standalone Sidecar - Multi-Gateway via Hand-Crafted ENC
 
 Tests the sidecar controller in isolation by simulating connectivity to two Gateways
 through manually crafted ENC resources. No controller-manager, Gateway, or LB
-infrastructure is required — only the CRDs, Multus, and the target application.
+infrastructure is required - only the CRDs, Multus, and the target application.
 
 **Prerequisites:**
 - Meridio-2 CRDs installed
@@ -403,7 +403,7 @@ kubectl exec -n meridio-2 "$TARGET_POD" -c example-target -- ip addr show net1
 kubectl exec -n meridio-2 "$TARGET_POD" -c example-target -- ip addr show net2
 # Expected: 30.0.0.1/32, 3000::1/128
 
-# Policy rules — each gateway gets its own table
+# Policy rules - each gateway gets its own table
 kubectl exec -n meridio-2 "$TARGET_POD" -c example-target -- ip rule show
 kubectl exec -n meridio-2 "$TARGET_POD" -c example-target -- ip -6 rule show
 # Expected: "from 20.0.0.1 lookup 50000", "from 20.0.0.2 lookup 50000"
@@ -473,7 +473,7 @@ kubectl exec -n meridio-2 "$TARGET_POD" -c example-target -- ip route show table
 # Expected: ECMP routes still intact
 ```
 
-#### Test 5: Delete ENC — Verify Full Cleanup
+#### Test 5: Delete ENC - Verify Full Cleanup
 
 ```bash
 kubectl delete enc "$TARGET_POD" -n meridio-2

@@ -40,7 +40,7 @@ import (
 // (`nfqlb show --shm=<dg>`), which reveals how many of the expected endpoints
 // are actually programmed into the data plane. It also dumps the ENC Ready
 // state for the target selector and the pod->node placement, so control-plane
-// "Ready" can be compared against data-plane "programmed/routable" — the exact
+// "Ready" can be compared against data-plane "programmed/routable" - the exact
 // distinction between a slow-but-correct convergence and a genuine black hole.
 type DataPlaneDiagnostics struct {
 	Namespace string

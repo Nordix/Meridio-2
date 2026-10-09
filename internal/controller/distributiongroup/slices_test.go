@@ -52,7 +52,7 @@ func newTestPod(uid, name string, ips ...string) podWithAddresses {
 }
 
 // testGWCtx returns a minimal Gateway context for tests that don't exercise scraping.
-// Only the gateway identity (name/namespace) matters — it populates spec.gatewayRef.
+// Only the gateway identity (name/namespace) matters - it populates spec.gatewayRef.
 func testGWCtx() gatewayNetworkContext {
 	return gatewayNetworkContext{
 		gateway: client.ObjectKey{Name: "gw-a", Namespace: "default"},
@@ -243,7 +243,7 @@ func TestCalculateMaglevSlices_CapacityExceeded(t *testing.T) {
 		},
 	}
 
-	// 6 Pods, capacity 4 — 2 should be excluded
+	// 6 Pods, capacity 4 - 2 should be excluded
 	scrapedPods := make([]podWithAddresses, 6)
 	for i := range 6 {
 		scrapedPods[i] = newTestPod(
@@ -608,7 +608,7 @@ func TestCreateSlices_CompactionPreservesFullSlices(t *testing.T) {
 		t.Errorf("Expected second slice to be 'slice-1', got %q", slices[1].Name)
 	}
 
-	// slice-0: full, untouched — same UIDs in original order
+	// slice-0: full, untouched - same UIDs in original order
 	if len(slices[0].Spec.Endpoints) != 10 {
 		t.Fatalf("Expected slice-0 to remain full (10), got %d", len(slices[0].Spec.Endpoints))
 	}

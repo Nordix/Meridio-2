@@ -43,7 +43,7 @@ func vpnGatewayExecPrefix() string {
 // -> SBR next-hop, plus IPv6 neighbor discovery for freshly programmed routes)
 // does not always settle within 10s on a loaded runner. ctraffic's built-in
 // reconnect/-retries logic would eventually succeed, but the window closed
-// first, freezing transient in-flight retries as permanent "lost" — an
+// first, freezing transient in-flight retries as permanent "lost" - an
 // intermittent, IPv6-leaning false failure of the zero-loss assertion.
 //
 // A longer window gives the built-in reconnect/retry the time it needs to
@@ -274,7 +274,7 @@ func VerifyPMTU(vip string, size int) error {
 }
 
 // TrafficExpectation describes one protocol's expected traffic behavior
-// against a VIP — the common shape shared by TCP/UDP checks across nearly
+// against a VIP - the common shape shared by TCP/UDP checks across nearly
 // every suite: send N connections, expect zero loss, and expect the
 // connections to land on a known set of targets.
 //

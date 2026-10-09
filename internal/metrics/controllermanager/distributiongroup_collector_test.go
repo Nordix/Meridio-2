@@ -74,7 +74,7 @@ func dcReadyCondition(status metav1.ConditionStatus) metav1.Condition {
 }
 
 // dcNewOwnedSlice builds a LoadBalancerEndpointSlice owned by dg (real ownerReference, via
-// controllerutil.SetControllerReference — mirrors production, not a hand-rolled OwnerReferences
+// controllerutil.SetControllerReference - mirrors production, not a hand-rolled OwnerReferences
 // literal) with endpointCount endpoints, scoped to the given Gateway.
 func dcNewOwnedSlice(
 	t *testing.T, dg *meridio2v1alpha1.DistributionGroup, name, gwName, gwNamespace string, endpointCount int,
@@ -187,7 +187,7 @@ func TestDistributionGroupCollector_EndpointsPerGateway_OwnedSlicesOnly(t *testi
 	}
 	owned := dcNewOwnedSlice(t, dg, "slice-owned", "gw-a", "ns-a", 3)
 
-	// Same distributionGroupName, but NOT owned by dg (no ownerReference) — a manually-created
+	// Same distributionGroupName, but NOT owned by dg (no ownerReference) - a manually-created
 	// or stale slice that happens to name-match. Must be excluded from the count entirely.
 	notOwned := &meridio2v1alpha1.LoadBalancerEndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{Name: "slice-not-owned", Namespace: "ns-a"},
@@ -252,7 +252,7 @@ meridio_2_distributiongroup_endpoints{dg="dg-a",gateway="gw-referenced-only",gat
 // TestDistributionGroupCollector_EmptyUnion_FallsBackToEmptyGatewayLabel verifies that a DG with
 // no accepted reference and no owned slices (genuinely unbound) still emits a single
 // endpoints=0/max_endpoints series under gateway=""/gateway_namespace="", rather than emitting no
-// series at all — so an unbound DG stays visible in the metric stream.
+// series at all - so an unbound DG stays visible in the metric stream.
 func TestDistributionGroupCollector_EmptyUnion_FallsBackToEmptyGatewayLabel(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: "dg-unbound", Namespace: "ns-a"},

@@ -48,7 +48,7 @@ type configErrorRecorder interface {
 // ServiceAccount (separate from controller-manager and stateless-load-balancer).
 // Watches a single ENC CR (named after the Pod).
 //
-// Required RBAC (managed separately — no kubebuilder markers to avoid
+// Required RBAC (managed separately - no kubebuilder markers to avoid
 // polluting the shared role.yaml via `make manifests`):
 //   - meridio-2.nordix.org endpointnetworkconfigurations: get, list, watch
 //   - meridio-2.nordix.org endpointnetworkconfigurations/status: get, update, patch
@@ -63,7 +63,7 @@ type Controller struct {
 	mappingFile string
 
 	// ConfigErrors counts failed netlink operations by reason. Nil-safe: when metrics are
-	// disabled, leave it as a typed-nil *ConfigErrors (Inc no-ops on a nil receiver) — do NOT
+	// disabled, leave it as a typed-nil *ConfigErrors (Inc no-ops on a nil receiver) - do NOT
 	// assign a bare-nil interface, which would panic on Inc.
 	ConfigErrors configErrorRecorder
 
@@ -107,8 +107,8 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	// Build desired state. Content errors (invalid VIP, bad CIDR) don't requeue —
-	// wait for ENC fix. Interface-not-found is deemed transient — requeue.
+	// Build desired state. Content errors (invalid VIP, bad CIDR) don't requeue -
+	// wait for ENC fix. Interface-not-found is deemed transient - requeue.
 	domains, err := c.buildDesiredState(&enc)
 	if err != nil {
 		log.Error(err, "failed to build desired state")
@@ -125,7 +125,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil // don't requeue; wait for ENC fix
 	}
 
-	// Apply to kernel. Failures here may be transient netlink errors — requeue.
+	// Apply to kernel. Failures here may be transient netlink errors - requeue.
 	if err := c.applyState(ctx, domains); err != nil {
 		log.Error(err, "failed to apply network configuration")
 		if statusErr := c.updateStatus(ctx, &enc, err); statusErr != nil {
@@ -180,8 +180,8 @@ func (c *Controller) buildDesiredState(enc *meridio2v1alpha1.EndpointNetworkConf
 			if err != nil {
 				// A missing or unlistable interface is a link-layer problem (the secondary
 				// interface the sidecar needs is absent or can't be enumerated), counted as
-				// reasonLink. This includes InterfaceNotFoundError, which — while requeued as
-				// transient — still means the required interface is not present.
+				// reasonLink. This includes InterfaceNotFoundError, which - while requeued as
+				// transient - still means the required interface is not present.
 				c.ConfigErrors.Inc(sidecarmetrics.ReasonLink)
 				return nil, fmt.Errorf("gateway %s domain %s: %w", gw.Name, domain.Name, err)
 			}

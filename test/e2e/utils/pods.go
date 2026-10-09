@@ -105,7 +105,7 @@ func NodesForPods(namespace, label string) map[string]struct{} {
 //
 // Control-plane nodes are excluded server-side with the label selector
 // '!node-role.kubernetes.io/control-plane', which is reliable regardless of the
-// (typically empty) label value — avoiding brittle jsonpath present/absent
+// (typically empty) label value - avoiding brittle jsonpath present/absent
 // detection.
 func SchedulableWorkerCount() int {
 	cmd := exec.Command("kubectl", "get", "nodes",

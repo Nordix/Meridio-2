@@ -422,7 +422,7 @@ var _ = Describe("L34Route Webhook", func() {
 
 		It("Should not count the explicit full range toward the limit", func() {
 			// "0-65535" is treated as full range by the controller (anyPortRange),
-			// which omits the flag entirely — nothing is serialized to nfqlb — so the
+			// which omits the flag entirely - nothing is serialized to nfqlb - so the
 			// data-plane length limit must not apply. (A full-range entry overlaps all
 			// other ports, so a full-range set is the single element by construction.)
 			obj.Spec.SourcePorts = []string{"0-65535"}

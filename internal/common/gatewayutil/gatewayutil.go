@@ -39,7 +39,7 @@ import (
 // Exported as a shared constant, rather than left as separate literals in the writer
 // (status.go) and reader (IsGatewayAcceptedByController below), specifically to keep IsGatewayAcceptedByController's
 // suffix match anchored to "GatewayAcceptedMessagePrefix + controllerName" instead of a bare
-// controllerName suffix: matching only strings.HasSuffix(message, controllerName) is fragile —
+// controllerName suffix: matching only strings.HasSuffix(message, controllerName) is fragile -
 // controllerName is a user-configurable, unbounded string (see --controller-name), so a shorter
 // controller name that happens to be a suffix of another one (e.g. "org/gateway-controller" is
 // a suffix of "meridio-2.nordix.org/gateway-controller") would false-positive match. Anchoring
@@ -53,7 +53,7 @@ const GatewayAcceptedMessagePrefix = "Gateway accepted by "
 //
 // Gateway API allows multiple controllers to interact with the same Gateway object (e.g. across
 // a GatewayClass change), so checking Type/Status alone (as meta.IsStatusConditionTrue does) is
-// not sufficient here — an Accepted=True condition set by a different controller must not be
+// not sufficient here - an Accepted=True condition set by a different controller must not be
 // treated as "accepted by us". This package's callers rely on the Gateway reconciler encoding
 // the accepting controller's name after GatewayAcceptedMessagePrefix (see
 // internal/controller/gateway/status.go's acceptedMessage); there is currently no dedicated,
@@ -74,7 +74,7 @@ func IsGatewayAcceptedByController(gw *gatewayv1.Gateway, controllerName string)
 
 // IsGatewayProgrammed reports whether gw's Programmed status condition is currently True. Unlike
 // Accepted, Programmed is only ever set by the single controller that owns the Gateway (once
-// Accepted), so no message-based ownership check is needed here — a plain
+// Accepted), so no message-based ownership check is needed here - a plain
 // meta.IsStatusConditionTrue is sufficient and preferred over a hand-rolled loop.
 func IsGatewayProgrammed(gw *gatewayv1.Gateway) bool {
 	return meta.IsStatusConditionTrue(gw.Status.Conditions, string(gatewayv1.GatewayConditionProgrammed))

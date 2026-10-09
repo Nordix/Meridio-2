@@ -1,6 +1,6 @@
 # Meridio-2: Producer-Consumer Architecture for Endpoint Data
 
-**Context:** Meridio-2 Maglev ID allocation design — architectural considerations for
+**Context:** Meridio-2 Maglev ID allocation design - architectural considerations for
 how the controller-manager exposes endpoint data to consumers.
 
 ---
@@ -10,10 +10,10 @@ how the controller-manager exposes endpoint data to consumers.
 The Meridio-2 controller-manager (CM) produces endpoint data (Pod IPs, Maglev IDs,
 readiness). Multiple consumers need this data in different forms:
 
-- **LBs**: Need all endpoints for a DG — Maglev IDs, IPs per family, readiness
+- **LBs**: Need all endpoints for a DG - Maglev IDs, IPs per family, readiness
 - **App-side consumer** (future): Needs only its own Pod's Maglev ID across all DGs it
   belongs to, grouped by DG (and optionally Gateway). Like the network sidecar consuming
-  the ENC, this consumer should be simple — it reads a per-Pod resource produced by a
+  the ENC, this consumer should be simple - it reads a per-Pod resource produced by a
   dedicated CM-side controller, rather than piecing together DG/Gateway/EndpointSlice
   relationships itself. The CM bears the complexity of resolving the architecture; the
   sidecar just reads explicit fields.
@@ -25,7 +25,7 @@ Zone field abuse, multi-object correlation) are tightly coupled to the CM's impl
 
 ## What makes this harder than typical API versioning
 
-The "schema" isn't just CRD fields — it includes conventions on top:
+The "schema" isn't just CRD fields - it includes conventions on top:
 - How many objects exist per DG (capacity splitting)
 - How to correlate entries across objects (same Maglev ID = same Pod)
 - What readiness means operationally (act on it or ignore it?)
@@ -48,7 +48,7 @@ needs.
 - No data duplication
 
 **Cons:**
-- All consumers coupled to the same schema — a field added for one consumer's needs
+- All consumers coupled to the same schema - a field added for one consumer's needs
   bloats the resource for all others
 - Consumers carry interpretation logic (which fields are relevant to me? how do I filter?)
 - Schema changes affect all consumers simultaneously
@@ -61,13 +61,13 @@ The CM produces purpose-built resources for each consumer class. Each resource c
 exactly what that consumer needs, pre-digested.
 
 **Pros:**
-- Consumer logic is minimal — read fields, no interpretation
+- Consumer logic is minimal - read fields, no interpretation
 - Changing the CM's internal model doesn't affect consumers as long as their resource
   schema stays stable
 - Different consumers evolve independently (LB resource gets a new field without affecting
   app-side resource)
 - CRD versioning works cleanly per consumer type
-- The resource IS the contract — no side-channel conventions
+- The resource IS the contract - no side-channel conventions
 - CM internals can change freely (different Pod scraping mechanism, external data source,
   different internal representation) as long as the consumer-facing schema is maintained
 
@@ -88,7 +88,7 @@ Separate reconciliation paths derive consumer-specific resources from it.
   scraping)
 - Consumer resources are stable contracts independent of internal changes
 - **Observability**: Operators can `kubectl get` the internal state to understand what the
-  CM computed — independent of what any consumer sees. Useful for debugging discrepancies.
+  CM computed - independent of what any consumer sees. Useful for debugging discrepancies.
 - **Declarative checkpoint**: The internal model is a verifiable intermediate state. If a
   consumer-facing resource looks wrong, operators can check the internal model to isolate
   whether the bug is in endpoint logic or in consumer-resource generation.
@@ -108,7 +108,7 @@ Separate reconciliation paths derive consumer-specific resources from it.
 **Option 2 for now, with awareness of option 3 for the future.**
 
 Today there is one consumer (LB). The LB-facing resource (`LoadBalancerEndpointSlice`) is the
-CM's direct output — no intermediate internal representation. This is simple, efficient,
+CM's direct output - no intermediate internal representation. This is simple, efficient,
 and sufficient.
 
 When a second consumer with a different shape requirement appears (app-side Maglev
@@ -137,7 +137,7 @@ How the CM produces it is an internal detail that can change without affecting c
 **Independent evolution**: Each consumer-type resource evolves independently. CRD
 versioning handles schema changes per resource type.
 
-**Minimal consumer logic**: Consumers read explicit fields — no interpretation of
+**Minimal consumer logic**: Consumers read explicit fields - no interpretation of
 conventions, no multi-object correlation, no label semantics beyond discovery.
 
 **Upgrade resilience**: Schema changes use CRD versioning + conversion webhooks.
@@ -154,7 +154,7 @@ naming) and documenting them explicitly.
 The ENC (EndpointNetworkConfiguration) already follows the per-consumer-type model:
 - It's a per-Pod resource produced by the Meridio-2 CM
 - It contains exactly what the sidecar needs (VIPs, next-hops, interface identity)
-- The sidecar is a dumb consumer — reads fields, applies network config
+- The sidecar is a dumb consumer - reads fields, applies network config
 - The CM's internal resolution chain (Pod→DG→Gateway→GatewayConfig→SLLBR Pods) is
   invisible to the sidecar
 

@@ -46,7 +46,7 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 ### Hand-Maintained RBAC
 - `config/rbac/manager-role.yaml` - namespace-scoped Role (edit manually)
 - `config/rbac/manager-clusterrole.yaml` - ClusterRole for cluster-scoped resources (edit manually)
-- RBAC is NOT generated from kubebuilder markers — `make manifests` does not produce RBAC files
+- RBAC is NOT generated from kubebuilder markers - `make manifests` does not produce RBAC files
 
 ### Never Remove Scaffold Markers
 Do NOT delete `// +kubebuilder:scaffold:*` comments. CLI injects code at these markers.

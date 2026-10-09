@@ -30,8 +30,8 @@ The controller is triggered by changes to any resource in the chain:
 
 | Resource | Trigger | Mapper |
 |----------|---------|--------|
-| Pod (target) | Primary — reconcile on create/update/delete | Direct (For) |
-| ENC | Owned — reconcile owner Pod on changes | Owner reference (Owns) |
+| Pod (target) | Primary - reconcile on create/update/delete | Direct (For) |
+| ENC | Owned - reconcile owner Pod on changes | Owner reference (Owns) |
 | DistributionGroup | Selector or parentRefs change | `mapDGToPods` |
 | Gateway | Status/spec change | `mapGatewayToPods` |
 | L34Route | parentRefs/backendRefs change | `mapL34RouteToPods` |

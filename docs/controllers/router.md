@@ -11,7 +11,7 @@ The Router controller runs inside the LB Pod's router container. It reconciles G
 - Runs as a sidecar container alongside the `stateless-load-balancer` container in each LB Pod
 - Each instance is scoped to a single Gateway (receives `--gateway-name` and `--gateway-namespace` at startup)
 - Multiple LB Pod replicas each run their own independent Router controller instance, all reconciling the same GatewayRouter CRs
-- The container ships **BIRD 3.3.2**, built from source and pinned via `ARG BIRD_VERSION` in `build/router/Dockerfile`. It is built from source rather than installed from the Alpine package to pick the latest upstream release (which includes a memory-leak fix not present in the older BIRD packaged by current Alpine releases, e.g. 3.2.3 on alpine:3.24) and to guarantee a reproducible version. The full set of TCP-AO MAC algorithms exposed by the GatewayRouter API — notably `cmac aes128` — also requires a recent BIRD (3.3.1+); TCP-AO itself is available earlier in the BIRD 3 series. BIRD is built with a portable per-architecture CPU baseline (not `-march=native`) so it runs on any node of the target architecture.
+- The container ships **BIRD 3.3.2**, built from source and pinned via `ARG BIRD_VERSION` in `build/router/Dockerfile`. It is built from source rather than installed from the Alpine package to pick the latest upstream release (which includes a memory-leak fix not present in the older BIRD packaged by current Alpine releases, e.g. 3.2.3 on alpine:3.24) and to guarantee a reproducible version. The full set of TCP-AO MAC algorithms exposed by the GatewayRouter API - notably `cmac aes128` - also requires a recent BIRD (3.3.1+); TCP-AO itself is available earlier in the BIRD 3 series. BIRD is built with a portable per-architecture CPU baseline (not `-march=native`) so it runs on any node of the target architecture.
 
 ### Resource Relationships
 
@@ -84,7 +84,7 @@ BIRD runs as a child process of the router binary, started via `exec.CommandCont
 
 **Config application**:
 - `Bird.Configure()` first installs policy routes via `setPolicyRoutes()`, then writes config to disk (atomic: tmp file + rename), then calls `birdc configure` if `running == true`
-- If BIRD hasn't started yet (`running == false`), only writes the file — BIRD picks it up on startup
+- If BIRD hasn't started yet (`running == false`), only writes the file - BIRD picks it up on startup
 - Mutex protects concurrent access to config writes and the `running` flag
 
 **Logging**:
@@ -106,7 +106,7 @@ BIRD config is generated using `text/template` and assembled from these parts:
 
 VIPs arrive as plain IPs from `Gateway.status.addresses` (filtered to `IPAddressType` only) and are converted to CIDRs (`/32` or `/128`) inside the BIRD package via `vipsToCidr()`.
 
-**VIP scale / BGP max-prefix:** each VIP is advertised as an individual `/32` or `/128` static route (host routes cannot be aggregated), so the number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit**. Exceeding it causes the peer to tear down the BGP session — a session-wide failure affecting all VIPs on that Gateway, not detectable at admission. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on CIDR limits and VIP scaling).
+**VIP scale / BGP max-prefix:** each VIP is advertised as an individual `/32` or `/128` static route (host routes cannot be aggregated), so the number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit**. Exceeding it causes the peer to tear down the BGP session - a session-wide failure affecting all VIPs on that Gateway, not detectable at admission. See [constraints-and-limitations.md](../operations/constraints-and-limitations.md) (LB Controller item on CIDR limits and VIP scaling).
 
 ### Router ID
 
@@ -118,7 +118,7 @@ Typically, this results in BIRD selecting the primary interface's IPv4 address. 
 <FATAL> Cannot determine router ID, please configure it manually
 ```
 
-This only affects clusters with no IPv4 address anywhere on the Pod. It does **not** affect dual-stack clusters that merely carry IPv6-only application traffic over secondary Multus interfaces — the primary network still provides an IPv4 address for BIRD to use in that case.
+This only affects clusters with no IPv4 address anywhere on the Pod. It does **not** affect dual-stack clusters that merely carry IPv6-only application traffic over secondary Multus interfaces - the primary network still provides an IPv4 address for BIRD to use in that case.
 
 #### Workaround for IPv4-less Clusters
 
@@ -256,16 +256,16 @@ stringData:
 
 **Key rotation**: Multiple keys can be configured in the keychain. The `currentKeyId` and `nextKeyId` fields control which key is active for sending and which is advertised for rotation. Both peers must share the same key material for the corresponding key IDs.
 
-**BIRD config generation**: The controller generates BIRD `authentication ao` blocks for all key entries from keychains and their Secrets. If any Secret referenced by a GatewayRouter's keychain is missing or unreadable, the reconciler **retains the previous BIRD configuration unchanged** and logs the unresolved references at info level. It does not return an error or request an explicit requeue — the controller relies on its existing watches (on Secrets and GatewayRouters) to trigger re-reconciliation automatically once the missing data appears.
+**BIRD config generation**: The controller generates BIRD `authentication ao` blocks for all key entries from keychains and their Secrets. If any Secret referenced by a GatewayRouter's keychain is missing or unreadable, the reconciler **retains the previous BIRD configuration unchanged** and logs the unresolved references at info level. It does not return an error or request an explicit requeue - the controller relies on its existing watches (on Secrets and GatewayRouters) to trigger re-reconciliation automatically once the missing data appears.
 
 This means there can be a **delay** between modifying authentication configuration and the new config actually taking effect in BIRD. The controller provides **no status feedback** to the user about whether the requested authentication config has been applied or is still pending resolution. Operators must infer success from BIRD (birdc or logs) or BGP session state.
 
 **Why no error and no status update?**
 
 - Ambiguity of partial config: When `currentKeyId` or `nextKeyId` references a key whose Secret has not yet propagated, there is no safe "partial" authentication config to apply. Retaining the old working config avoids breaking an established BGP session.
-- No GatewayRouter status condition: The router controller must not write authentication-related status conditions to the GatewayRouter. Multiple LB Pods each run independent router controller instances watching the same GatewayRouter. If one Pod has informer cache lag (Secret not yet visible) while another resolves fine, multiple writers would race on the status subresource — causing condition flapping, 409 Conflict errors, and meaningless conditions that do not reflect the true cluster-wide state.
+- No GatewayRouter status condition: The router controller must not write authentication-related status conditions to the GatewayRouter. Multiple LB Pods each run independent router controller instances watching the same GatewayRouter. If one Pod has informer cache lag (Secret not yet visible) while another resolves fine, multiple writers would race on the status subresource - causing condition flapping, 409 Conflict errors, and meaningless conditions that do not reflect the true cluster-wide state.
 
-**RBAC**: The router controller requires `get`/`list`/`watch` on Secrets in its namespace (configured in `config/rbac/lb-serviceaccount.yaml`). Because controller-runtime's informer-based cache requires `list`+`watch`, this grants read access to **all** Secrets in the namespace — not just those referenced by keychains. Scope the deployment namespace to limit exposure.
+**RBAC**: The router controller requires `get`/`list`/`watch` on Secrets in its namespace (configured in `config/rbac/lb-serviceaccount.yaml`). Because controller-runtime's informer-based cache requires `list`+`watch`, this grants read access to **all** Secrets in the namespace - not just those referenced by keychains. Scope the deployment namespace to limit exposure.
 
 ### BGP and BFD Monitoring
 
@@ -328,8 +328,8 @@ All flags support environment variable overrides following the precedence: flags
 The monitoring goroutine sets per-IP-family Pod readiness gate conditions based on BGP session state:
 
 - **Gate condition types**:
-  - `meridio-2.nordix.org/ipv4-connectivity` — set if IPv4 subnets are configured
-  - `meridio-2.nordix.org/ipv6-connectivity` — set if IPv6 subnets are configured
+  - `meridio-2.nordix.org/ipv4-connectivity` - set if IPv4 subnets are configured
+  - `meridio-2.nordix.org/ipv6-connectivity` - set if IPv6 subnets are configured
 - **Gate lifecycle**:
   1. Router starts → sets all declared gates to `False` (defense-in-depth)
   2. BGP session established → after hold time (default 3s), sets gate to `True`
@@ -340,8 +340,8 @@ The monitoring goroutine sets per-IP-family Pod readiness gate conditions based 
 - **Configuration**: Requires `POD_NAME`, `POD_NAMESPACE`, `POD_UID` environment variables (Downward API, injected by Gateway controller in LB Deployment template).
 - **RBAC**: Requires `pods/get` + `pods/status/update` (configured in `config/rbac/lb-serviceaccount.yaml`).
 - **Downstream consumer**: The ENC controller uses these gate conditions to filter LB Pods from next-hop lists via two-level filtering:
-  1. Container readiness — all containers must be Ready and Pod not being deleted
-  2. Per-IP-family gate — `ipv4-connectivity=True` required for IPv4 next-hops, `ipv6-connectivity=True` for IPv6
+  1. Container readiness - all containers must be Ready and Pod not being deleted
+  2. Per-IP-family gate - `ipv4-connectivity=True` required for IPv4 next-hops, `ipv6-connectivity=True` for IPv6
   If a gate is not declared for a specific IP family (e.g., IPv4-only Gateway), the Pod is included for that family (gate not applicable).
 
 ### Metrics and Route Monitoring (post-MVP)
@@ -349,7 +349,7 @@ The monitoring goroutine sets per-IP-family Pod readiness gate conditions based 
 Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 
 - **Route count monitoring**: Periodic `birdc show route count` to track total routes in BIRD tables. Meridio v1 logs route count changes and rate-limits the output (see `stats.go`).
-- **GatewayRouter metrics**: Per-GatewayRouter up/down state exposed via OpenTelemetry. Includes per-IP-family connectivity status. (In Meridio v1 these were called "gateway metrics" — the resource was renamed to GatewayRouter in Meridio-2 to avoid ambiguity with Gateway API's Gateway.)
+- **GatewayRouter metrics**: Per-GatewayRouter up/down state exposed via OpenTelemetry. Includes per-IP-family connectivity status. (In Meridio v1 these were called "gateway metrics" - the resource was renamed to GatewayRouter in Meridio-2 to avoid ambiguity with Gateway API's Gateway.)
 - **Memory monitoring**: `birdc show memory` for BIRD memory usage tracking.
 - These should be exposed as Prometheus metrics via the controller-runtime metrics server (already wired but unused).
 

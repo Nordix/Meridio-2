@@ -56,13 +56,13 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 		return err
 	}
 
-	// Handle empty L34Route list — no routes means no flows needed
+	// Handle empty L34Route list - no routes means no flows needed
 	if len(newFlows) == 0 {
 		logr.Info("No L34Routes found, deleting existing flows for distributionGroup", "distGroup", distGroup.Name)
 		if err := c.deleteAllFlows(ctx, instance, distGroup.Name); err != nil {
 			// NOTE: not propagated for retry on purpose. deleteAllFlows clears the
 			// tracked flows map unconditionally (even for entries it failed to delete),
-			// so a retry would find nothing to re-attempt — returning the error would
+			// so a retry would find nothing to re-attempt - returning the error would
 			// requeue in vain. Making retry meaningful requires deleteAllFlows to be
 			// transactional (keep failed entries tracked); until then, just log.
 			logr.Error(err, "Failed to delete all flows")
@@ -246,7 +246,7 @@ func (c *Controller) getGatewayVIPs(ctx context.Context) ([]string, error) {
 // applyGatewayVIPs resolves the Gateway's VIPs and applies them to the shared nftables
 // set. It is best-effort with respect to the Gateway's existence: if the Gateway is not
 // found, it logs and returns nil rather than erroring, so the reconcile does not enter
-// error backoff — the Gateway is watched, and its (re)creation re-enqueues affected DGs.
+// error backoff - the Gateway is watched, and its (re)creation re-enqueues affected DGs.
 // Any other fetch error, or a failure to program nftables, is returned so it is retried.
 func (c *Controller) applyGatewayVIPs(ctx context.Context, distGroupName string) error {
 	logr := log.FromContext(ctx)

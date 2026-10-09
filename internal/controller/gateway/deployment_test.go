@@ -1349,7 +1349,7 @@ func TestInjectRouterPodIdentityEnvVars(t *testing.T) {
 		injectRouterPodIdentityEnvVars(deployment)
 
 		router := deployment.Spec.Template.Spec.Containers[0]
-		// Count occurrences — should be exactly one of each
+		// Count occurrences - should be exactly one of each
 		count := 0
 		for _, env := range router.Env {
 			if env.Name == "POD_NAME" || env.Name == "POD_NAMESPACE" || env.Name == "POD_UID" {

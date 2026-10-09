@@ -497,7 +497,7 @@ func TestDamping(t *testing.T) {
 			}
 		}
 
-		// Connectivity drops — gate should be False immediately (no 100ms damping applied)
+		// Connectivity drops - gate should be False immediately (no 100ms damping applied)
 		err := mgr.OnStatusUpdate(context.Background(), false, false)
 		assert.NoError(t, err)
 
@@ -527,7 +527,7 @@ func TestDamping(t *testing.T) {
 		_ = mgr.DiscoverGates(context.Background())
 		_ = mgr.SetAllGatesFalse(context.Background())
 
-		// Connectivity comes up — gate should NOT be True yet (hold time not elapsed)
+		// Connectivity comes up - gate should NOT be True yet (hold time not elapsed)
 		err := mgr.OnStatusUpdate(context.Background(), true, false)
 		assert.NoError(t, err)
 
@@ -542,7 +542,7 @@ func TestDamping(t *testing.T) {
 		// Wait for hold time to elapse
 		time.Sleep(150 * time.Millisecond)
 
-		// Call again — now it should be True
+		// Call again - now it should be True
 		err = mgr.OnStatusUpdate(context.Background(), true, false)
 		assert.NoError(t, err)
 
@@ -575,7 +575,7 @@ func TestDamping(t *testing.T) {
 		// Connectivity up
 		_ = mgr.OnStatusUpdate(context.Background(), true, false)
 
-		// Flap down during hold — should reset timer and set False
+		// Flap down during hold - should reset timer and set False
 		time.Sleep(50 * time.Millisecond)
 		_ = mgr.OnStatusUpdate(context.Background(), false, false)
 
@@ -610,7 +610,7 @@ func TestDamping(t *testing.T) {
 		_ = mgr.DiscoverGates(context.Background())
 		_ = mgr.SetAllGatesFalse(context.Background())
 
-		// Connectivity still down — no change, should be no-op
+		// Connectivity still down - no change, should be no-op
 		err := mgr.OnStatusUpdate(context.Background(), false, false)
 		assert.NoError(t, err)
 	})
@@ -633,7 +633,7 @@ func TestDamping(t *testing.T) {
 		_ = mgr.DiscoverGates(context.Background())
 		_ = mgr.SetAllGatesFalse(context.Background())
 
-		// IPv6 connectivity changes but IPv6 gate not declared — should be ignored
+		// IPv6 connectivity changes but IPv6 gate not declared - should be ignored
 		err := mgr.OnStatusUpdate(context.Background(), false, true)
 		assert.NoError(t, err)
 

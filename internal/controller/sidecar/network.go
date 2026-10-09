@@ -128,7 +128,7 @@ func scanManagedVIPs(nl netlinkOps) (map[string]map[string]struct{}, error) {
 // Always returns the current managed set reflecting actual kernel state,
 // even on error, so the caller can track partially-applied changes.
 func syncVIPs(nl netlinkOps, link netlink.Link, desiredVIPs []net.IP, managedVIPs map[string]struct{}) (map[string]struct{}, error) {
-	// Clone managed set — we mutate it incrementally to track actual state
+	// Clone managed set - we mutate it incrementally to track actual state
 	current := make(map[string]struct{}, len(managedVIPs)+len(desiredVIPs))
 	for k := range managedVIPs {
 		current[k] = struct{}{}

@@ -7,7 +7,7 @@
 #   required by nftables and nfqueue in the loadbalancer container.
 # - seLinuxOptions: type: spc_t (loadbalancer container only): SELinux container_t blocks
 #   nfqueue bind and nftables set operations. The router container does NOT need this.
-# - runAsNonRoot: true (MustRunAsNonRoot SCC — no longer needs runAsUser: 0)
+# - runAsNonRoot: true (MustRunAsNonRoot SCC - no longer needs runAsUser: 0)
 # - No pod anti-affinity (CRC is single-node)
 apiVersion: apps/v1
 kind: Deployment

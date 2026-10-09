@@ -310,7 +310,7 @@ func monitorConnectivity(
 				if len(routers) > 0 {
 					ipv4, ipv6 = router.ClassifyConnectivityByFamily(status.Protocols, familyMap)
 				}
-				// When no routers exist, ipv4/ipv6 stay false — gates set to False
+				// When no routers exist, ipv4/ipv6 stay false - gates set to False
 				if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
 					logger.Error(err, "failed to update readiness gates")
 				}

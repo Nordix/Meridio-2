@@ -48,7 +48,7 @@ Table master4:
 	Internal route handling values: 0L 4G 0S id 1
 `
 
-// Exact /32 present, but locally-originated (static/blackhole) — must NOT count
+// Exact /32 present, but locally-originated (static/blackhole) - must NOT count
 // as advertised via BGP.
 const showRouteStaticVIP = `BIRD 3.1.2 ready.
 Table master4:

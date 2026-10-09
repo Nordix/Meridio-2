@@ -36,9 +36,9 @@ import (
 // prometheus.Collector.Collect has no context to inherit a deadline from.
 //
 // Why guard once at the top of Collect (rather than relying on each List): a cached List never
-// returns partial data — it returns the fully-synced result, or errors if sync doesn't finish
+// returns partial data - it returns the fully-synced result, or errors if sync doesn't finish
 // within collectTimeout. But Collect can emit metrics incrementally, so a scrape in the startup
-// window could emit early types' series and then have a later type's List time out — a
+// window could emit early types' series and then have a later type's List time out - a
 // half-populated scrape that is misleading to read. Gating once up front makes that window fail
 // fast with a single error before any metric is emitted.
 //
@@ -47,15 +47,15 @@ import (
 //
 // Semantics relied on by SyncGate (below): WaitForCacheSync (client-go's) ANDs the HasSynced of
 // EVERY currently-tracked informer (not just the GVKs a collector reads), polling until all are
-// true or ctx is done. Each HasSynced is a one-way latch — once its first full LIST completes it
-// never regresses to false — so SyncGate can skip the check permanently once it has observed true.
+// true or ctx is done. Each HasSynced is a one-way latch - once its first full LIST completes it
+// never regresses to false - so SyncGate can skip the check permanently once it has observed true.
 type CacheSyncWaiter interface {
 	WaitForCacheSync(ctx context.Context) bool
 }
 
 // SyncGate wraps a CacheSyncWaiter with a "synced once" latch: once WaitForCacheSync returns
 // true, later Wait calls are a cheap atomic load instead of re-running the poll-every-informer
-// path on every scrape — safe because that result never regresses (see CacheSyncWaiter). Until
+// path on every scrape - safe because that result never regresses (see CacheSyncWaiter). Until
 // it first observes true, Wait delegates on every call and retries, never caching a false.
 type SyncGate struct {
 	waiter CacheSyncWaiter

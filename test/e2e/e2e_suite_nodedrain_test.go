@@ -48,15 +48,15 @@ import (
 //  4. Cordon then drain a worker node where a gateway LB pod and at least one
 //     endpoint are located (see node selection tiers below).
 //  5. Verify recovery: rescheduled endpoints reach Ready, traffic restored,
-//     no container restarts, and — when the drained node also hosted the
-//     controller-manager — the controller-manager recovers to Ready.
+//     no container restarts, and - when the drained node also hosted the
+//     controller-manager - the controller-manager recovers to Ready.
 //  6. AfterAll: uncordon the node and scale back down to 2 endpoints.
 //  7. Re-verify deployment health and traffic.
 //
 // Disruption model: identical to the Endpoint Scaling suite. The load balancer
 // is stateless Maglev with no per-connection flow cache, so evicting and
 // rescheduling an endpoint pod (an endpoint-set change) rebuilds the Maglev
-// table and remaps a fraction of established flows — established-connection
+// table and remaps a fraction of established flows - established-connection
 // disruption during the drain is expected and NOT bounded. The test therefore
 // asserts what the stateless design guarantees: traffic keeps flowing during
 // the drain, and once recovery settles, new connections have zero loss and are
@@ -82,7 +82,7 @@ const (
 	// controllerLabel / controllerContainer identify the Meridio
 	// controller-manager. In the e2e deploy model each suite gets its own
 	// controller-manager deployed into the suite namespace (scalingNamespace,
-	// e2e-shared-appnetwork-ds) — not a single cluster-wide one — so the
+	// e2e-shared-appnetwork-ds) - not a single cluster-wide one - so the
 	// namespace used for lookups is scalingNamespace, defined by the shared
 	// topology. Used for the Tier-1 node selection and the controller-manager
 	// recovery assertion.
@@ -401,7 +401,7 @@ var _ = Describe("Node Drain", Label("dual-stack"), Serial, Ordered, func() {
 		// cluster, selection must reach at least Tier 2 (LB + target
 		// co-located); a fall to Tier 3 (target only) means no LB eviction is
 		// exercised, so the run would pass green without testing its core
-		// scenario — fail loudly instead.
+		// scenario - fail loudly instead.
 		Expect(selection.tier).To(BeNumerically("<=", 2),
 			"node selection fell to Tier %d (target-only): no LB pod was co-located "+
 				"with a target, so this run would not exercise LB eviction. On the "+

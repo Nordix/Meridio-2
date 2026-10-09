@@ -27,7 +27,7 @@ scraper disconnecting, so this timeout is the only thing that turns a
 not-yet-synced-cache scrape into our specific, actionable error instead of a
 generic timeout on Prometheus's side. Setting it equal to or above
 `scrape_timeout` loses that race most of the time (Prometheus's clock starts
-before ours), so raising it further is discouraged — keep it below whatever
+before ours), so raising it further is discouraged - keep it below whatever
 `scrape_timeout` is configured.
 
 ## Unit Tests
@@ -69,7 +69,7 @@ to build an image or deploy into the cluster to exercise the collectors.
 ### Run with metrics enabled over plain HTTP
 
 Metrics are **disabled by default** (`--metrics-bind-address` defaults to `0`),
-and the deployed manifest does not enable them either — so they must be turned
+and the deployed manifest does not enable them either - so they must be turned
 on explicitly. For local testing, serving plain HTTP (`--metrics-secure=false`)
 avoids the TLS/authn setup that secure serving requires.
 
@@ -85,12 +85,12 @@ go run ./cmd/controller-manager run \
 
 Notes on the non-obvious flags:
 
-- `--template-path=config/templates` — startup validation checks for the LB
+- `--template-path=config/templates` - startup validation checks for the LB
   deployment template. The default path (`/templates`) is the in-container
   mount point and does not exist when running locally; point it at the in-repo
   templates directory instead (run from the repo root, or use an absolute path).
-- `--enable-webhooks=false` — avoids needing webhook certificates locally.
-- `--metrics-secure=false` — serve plain HTTP so `curl` works without a token or
+- `--enable-webhooks=false` - avoids needing webhook certificates locally.
+- `--metrics-secure=false` - serve plain HTTP so `curl` works without a token or
   certificates. Do **not** use this in a real deployment.
 
 Scrape it from another shell:
@@ -101,7 +101,7 @@ curl -s http://127.0.0.1:8080/metrics | grep ^meridio
 
 On an empty cluster you will see only `meridio_2_gateway_count 0`. That is
 correct: `gateway_count` is a constant metric (one series always), while the
-other metrics are labeled and emit one series *per matching object* — with no
+other metrics are labeled and emit one series *per matching object* - with no
 objects, they emit no series, and Prometheus omits the `# HELP`/`# TYPE` lines
 for a metric that has no series. Their absence is the correct representation of
 "nothing to report", not a bug.
@@ -111,14 +111,14 @@ for a metric that has no series. Their absence is the correct representation of
 ### 1. An accepted Gateway + DistributionGroups
 
 A Gateway only reaches `Accepted=True` when it references a valid
-`GatewayConfiguration` via `spec.infrastructure.parametersRef` — this is
+`GatewayConfiguration` via `spec.infrastructure.parametersRef` - this is
 required, not optional. Without it, the Gateway is `Accepted=False`, so
 `gateway_count` stays `0` and any DG referencing it falls back to the empty
 `gateway=""` label (the empty-union fallback).
 
 > Note: `gateway_programmed` is gated on GatewayClass ownership, not on `Accepted`.
 > So as soon as a Gateway references our GatewayClass it emits a
-> `gateway_programmed{gateway=...}` series — reading `0` while it is not yet
+> `gateway_programmed{gateway=...}` series - reading `0` while it is not yet
 > programmed (e.g. still `Accepted=False`), and `1` once the LB Deployment is
 > reconciled. This series appears independently of `gateway_count`.
 
@@ -206,7 +206,7 @@ Gateway branch of the union), with `endpoints 0` and `ready 0` until targets
 exist.
 
 > Creating an accepted Gateway triggers LB Deployment creation from the template.
-> On a bare cluster its Pods will not run (missing image/NADs) — this is harmless
+> On a bare cluster its Pods will not run (missing image/NADs) - this is harmless
 > for metrics testing.
 
 ### 2. Target Pods to populate `endpoints` and `ready`
@@ -214,7 +214,7 @@ exist.
 The DistributionGroup reconciler discovers endpoints by reading each matching
 Pod's `k8s.v1.cni.cncf.io/network-status` annotation and CIDR-matching the
 advertised secondary IPs against the GatewayConfiguration's `internalSubnets`.
-It reads only the annotation — it does not verify that a real interface exists —
+It reads only the annotation - it does not verify that a real interface exists -
 so **Multus/Whereabouts are not required for metrics testing**. Plain Pods with
 a hand-written annotation are sufficient.
 
@@ -261,7 +261,7 @@ EOF
 The load-bearing parts of the annotation are: a non-default entry
 (`default` absent or false) whose `ips` contains an address inside the
 GatewayConfiguration's `internalSubnet` CIDR. The `name` field is **not** matched
-by the scraper — it is cosmetic here.
+by the scraper - it is cosmetic here.
 
 Once the Pods are `Running`, expect (for each DG sharing the selector):
 
@@ -282,24 +282,24 @@ Observable with the setup above (no data plane needed):
 
 - `gateway_count` transitioning 0 → 1 on Gateway acceptance.
 - `gateway_programmed` series appearing per Gateway destined for this controller
-  by its GatewayClass — emitted regardless of the `Accepted` condition, so it
+  by its GatewayClass - emitted regardless of the `Accepted` condition, so it
   appears (as `0`) even for a class-ours Gateway that is not yet accepted, and
   becomes `1` once the reconciler sets `Programmed=True`. Note `Programmed` is set
   by the Gateway reconciler based on observing the LB Deployment, not on its Pods
-  actually running — so it can read `1` locally even though no data plane exists.
+  actually running - so it can read `1` locally even though no data plane exists.
 - `distributiongroup_ready`, `distributiongroup_endpoints`, and per-Gateway
   attribution, via fake-annotation target Pods.
 - `distributiongroup_max_endpoints` per-DG capacity from `spec.maglev.maxEndpoints`.
 - Both forms of the `gateway`/`gateway_namespace` label on the DG's `endpoints`
   and `max_endpoints` series:
-  - `gateway=""` (empty) — emitted when the collector cannot associate the DG
+  - `gateway=""` (empty) - emitted when the collector cannot associate the DG
     with any Gateway. A DG is associated with a Gateway when either it references
     an `Accepted=True` Gateway, or it already owns endpoint slices scoped to a
     Gateway; when neither holds, the DG still gets one series with an empty
     `gateway` label rather than disappearing from the metric stream. In the
     walkthrough above you see this before the Gateway is accepted (the DG
     references `sllb-sample`, but it is not yet accepted and has no slices).
-  - `gateway="<name>"` — emitted once the DG is associated with a Gateway, either
+  - `gateway="<name>"` - emitted once the DG is associated with a Gateway, either
     because the referenced Gateway becomes `Accepted=True` (as in step 1 above) or
     because endpoint slices exist for it (step 2).
 
@@ -310,7 +310,7 @@ Not meaningfully observable without a full data plane (belongs in the e2e suite)
 
 ## Troubleshooting
 
-- **`gateway_count 0`, DG series show `gateway=""`** — the Gateway is not
+- **`gateway_count 0`, DG series show `gateway=""`** - the Gateway is not
   `Accepted=True`. Check why:
   ```bash
   kubectl get gateway sllb-sample -n default -o jsonpath='{.status.conditions}' | jq .
@@ -322,25 +322,25 @@ Not meaningfully observable without a full data plane (belongs in the e2e suite)
   rather than `Accepted`, so its presence tells you whether the Gateway is even
   destined for this controller:
   - a `gateway_programmed{gateway="sllb-sample"}` series **is present** (reading
-    `0`) — the Gateway's `gatewayClassName` resolves to a GatewayClass whose
+    `0`) - the Gateway's `gatewayClassName` resolves to a GatewayClass whose
     `controllerName` is ours, so this controller owns it; it is simply not
     accepted/programmed yet (the `Accepted=False` case above).
-  - **no** `gateway_programmed` series for the Gateway — its `gatewayClassName`
+  - **no** `gateway_programmed` series for the Gateway - its `gatewayClassName`
     does not resolve to one of our GatewayClasses (wrong/missing class, or a class
     owned by a different controller), so this controller is not managing it at all.
     Check `spec.gatewayClassName` and the target GatewayClass's `controllerName`.
 
-- **`endpoints` stays 0 after Pods are Running** — check whether slices were
+- **`endpoints` stays 0 after Pods are Running** - check whether slices were
   created:
   ```bash
   kubectl get lbeslice -n default
   ```
   If slices exist but the metric is 0, look at the collector's slice counting. If
-  no slices exist, the reconciler is not matching/scraping the Pods — verify the
+  no slices exist, the reconciler is not matching/scraping the Pods - verify the
   Pod labels match the DG selector and the annotation IP falls inside the
   GatewayConfiguration `internalSubnet` CIDR.
 
-- **`/metrics` returns a 500 with "informer cache did not sync"** — the scrape
+- **`/metrics` returns a 500 with "informer cache did not sync"** - the scrape
   landed during the manager's initial cache-sync window (or the cache genuinely
   cannot sync, e.g. a required CRD is missing). This is the collectors'
   `--metrics-collect-timeout` guard surfacing an actionable error rather than

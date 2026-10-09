@@ -103,7 +103,7 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		// No activate call (target exists and not broken — skipActivate)
+		// No activate call (target exists and not broken - skipActivate)
 		Expect(executor.calls).To(BeEmpty())
 		Expect(routing.created).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
 		Expect(routing.deleted).To(BeEmpty())
@@ -115,7 +115,7 @@ var _ = Describe("Instance.AddTarget", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.2"}, 0)
 		Expect(err).ToNot(HaveOccurred())
 
-		// No activate call (target exists and not broken — skipActivate)
+		// No activate call (target exists and not broken - skipActivate)
 		Expect(executor.calls).To(BeEmpty())
 		// Should delete only removed IPs and create new ones
 		Expect(routing.deleted).To(ConsistOf(routeCall{5000, "10.0.0.1"}))
@@ -301,7 +301,7 @@ var _ = Describe("Instance.BrokenTargets", func() {
 		err := instance.AddTarget(ctx, []string{"10.0.0.1"}, 0)
 		Expect(err).To(HaveOccurred())
 
-		// Routes succeeded but activate failed — target in targets and broken
+		// Routes succeeded but activate failed - target in targets and broken
 		Expect(instance.broken).To(HaveKey(0))
 		Expect(instance.targets).To(HaveKey(0))
 	})

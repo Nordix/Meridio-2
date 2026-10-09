@@ -50,7 +50,7 @@ func TestSyncGate_WaitTrue_LatchesAndSkipsFurtherCalls(t *testing.T) {
 	assert.True(t, gate.Wait(context.Background()))
 	assert.True(t, gate.Wait(context.Background()))
 
-	// Once synced, Wait must not call the underlying waiter again — that's the whole point of
+	// Once synced, Wait must not call the underlying waiter again - that's the whole point of
 	// the latch (avoid re-invoking WaitForCacheSync's lock-and-poll path on every scrape).
 	assert.Equal(t, 1, waiter.calls, "expected exactly one underlying call once synced")
 }

@@ -127,7 +127,7 @@ meridio_2_sidecar_vips_configured{gateway="gw-b"} 2
 }
 
 // TestSidecarCollector_NoENC_NoSeries verifies that a missing ENC (Pod has no network config
-// yet) is treated as "nothing configured" — no series emitted, no error.
+// yet) is treated as "nothing configured" - no series emitted, no error.
 func TestSidecarCollector_NoENC_NoSeries(t *testing.T) {
 	collector := newCollector() // no ENC in the fake client
 

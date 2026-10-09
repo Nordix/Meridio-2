@@ -18,7 +18,7 @@ limitations under the License.
 //
 // Metrics are lazy/pull-based: SidecarCollector reads the single EndpointNetworkConfiguration
 // named after this Pod from the sidecar's informer cache (desired state, not applied kernel
-// state) only when a scrape invokes Collect — never from a background loop or the reconcile path.
+// state) only when a scrape invokes Collect - never from a background loop or the reconcile path.
 // This gives correct lifecycle behavior for free: a deleted ENC or a removed gateway/domain stops
 // appearing in the next Collect, and Prometheus marks the series stale. Reading the cache is
 // cheap and carries none of the subprocess/netlink safety burden that external-state collectors
@@ -33,7 +33,7 @@ limitations under the License.
 // domain in the ENC. The ENC controller's buildGatewayConnection
 // (internal/controller/endpointnetworkconfiguration/resolve.go) emits a domain only when the
 // family's subnet is NAD-attached, has non-empty VIPs or next-hops, and the Pod has a matching
-// interface — a GatewayConfiguration declaring the family's InternalSubnet is not sufficient on
+// interface - a GatewayConfiguration declaring the family's InternalSubnet is not sufficient on
 // its own. So a supported family with nothing resolved produces no domain, hence no series at all
 // for it (indistinguishable from "family not configured"); only the within-domain empty case is
 // visible (e.g. next-hops but no VIPs still emits vips_configured=0, since that requires the
@@ -63,7 +63,7 @@ import (
 // Both read from the ENC spec (desired state). The label sets follow the finalized #153 proposal
 // as-is: vips_configured is split only by gateway, while nexthops is additionally split by
 // ip_family (useful for debugging ECMP, where v4 and v6 return paths diverge). Neither carries a
-// pod label — the sidecar exposes its own per-Pod /metrics endpoint, so Pod identity is 1:1 with
+// pod label - the sidecar exposes its own per-Pod /metrics endpoint, so Pod identity is 1:1 with
 // the scrape target and is supplied by the scraper's target labels (instance/pod) rather than
 // instrumented here.
 type SidecarCollector struct {
@@ -80,10 +80,10 @@ type SidecarCollector struct {
 // NewSidecarCollector creates a SidecarCollector. prefix must already be validated (see
 // internal/common/metrics.ValidatePrefix). cacheWaiter is typically the manager's own cache
 // (mgr.GetCache()); collectTimeout bounds how long Collect will wait for it to sync before
-// giving up and reporting a collection error for that scrape — see metricsutil.CacheSyncWaiter.
+// giving up and reporting a collection error for that scrape - see metricsutil.CacheSyncWaiter.
 //
 // podName/podNamespace identify the single ENC to read (named after the Pod, in the Pod's
-// namespace) — matching the sidecar controller's own single-object cache scoping.
+// namespace) - matching the sidecar controller's own single-object cache scoping.
 func NewSidecarCollector(
 	c client.Client, cacheWaiter metricsutil.CacheSyncWaiter, collectTimeout time.Duration,
 	podName, podNamespace, prefix string,
@@ -114,11 +114,11 @@ func (c *SidecarCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector. It reads the Pod's ENC from the informer cache fresh
-// on every call, first waiting for the cache to sync — bounded by collectTimeout, a cheap no-op
+// on every call, first waiting for the cache to sync - bounded by collectTimeout, a cheap no-op
 // once synced (see metricsutil.CacheSyncWaiter / SyncGate).
 //
 // A missing ENC (NotFound) is not an error: it means the Pod has no network configuration yet,
-// so no series are emitted (the correct "nothing configured" state — Prometheus marks any
+// so no series are emitted (the correct "nothing configured" state - Prometheus marks any
 // previously-emitted series stale). On sync-timeout or a non-NotFound Get failure it emits an
 // invalid metric rather than returning silently: Collect has no error return, so this is the
 // only way to distinguish a collection failure from "nothing configured". The registry folds it
@@ -149,7 +149,7 @@ func (c *SidecarCollector) Collect(ch chan<- prometheus.Metric) {
 		var vipCount float64
 		// Next-hops: summed per IP family across the gateway's domains (labels: gateway, ip_family).
 		// A domain contributes its family key even when it has zero next-hops, so a
-		// configured-but-empty family emits nexthops{ip_family=...}=0 rather than being omitted —
+		// configured-but-empty family emits nexthops{ip_family=...}=0 rather than being omitted -
 		// "present but empty" stays distinguishable from "absent".
 		nexthopsByFamily := make(map[string]float64)
 		for j := range gw.Domains {

@@ -4,7 +4,7 @@
 # Why these settings are needed:
 # - allowedCapabilities: nftables (NET_ADMIN), NFQLB shared memory (IPC_LOCK, IPC_OWNER),
 #   BIRD port 179 (NET_BIND_SERVICE), BIRD SO_BINDTODEVICE (NET_RAW)
-# - allowedUnsafeSysctls: IP forwarding, multipath hashing, rp_filter, fwmark_reflect —
+# - allowedUnsafeSysctls: IP forwarding, multipath hashing, rp_filter, fwmark_reflect -
 #   required per-Pod for traffic forwarding. Set in pod securityContext.sysctls after
 #   KubeletConfig allowlists them.
 # - seccompProfiles: ["*"]: RuntimeDefault blocks NETLINK_NETFILTER messages (nftables/nfqueue).

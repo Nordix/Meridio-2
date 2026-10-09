@@ -81,7 +81,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	}
 
 	// Build new targets map from LoadBalancerEndpointSlices.
-	// First occurrence of an identifier wins — during transients the same identifier
+	// First occurrence of an identifier wins - during transients the same identifier
 	// may briefly appear in multiple slices.
 	newTargets := make(map[int][]string)
 	for _, lbeps := range ownedSlices {
@@ -124,7 +124,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		}
 	}
 
-	// Activate all desired targets unconditionally — nfqlb layer handles idempotency
+	// Activate all desired targets unconditionally - nfqlb layer handles idempotency
 	// and drift recovery internally.
 	var anyTargetReady bool
 	for identifier, ips := range newTargets {

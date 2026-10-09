@@ -50,7 +50,7 @@ func CleanupStaleRules(startingOffset int) error {
 // Uses RouteReplace to atomically handle stale routes (e.g., target IP change,
 // container restart with kernel state surviving).
 // Uses ensureRule to avoid accumulating duplicate ip rules across reconciles.
-// Does NOT flush ARP/NDP entries — caller should use cleanNeighbor only when IPs change.
+// Does NOT flush ARP/NDP entries - caller should use cleanNeighbor only when IPs change.
 func createPolicyRoute(fwMark int, ip string) error {
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
@@ -77,7 +77,7 @@ func createPolicyRoute(fwMark int, ip string) error {
 func ensureRule(desired *netlink.Rule) error {
 	rules, err := netlink.RuleList(desired.Family)
 	if err != nil {
-		// Can't list rules — fall through to add (best effort)
+		// Can't list rules - fall through to add (best effort)
 		return netlink.RuleAdd(desired)
 	}
 

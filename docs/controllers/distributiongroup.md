@@ -16,9 +16,9 @@ The DistributionGroup controller manages LoadBalancerEndpointSlices for endpoint
 
 **LoadBalancerEndpointSlice**: A custom resource owned by the DG controller that carries per-Gateway endpoint information. Each endpoint bundles all its addresses (dual-stack) in a single entry, with an optional Maglev identifier.
 
-**Maglev ID**: A stable integer (0 to maxEndpoints-1) assigned to each Pod for consistent hashing. Stored directly in the endpoint's `identifier` field. Scoped per DistributionGroup and per Gateway — the same Pod gets the same ID across all IP families within a Gateway, but may have different IDs in different DGs.
+**Maglev ID**: A stable integer (0 to maxEndpoints-1) assigned to each Pod for consistent hashing. Stored directly in the endpoint's `identifier` field. Scoped per DistributionGroup and per Gateway - the same Pod gets the same ID across all IP families within a Gateway, but may have different IDs in different DGs.
 
-**Why shared allocation across families:** The LoadBalancer uses a single NFQLB hash table per DistributionGroup. This hash table maps identifiers to fwmarks, and fwmarks determine routing tables. If different families assigned different IDs to the same Pod, the single hash table would have conflicting entries — one Pod's route would overwrite another's, causing non-deterministic routing and cross-Pod identifier collisions. Shared allocation ensures each identifier maps to exactly one Pod across all IP families, and the LB creates per-family routes under the same fwmark (IPv4 and IPv6 routing tables are independent in Linux). See [#70](https://github.com/Nordix/Meridio-2/issues/70) for full problem description and [#106](https://github.com/Nordix/Meridio-2/issues/106) for related cross-component contract considerations.
+**Why shared allocation across families:** The LoadBalancer uses a single NFQLB hash table per DistributionGroup. This hash table maps identifiers to fwmarks, and fwmarks determine routing tables. If different families assigned different IDs to the same Pod, the single hash table would have conflicting entries - one Pod's route would overwrite another's, causing non-deterministic routing and cross-Pod identifier collisions. Shared allocation ensures each identifier maps to exactly one Pod across all IP families, and the LB creates per-family routes under the same fwmark (IPv4 and IPv6 routing tables are independent in Linux). See [#70](https://github.com/Nordix/Meridio-2/issues/70) for full problem description and [#106](https://github.com/Nordix/Meridio-2/issues/106) for related cross-component contract considerations.
 
 ### Design Principles
 
@@ -144,7 +144,7 @@ and cannot be used for weighted load balancing. This constraint is reflected in 
 **Maglev ID Scoping:**
 
 Maglev IDs are scoped **per DistributionGroup** and **per Gateway**. ID assignment operates at
-the Pod level and is independent of IP families — a Pod gets an ID as long as it has at least
+the Pod level and is independent of IP families - a Pod gets an ID as long as it has at least
 one address in any of the Gateway's configured subnets.
 
 - **Same Pod, different DistributionGroups**: Pod-A might be ID `3` in DG-1 and ID `7` in DG-2
@@ -181,7 +181,7 @@ The LoadBalancer controller uses **dynamic ID offsets per DistributionGroup** to
 **Distribution-group label:**
 The `meridio-2.nordix.org/distribution-group` label exists solely for `kubectl` convenience
 (e.g., `kubectl get loadbalancerendpointslices -l meridio-2.nordix.org/distribution-group=test-dg`). It MUST NOT
-be used for controller logic — the controller uses ownerReferences for slice discovery and
+be used for controller logic - the controller uses ownerReferences for slice discovery and
 `spec.distributionGroupName` for the authoritative DG reference. The label value is truncated
 to 63 characters (Kubernetes label value limit) when the DG name exceeds this length.
 
@@ -200,7 +200,7 @@ Example: `test-dg-a1b2c3d4e5f6g7h8-0`
 **MaxEndpointsPerSlice enforcement:**
 The limit is only enforced when filling remaining capacity into existing slices or creating new slices.
 Existing slices that already exceed the limit (e.g., after `--max-endpoints-per-slice` is lowered)
-retain all their endpoints — the controller never truncates or splits an oversized slice. Such slices
+retain all their endpoints - the controller never truncates or splits an oversized slice. Such slices
 gradually shrink as Pods scale down naturally. This avoids unnecessary endpoint churn on a
 configuration change.
 
@@ -282,12 +282,12 @@ GatewayConfiguration:
 **Without GatewayConfiguration watch:**
 
 The Gateway controller watches GatewayConfiguration and reconciles when it changes. However,
-if the config remains valid, the Gateway stays `Accepted=True` with no status change — meaning
+if the config remains valid, the Gateway stays `Accepted=True` with no status change - meaning
 no Gateway object event is emitted.
 
 From the DG controller's perspective:
 1. GatewayConfiguration updated (valid → valid)
-2. Gateway controller reconciles, confirms Gateway is still valid — no status write
+2. Gateway controller reconciles, confirms Gateway is still valid - no status write
 3. No Gateway event reaches the DG controller
 4. DG controller is never triggered
 5. DG remains stale until an unrelated event (Pod change, periodic resync) causes reconciliation
@@ -633,7 +633,7 @@ spec:
       app: test-backend
   maglev:
     maxEndpoints: 32
-  # No parentRefs — indirect reference via L34Route
+  # No parentRefs - indirect reference via L34Route
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: L34Route
@@ -713,10 +713,10 @@ The DG controller does **not** watch Node events or independently detect node fa
 This is intentional:
 
 1. **Node unreachable ≠ node dead.** A control-plane network partition triggers NotReady, but the Pod may still be running and serving traffic on the data-plane path.
-2. **Premature Maglev ID reallocation disrupts active connections.** Revoking an ID reshuffles the hash table, reassigning in-flight connections to a different endpoint — even if the original Pod is still alive.
+2. **Premature Maglev ID reallocation disrupts active connections.** Revoking an ID reshuffles the hash table, reassigning in-flight connections to a different endpoint - even if the original Pod is still alive.
 3. **Kubernetes provides the control mechanism.** Applications set Pod `tolerationSeconds` for `node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable` taints to control the eviction window (default 300s, reducible to e.g. 30s for faster failover).
 
-Once the Pod is deleted or transitions out of `Running` phase, the DG controller removes it from EndpointSlices and the Maglev ID is freed — this is the safe trigger, as Kubernetes has committed to terminating the Pod.
+Once the Pod is deleted or transitions out of `Running` phase, the DG controller removes it from EndpointSlices and the Maglev ID is freed - this is the safe trigger, as Kubernetes has committed to terminating the Pod.
 
 ## Future Enhancements
 

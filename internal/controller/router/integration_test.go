@@ -109,7 +109,7 @@ func TestIntegration_ReadinessGatingTriggersReconcile(t *testing.T) {
 	}
 	require.NoError(t, k8sClient.Status().Update(ctx, gw))
 
-	// Wait for initial reconcile (VIPs should be suppressed — dir is empty)
+	// Wait for initial reconcile (VIPs should be suppressed - dir is empty)
 	time.Sleep(500 * time.Millisecond)
 	assert.Nil(t, mock.configureVIPs, "VIPs should be suppressed when readiness dir is empty")
 
