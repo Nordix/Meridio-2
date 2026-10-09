@@ -28,6 +28,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 )
 
 // reconcileFlows configures NFQLB flows from L34Routes.
@@ -292,6 +293,7 @@ func (c *Controller) configureNftables(ctx context.Context, distGroupName string
 	}
 
 	if err := c.nftManager.SetVIPs(vips); err != nil {
+		c.ConfigErrors.Inc(lbmetrics.ReasonVIPConfig)
 		return fmt.Errorf("failed to set VIPs in nftables: %w", err)
 	}
 

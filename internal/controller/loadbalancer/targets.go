@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 )
 
 // reconcileTargets synchronizes NFQLB targets from LoadBalancerEndpointSlices.
@@ -133,6 +134,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		slices.Sort(ips)
 		if err := service.AddTarget(ctx, ips, identifier); err != nil {
 			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
+			c.ConfigErrors.Inc(lbmetrics.ReasonRouteConfig)
 			errFinal = errors.Join(errFinal, err)
 		} else {
 			anyTargetReady = true

@@ -84,6 +84,14 @@ func (nfqlb *NFQueueLoadBalancer) NoTargetsFwmark() int {
 	return nfqlb.fwmarkBase + 1
 }
 
+// PolicyRouteCounts returns the number of this LB's installed policy routing rules per IP family
+// (keys "IPv4"/"IPv6"), read fresh from the kernel. It uses the instance's own fwmark starting
+// offset as the ownership predicate, so callers do not need access to the (unexported) offset.
+// Used by the LB metrics route collector to expose <prefix>_lb_policy_routes.
+func (nfqlb *NFQueueLoadBalancer) PolicyRouteCounts() (map[string]int, error) {
+	return PolicyRouteCounts(nfqlb.startingOffset())
+}
+
 // startingOffset returns the offset where NFQLB instances begin allocating fwmarks.
 func (nfqlb *NFQueueLoadBalancer) startingOffset() int {
 	return nfqlb.fwmarkBase + 2

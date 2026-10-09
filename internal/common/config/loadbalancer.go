@@ -18,7 +18,9 @@ package config
 
 import (
 	"strconv"
+	"time"
 
+	"github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/nfqlb"
 	"github.com/spf13/pflag"
@@ -26,20 +28,22 @@ import (
 
 // LoadBalancerConfig holds configuration for the stateless-load-balancer
 type LoadBalancerConfig struct {
-	GatewayName      string
-	GatewayNamespace string
-	NFQueue          string
-	FwmarkBase       int
-	ReadinessDir     string
-	ProbeAddr        string
-	LogLevel         string
-	LogLevelAPI      string
-	MetricsAddr      string
-	SecureMetrics    bool
-	MetricsCertPath  string
-	MetricsCertName  string
-	MetricsCertKey   string
-	EnableHTTP2      bool
+	GatewayName           string
+	GatewayNamespace      string
+	NFQueue               string
+	FwmarkBase            int
+	ReadinessDir          string
+	ProbeAddr             string
+	LogLevel              string
+	LogLevelAPI           string
+	MetricsAddr           string
+	MetricsPrefix         string
+	MetricsCollectTimeout time.Duration
+	SecureMetrics         bool
+	MetricsCertPath       string
+	MetricsCertName       string
+	MetricsCertKey        string
+	EnableHTTP2           bool
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -65,6 +69,12 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
 	fs.StringVar(&c.MetricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
+	fs.StringVar(&c.MetricsPrefix, "metrics-prefix", metrics.DefaultPrefix,
+		"Prefix for custom Meridio-2 metric names. Must start with a lowercase letter and contain only "+
+			"lowercase letters, digits, and underscores. Maximum 10 characters.")
+	fs.DurationVar(&c.MetricsCollectTimeout, "metrics-collect-timeout", 5*time.Second,
+		"Maximum time a single metrics scrape may spend reading nfqlb (flow-list/show) before "+
+			"reporting a collection error. Keep below Prometheus's scrape_timeout (default 10s).")
 	fs.BoolVar(&c.SecureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	fs.StringVar(&c.MetricsCertPath, "metrics-cert-path", "",
@@ -87,6 +97,8 @@ func (c *LoadBalancerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)
+	bindString(fs, "metrics-prefix", "MERIDIO_METRICS_PREFIX", &c.MetricsPrefix)
+	bindDuration(fs, "metrics-collect-timeout", "MERIDIO_METRICS_COLLECT_TIMEOUT", &c.MetricsCollectTimeout)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)

@@ -33,6 +33,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/readiness"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
@@ -122,9 +123,10 @@ func (m *mockNFQLB) DropFwmarks() (nolb, notargets int) {
 
 // mockNFQLBInstance mocks a single NFQLB instance (per DistributionGroup).
 type mockNFQLBInstance struct {
-	name    string
-	flows   map[string]nfqlb.Flow
-	targets map[int][]string
+	name         string
+	flows        map[string]nfqlb.Flow
+	targets      map[int][]string
+	addTargetErr error // when set, AddTarget returns this error
 }
 
 func (m *mockNFQLBInstance) AddFlow(_ context.Context, flow nfqlb.Flow) error {
@@ -141,12 +143,26 @@ func (m *mockNFQLBInstance) DeleteFlow(_ context.Context, flow nfqlb.Flow) error
 }
 
 func (m *mockNFQLBInstance) AddTarget(_ context.Context, ips []string, identifier int) error {
+	if m.addTargetErr != nil {
+		return m.addTargetErr
+	}
 	if m.targets == nil {
 		m.targets = make(map[int][]string)
 	}
 	m.targets[identifier] = ips
 	return nil
 }
+
+// fakeConfigErrors is a configErrorRecorder test double that records Inc calls per reason.
+type fakeConfigErrors struct {
+	counts map[string]int
+}
+
+func newFakeConfigErrors() *fakeConfigErrors {
+	return &fakeConfigErrors{counts: make(map[string]int)}
+}
+
+func (f *fakeConfigErrors) Inc(reason string) { f.counts[reason]++ }
 
 func (m *mockNFQLBInstance) DeleteTarget(_ context.Context, identifier int) error {
 	delete(m.targets, identifier)
@@ -521,6 +537,55 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(mockInstance.targets[0]).To(Equal([]string{"10.0.0.1"}))
 			Expect(mockInstance.targets).To(HaveKey(1)) // fwmark = 1 + offset (internal to nfqlb)
 			Expect(mockInstance.targets[1]).To(Equal([]string{"10.0.0.2"}))
+		})
+
+		It("should increment route_config on AddTarget failure", func() {
+			ce := newFakeConfigErrors()
+			controller.ConfigErrors = ce
+
+			// Force the (mock) nfqlb AddTarget to fail for this DG's instance.
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			mockInstance.addTargetErr = errors.New("activate failed")
+
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			})
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			err := controller.reconcileTargets(ctx, distGroup)
+			Expect(err).To(HaveOccurred())
+
+			// route_config counted (and not vip_config).
+			Expect(ce.counts[lbmetrics.ReasonRouteConfig]).To(Equal(1))
+			Expect(ce.counts[lbmetrics.ReasonVIPConfig]).To(Equal(0))
+		})
+
+		It("does not panic when ConfigErrors is a typed-nil (metrics disabled)", func() {
+			// Mirror production's metrics-disabled wiring: a typed-nil *lbmetrics.ConfigErrors in
+			// the interface field. Inc must no-op (not panic) on the nil receiver.
+			controller.ConfigErrors = (*lbmetrics.ConfigErrors)(nil)
+
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			mockInstance.addTargetErr = errors.New("activate failed")
+
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			})
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			Expect(func() { _ = controller.reconcileTargets(ctx, distGroup) }).NotTo(Panic())
 		})
 
 		It("should skip endpoints without Identifier field", func() {
@@ -1104,6 +1169,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(ok).To(BeTrue())
 			mockNft.setVIPsErr = errors.New("nftables SetVIPs failed")
 
+			ce := newFakeConfigErrors()
+			controller.ConfigErrors = ce
+
 			fakeClient = newFakeClient(scheme, distGroup, l34route, gateway)
 			controller.Client = fakeClient
 
@@ -1112,6 +1180,10 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// The SetVIPs failure is surfaced (joined) for requeue.
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("nftables SetVIPs failed"))
+
+			// The vip_config error counter was incremented (and not route_config).
+			Expect(ce.counts[lbmetrics.ReasonVIPConfig]).To(Equal(1))
+			Expect(ce.counts[lbmetrics.ReasonRouteConfig]).To(Equal(0))
 
 			// Flow tracking is NOT lost: the successfully programmed flow is retained.
 			Expect(controller.flows[distGroup.Name]).To(HaveKey("test-route"))

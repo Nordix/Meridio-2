@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -38,14 +39,25 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/log"
+	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 	"github.com/nordix/meridio-2/internal/nfqlb"
+	nftablesmanager "github.com/nordix/meridio-2/internal/nftables"
 )
 
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+)
+
+// Compile-time assertions that the concrete types wired into the LB metrics collectors satisfy
+// the collector reader interfaces. These guard against silent drift when either side changes.
+var (
+	_ lbmetrics.StatsReader    = (*nfqlb.NFQueueLoadBalancer)(nil)
+	_ lbmetrics.RouteReader    = (*nfqlb.NFQueueLoadBalancer)(nil)
+	_ lbmetrics.NftablesReader = (*nftablesmanager.Manager)(nil)
 )
 
 func init() {
@@ -110,6 +122,13 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return fmt.Errorf("gateway-name and gateway-namespace are required")
 	}
 
+	// Validate the metrics prefix early (fail fast) when metrics are enabled.
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+			return fmt.Errorf("metrics-prefix: %w", err)
+		}
+	}
+
 	// Initialize NFQLB
 	nfqlbInstance, err := nfqlb.New(nfqlb.WithQueue(cfg.NFQueue), nfqlb.WithFwmarkBase(cfg.FwmarkBase))
 	if err != nil {
@@ -167,15 +186,25 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return err
 	}
 
-	// Setup LoadBalancer controller
-	if err := (&loadbalancer.Controller{
+	// Setup LoadBalancer controller. Construct the route-config-error counter only when metrics
+	// are enabled; otherwise leave a TYPED-NIL *lbmetrics.ConfigErrors so the controller's
+	// nil-safe Inc no-ops (never an untyped nil, which would make the interface field non-nil
+	// and panic on Inc).
+	var configErrors *lbmetrics.ConfigErrors
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		configErrors = lbmetrics.NewConfigErrors(cfg.GatewayName, cfg.MetricsPrefix)
+	}
+
+	lbController := &loadbalancer.Controller{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
 		GatewayName:      cfg.GatewayName,
 		GatewayNamespace: cfg.GatewayNamespace,
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
 		Readiness:        readiness.NewManager(cfg.ReadinessDir),
-	}).SetupWithManager(mgr); err != nil {
+		ConfigErrors:     configErrors, // typed-nil when metrics disabled; Inc is nil-safe
+	}
+	if err := lbController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to setup controller")
 		return err
 	}
@@ -190,6 +219,16 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return err
 	}
 
+	// Register custom LB metrics collectors when metrics are enabled. Collectors read lazily at
+	// scrape time; the push-style config-error counter is registered too. SetupWithManager has
+	// already initialized the shared nftables manager, so NftablesReader() is available here.
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := registerLBMetrics(lbController, nfqlbInstance, configErrors, cfg); err != nil {
+			setupLog.Error(err, "failed to register LB metrics")
+			return err
+		}
+	}
+
 	setupLog.Info("starting manager", "gateway", cfg.GatewayName, "namespace", cfg.GatewayNamespace)
 	if err := mgr.Start(ctx); err != nil {
 		// Check if the manager stopped because NFQLB crashed
@@ -200,5 +239,57 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return err
 	}
 
+	return nil
+}
+
+// registerLBMetrics registers the LB custom metrics collectors with the controller-runtime
+// metrics registry. Called only when metrics are enabled and the prefix is validated.
+//
+//   - nfqlb collector  (lazy): flow matches + active targets, from the nfqlb subprocess.
+//   - nftables collector (lazy): VIP set size + drops, from the shared nftables manager — only if
+//     the manager exposes the read methods (lbController.NftablesReader() != nil).
+//   - route collector (lazy): policy-route counts per family, from nfqlb's netlink rules.
+//   - config-errors counter (push): already incremented by the controller; registered here.
+func registerLBMetrics(
+	lbController *loadbalancer.Controller,
+	nfqlbInstance *nfqlb.NFQueueLoadBalancer,
+	configErrors *lbmetrics.ConfigErrors,
+	cfg *config.LoadBalancerConfig,
+) error {
+	// Shared collector-error counter: lazy collectors increment it on a read failure and skip the
+	// failing series, instead of emitting an invalid metric (which would 500 the whole scrape
+	// under controller-runtime's HTTPErrorOnError).
+	collectorErrors := lbmetrics.NewCollectorErrors(cfg.GatewayName, cfg.MetricsPrefix)
+	if err := ctrlmetrics.Registry.Register(collectorErrors.Collector()); err != nil {
+		return fmt.Errorf("register collector-errors counter: %w", err)
+	}
+
+	nfqlbCollector := lbmetrics.NewCollector(
+		nfqlbInstance, cfg.GatewayName, cfg.MetricsPrefix, cfg.MetricsCollectTimeout, collectorErrors,
+	)
+	if err := ctrlmetrics.Registry.Register(nfqlbCollector); err != nil {
+		return fmt.Errorf("register nfqlb collector: %w", err)
+	}
+
+	if nftReader := lbController.NftablesReader(); nftReader != nil {
+		nftCollector := lbmetrics.NewNftablesCollector(nftReader, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)
+		if err := ctrlmetrics.Registry.Register(nftCollector); err != nil {
+			return fmt.Errorf("register nftables collector: %w", err)
+		}
+	} else {
+		setupLog.Info("nftables manager does not expose read methods; skipping nftables metrics collector")
+	}
+
+	routeCollector := lbmetrics.NewRouteCollector(nfqlbInstance, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)
+	if err := ctrlmetrics.Registry.Register(routeCollector); err != nil {
+		return fmt.Errorf("register route collector: %w", err)
+	}
+
+	if err := ctrlmetrics.Registry.Register(configErrors.Collector()); err != nil {
+		return fmt.Errorf("register config-errors counter: %w", err)
+	}
+
+	setupLog.Info("Registered custom LB metrics collectors",
+		"metricsPrefix", cfg.MetricsPrefix, "collectTimeout", cfg.MetricsCollectTimeout)
 	return nil
 }

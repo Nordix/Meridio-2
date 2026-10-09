@@ -31,6 +31,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/readiness"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 	nftablesmanager "github.com/nordix/meridio-2/internal/nftables"
 )
 
@@ -63,6 +64,11 @@ type Controller struct {
 	Readiness         *readiness.Manager
 	NftManagerFactory func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error)
 
+	// ConfigErrors counts failed data-plane config operations by reason. Nil-safe: when metrics
+	// are disabled, leave it as a typed-nil *loadbalancer.ConfigErrors (Inc no-ops on a nil
+	// receiver) — do NOT assign an untyped nil, which would make the interface non-nil.
+	ConfigErrors configErrorRecorder
+
 	mu          sync.Mutex
 	instances   map[string]nfqlbInstance                         // key: DistributionGroup name
 	nftManager  nftablesManager                                  // Shared nftables manager for all DGs
@@ -76,6 +82,25 @@ type nftablesManager interface {
 	Setup() error
 	SetVIPs(cidrs []string) error
 	Cleanup() error
+}
+
+// configErrorRecorder records failed data-plane config operations by reason (see
+// internal/metrics/loadbalancer.ConfigErrors). *loadbalancer.ConfigErrors satisfies it; a fake is
+// used in tests. A typed-nil value is a valid no-op (Inc no-ops on a nil receiver), so the
+// reconcile path calls it unconditionally while construction stays gated on metrics being enabled.
+type configErrorRecorder interface {
+	Inc(reason string)
+}
+
+// NftablesReader exposes the shared nftables manager as a metrics read source, if the concrete
+// manager supports the read methods (it does; the test fake may not). Returns nil when the manager
+// is absent or does not implement the reader — in which case run.go skips registering the nftables
+// collector. Must be called after SetupWithManager has initialized the shared manager.
+func (c *Controller) NftablesReader() lbmetrics.NftablesReader {
+	if r, ok := c.nftManager.(lbmetrics.NftablesReader); ok {
+		return r
+	}
+	return nil
 }
 
 const (
