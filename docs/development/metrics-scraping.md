@@ -5,21 +5,21 @@ metrics endpoints, and what an eventual OpenTelemetry migration would entail.
 
 The [shared setup](#shared-setup) (install kube-prometheus-stack, port-forward,
 Grafana) is common to every component. Each component then has its own chapter for
-the parts that genuinely differ — the controller-manager is scraped via a
+the parts that genuinely differ - the controller-manager is scraped via a
 `ServiceMonitor` over a Service, while the network-sidecar is scraped per-Pod via a
 `PodMonitor`, with different auth/cert mechanics.
 
 > **Structure is provisional.** Only the controller-manager and network-sidecar are
 > covered so far. Once the LB and Router metrics are implemented, this doc's
-> chapter-vs-split structure should be revisited — their collection models (nfqlb /
+> chapter-vs-split structure should be revisited - their collection models (nfqlb /
 > nftables, BIRD via `birdc`) may share less with the above than these two do.
 
 ## Choosing ServiceMonitor vs PodMonitor
 
-Both CRDs make Prometheus scrape **every matching Pod individually** — the Operator
+Both CRDs make Prometheus scrape **every matching Pod individually** - the Operator
 expands either into one target per Pod (a ServiceMonitor discovers Pods via a
 Service's Endpoints; a PodMonitor selects Pods by label directly). So the choice is
-**not** "ServiceMonitor for Deployments, PodMonitor for Pods" — that shorthand is
+**not** "ServiceMonitor for Deployments, PodMonitor for Pods" - that shorthand is
 misleading, since a replicated Deployment is scraped per-Pod under both. The actual
 deciding factors are:
 
@@ -32,15 +32,15 @@ deciding factors are:
 
 This is why the two components below differ, despite **both being Deployments**:
 
-- **Controller-manager** — kubebuilder scaffolds a metrics Service, and its
+- **Controller-manager** - kubebuilder scaffolds a metrics Service, and its
   cert-manager serving cert keys its SAN off that Service's DNS name. A Service
   already exists *and* enables verifiable TLS → **ServiceMonitor**.
-- **Network-sidecar** — runs in arbitrary application Pods with no metrics Service and
+- **Network-sidecar** - runs in arbitrary application Pods with no metrics Service and
   no stable per-Pod DNS/SAN → **PodMonitor** + self-signed cert + `insecureSkipVerify`.
 
 > Note for repackagers: if you deploy the controller-manager **without** the kubebuilder
 > Service (e.g. a custom Helm chart that omits it), the ServiceMonitor recipe below no
-> longer applies as-is — either add an equivalent metrics Service, or scrape the
+> longer applies as-is - either add an equivalent metrics Service, or scrape the
 > manager Pods with a PodMonitor (accepting `insecureSkipVerify`, since you'd then lack
 > the stable-SAN cert the Service enables). The choice follows the two factors above,
 > not the workload type.
@@ -61,7 +61,7 @@ of the confusion:
 | `9090` | the Prometheus server's own web UI / HTTP API | you, the operator | checking scrape targets and running queries |
 | `3000` | the Grafana server's web UI | you, the operator | dashboards / Explore |
 
-You never scrape `8443` by hand — Prometheus does. You port-forward `9090`
+You never scrape `8443` by hand - Prometheus does. You port-forward `9090`
 (Prometheus) and `3000` (Grafana) to your machine to *look at the result*.
 
 ### Install kube-prometheus-stack
@@ -94,10 +94,10 @@ kubectl -n monitoring port-forward svc/prometheus-kube-prometheus-prometheus 909
 
 Then at `http://localhost:9090`:
 
-- **Targets:** `http://localhost:9090/targets` — confirm the component's target is
+- **Targets:** `http://localhost:9090/targets` - confirm the component's target is
   **UP** with no scrape error. Discovery can lag a few tens of seconds after
   applying a monitor (the Operator regenerates the Prometheus config, then Prometheus
-  reloads it) — a missing target right after applying is usually just this lag.
+  reloads it) - a missing target right after applying is usually just this lag.
 - **Query** via the HTTP API:
   ```bash
   curl -s 'http://localhost:9090/api/v1/query?query=<metric>' | jq .
@@ -105,7 +105,7 @@ Then at `http://localhost:9090`:
 
 > Note: the port-forward dies when its terminal closes or the Prometheus Pod
 > restarts. An empty query result plus a failed `curl` to `:9090` usually just means
-> the forward dropped — restart it before assuming the scrape broke.
+> the forward dropped - restart it before assuming the scrape broke.
 
 ### Grafana (port 3000)
 
@@ -116,7 +116,7 @@ kubectl -n monitoring port-forward svc/prometheus-grafana 3000:80
 ```
 
 Open `http://localhost:3000`. Username `admin`; read the password from the secret
-(do **not** assume the chart default — it may have been overridden):
+(do **not** assume the chart default - it may have been overridden):
 
 ```bash
 kubectl -n monitoring get secret prometheus-grafana -o jsonpath='{.data.admin-password}' | base64 -d; echo
@@ -125,27 +125,27 @@ kubectl -n monitoring get secret prometheus-grafana -o jsonpath='{.data.admin-pa
 Use **Explore** with the built-in Prometheus datasource and query `meridio_2_*`.
 These are gauge-style state metrics that change only when the underlying CRs change,
 so **Stat** or **Table** panels read more naturally than a time-series graph.
-Grafana queries the same Prometheus — a metric absent there is absent here too;
+Grafana queries the same Prometheus - a metric absent there is absent here too;
 Grafana is only a view.
 
 ## Controller-manager
 
 The controller-manager is scraped via a `ServiceMonitor` over a stable metrics
 Service. The `ServiceMonitor` is applied separately (not part of `config/default`)
-so the Kustomize base does not depend on the Prometheus Operator CRDs — `kubectl
+so the Kustomize base does not depend on the Prometheus Operator CRDs - `kubectl
 apply -k config/default` must work on a cluster without the Operator installed.
 
 It exposes these custom metrics (all pull-based from the informer cache):
 
-- `meridio_2_gateway_count` (no labels) — number of Gateways `Accepted=True` by this
+- `meridio_2_gateway_count` (no labels) - number of Gateways `Accepted=True` by this
   controller.
-- `meridio_2_gateway_programmed{gateway,namespace}` — `Programmed` condition (0/1)
+- `meridio_2_gateway_programmed{gateway,namespace}` - `Programmed` condition (0/1)
   per Gateway destined for this controller by its GatewayClass.
-- `meridio_2_distributiongroup_ready{dg,namespace}` — DG `Ready` condition (0/1).
-- `meridio_2_distributiongroup_endpoints{gateway,gateway_namespace,dg,namespace}` —
+- `meridio_2_distributiongroup_ready{dg,namespace}` - DG `Ready` condition (0/1).
+- `meridio_2_distributiongroup_endpoints{gateway,gateway_namespace,dg,namespace}` -
   current endpoint count per DG per Gateway.
 - `meridio_2_distributiongroup_max_endpoints{gateway,gateway_namespace,dg,namespace}`
-  — capacity per DG per Gateway (`+Inf` for unbounded strategies).
+  - capacity per DG per Gateway (`+Inf` for unbounded strategies).
 
 ### What the base deploy already provides
 
@@ -164,7 +164,7 @@ then serves metrics over HTTPS on port `8443`:
   token (a ServiceAccount token) allowed to GET `/metrics`.
 
 A `namePrefix`/`namespace`/`nameSuffix` in the deploy renames this same Service
-accordingly — e.g. the e2e `separate-appnetwork` suite deploys it as
+accordingly - e.g. the e2e `separate-appnetwork` suite deploys it as
 `meridio-2-controller-manager-metrics-service-separate-appnet` in namespace
 `e2e-separate-appnetwork`. The labels above are unchanged by renaming, so the
 ServiceMonitor selector below still matches.
@@ -173,7 +173,7 @@ ServiceMonitor selector below still matches.
 
 A `ServiceMonitor` tells the Prometheus Operator which Service to scrape. Apply it
 in the **same namespace** the controller-manager was deployed to. The
-`selector.matchLabels` are the metrics Service's labels (a subset match — the
+`selector.matchLabels` are the metrics Service's labels (a subset match - the
 Service may carry extra labels, e.g. an e2e-suite label). Adjust `namespace` to
 match your deploy.
 
@@ -211,7 +211,7 @@ authorized to GET `/metrics` (see Troubleshooting on 401/403).
 
 > `bearerTokenFile` is deprecated on ServiceMonitor (still functional) in favor of
 > `authorization`. It is kept here because it reads Prometheus's automounted SA token
-> directly — the simplest working form. Switching to `authorization.credentials`
+> directly - the simplest working form. Switching to `authorization.credentials`
 > would require minting a token Secret in this namespace (as the network-sidecar
 > chapter must, since PodMonitor dropped `bearerTokenFile` entirely), which is more
 > setup for no functional gain here.
@@ -233,13 +233,13 @@ each of `gw-a1`/`gw-a2`; `distributiongroup_ready`, `distributiongroup_endpoints
 
 ### Troubleshooting (controller-manager)
 
-- **Target missing from `/targets`** — usually discovery lag; wait ~30–60s. If it
+- **Target missing from `/targets`** - usually discovery lag; wait ~30-60s. If it
   never appears, confirm the ServiceMonitor's `selector.matchLabels` are a subset of
   the metrics Service's labels, and that the Service has endpoints
   (`kubectl -n <ns> get endpoints -l control-plane=controller-manager` should show
   the manager Pod IP on `:8443`). Also check the Operator regenerated the config
   (`kubectl -n monitoring logs deploy/prometheus-kube-prometheus-operator`).
-- **Target DOWN with 401/403** — a token/authorization problem at the manager's
+- **Target DOWN with 401/403** - a token/authorization problem at the manager's
   `WithAuthenticationAndAuthorization` filter. Two separate pieces are involved:
   - The manager validates the scraper's token via TokenReview/SubjectAccessReview.
     The base grants the manager's own SA this ability
@@ -248,12 +248,12 @@ each of `gw-a1`/`gw-a2`; `distributiongroup_ready`, `distributiongroup_endpoints
     A 401 here points at a missing/invalid bearer token on the scrape.
   - Authorization to GET `/metrics`: the base ships a `metrics-reader` ClusterRole
     (`config/rbac/metrics_reader_role.yaml`, `get` on the `/metrics`
-    nonResourceURL) but **no binding for Prometheus's ServiceAccount** — that SA
+    nonResourceURL) but **no binding for Prometheus's ServiceAccount** - that SA
     lives in the Operator's namespace. kube-prometheus-stack's own ClusterRole
     typically already grants its Prometheus SA `get /metrics` cluster-wide (which is
     why the scrape works without extra wiring); a 403 means it does not, and you must
     bind `metrics-reader` (or equivalent) to the scraping SA yourself.
-- **Target DOWN with x509/TLS error** — the endpoint is HTTPS; ensure `scheme: https`
+- **Target DOWN with x509/TLS error** - the endpoint is HTTPS; ensure `scheme: https`
   and `insecureSkipVerify: true` are set (the Service serves a cert-manager cert
   whose CA Prometheus does not trust by default).
 
@@ -265,7 +265,7 @@ metrics source. It is scraped via a **`PodMonitor`** (each Pod scraped by IP),
 whereas the controller-manager uses a `ServiceMonitor` over one Service.
 
 Pod identity is 1:1 with the scrape target, so the sidecar metrics carry **no `pod`
-label** — the scraper injects `pod`/`instance` automatically. The metrics are:
+label** - the scraper injects `pod`/`instance` automatically. The metrics are:
 `meridio_2_sidecar_vips_configured{gateway}`,
 `meridio_2_sidecar_nexthops{gateway,ip_family}` (both gauges from the ENC), and
 `meridio_2_sidecar_config_errors_total{reason}` (a push counter of failed netlink
@@ -300,7 +300,7 @@ plumbing into the application Pod is needed.
 
 The secure endpoint's auth filter validates each scraper via TokenReview /
 SubjectAccessReview, so the **sidecar's** ServiceAccount needs those (cluster-scoped)
-verbs — bound with a ClusterRoleBinding:
+verbs - bound with a ClusterRoleBinding:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -332,7 +332,7 @@ subjects:
 The ClusterRole is shared/apply-once; the binding is per-namespace (name-suffixed
 with `<ns>` so covering multiple namespaces doesn't clobber a binding). To cover
 another namespace, add another ClusterRoleBinding (or append to this one's
-`subjects`) — the ClusterRole is not duplicated.
+`subjects`) - the ClusterRole is not duplicated.
 
 ### 3. Scraper-side identity (SA + token Secret + get /metrics)
 
@@ -349,7 +349,7 @@ metadata:
   name: sidecar-metrics-scraper
   namespace: <ns>
 ---
-# Long-lived token Secret for that SA — the PodMonitor reads its "token" key.
+# Long-lived token Secret for that SA - the PodMonitor reads its "token" key.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -411,7 +411,7 @@ spec:
 > the serving cert is not CA-verified. This is **structurally required** for per-Pod
 > scraping, not a shortcut: the self-signed cert has SANs `localhost`/`127.0.0.1`,
 > which can never match the ephemeral Pod IP Prometheus scrapes. Verified TLS would
-> need per-Pod-IP certs (a CSI cert driver) or a service mesh — out of scope here.
+> need per-Pod-IP certs (a CSI cert driver) or a service mesh - out of scope here.
 
 ### Expected series
 
@@ -422,27 +422,27 @@ Pod, distinguished by the injected `pod`/`instance` labels):
 - `meridio_2_sidecar_vips_configured{gateway="gw-a1"|"gw-a2"}` = 1 each
 - `meridio_2_sidecar_nexthops{gateway=…, ip_family="IPv4"}` = 2 each
 - `meridio_2_sidecar_config_errors_total{reason="link"|"address"|"route"}` = 0 (all
-  three reasons present at 0 — pre-initialized — until a real netlink op fails)
+  three reasons present at 0 - pre-initialized - until a real netlink op fails)
 
 > **Consuming the error counter across restarts.** `config_errors_total` is a counter
 > in the sidecar's process memory; it resets to 0 on Pod/process restart. Consume it
 > via `rate()`/`increase()` (both reset-aware). For restart-aware interpretation pair
 > it with **`process_start_time_seconds`** (exposed for free by controller-runtime's
-> process collector on the same endpoint) rather than container-restart metrics — the
+> process collector on the same endpoint) rather than container-restart metrics - the
 > former reflects controller-process restarts even when a supervisor keeps the
 > container alive.
 
 ### Troubleshooting (network-sidecar)
 
 - **Target DOWN, HTTP 500, log "Authentication failed … tokenreviews … forbidden … at
-  the cluster scope"** — the sidecar SA is missing the cluster-scoped auth grant from
+  the cluster scope"** - the sidecar SA is missing the cluster-scoped auth grant from
   step 2. Verify with
   `kubectl auth can-i create tokenreviews --as=system:serviceaccount:<ns>:meridio-2-network-sidecar`.
-- **No `network-sidecar` target in `/targets`** — the PodMonitor wasn't adopted:
+- **No `network-sidecar` target in `/targets`** - the PodMonitor wasn't adopted:
   either set `podMonitorSelectorNilUsesHelmValues=false` on the stack, or label the
   PodMonitor `release: prometheus`. Confirm with
   `kubectl -n monitoring get prometheus -o jsonpath='{.items[0].spec.podMonitorSelector}'`.
-- **`config_errors_total` absent while the gauges are present** — the running image
+- **`config_errors_total` absent while the gauges are present** - the running image
   predates the counter; rebuild/reload the sidecar image and roll the application
   Deployment.
 
@@ -463,12 +463,12 @@ OTEL, the implications differ sharply by scope:
   documentation whether any of our metrics are affected before relying on it.
 - **Rewriting instrumentation to the OTEL metrics API (largest).** Here the
   pull-based `Collect()` logic maps reasonably onto OTEL *observable* (async) gauge
-  callbacks — the "read the informer cache when asked" shape survives. Two things do
+  callbacks - the "read the informer cache when asked" shape survives. Two things do
   **not** port cleanly:
   - **The cache-sync fail-fast contract.** On a scrape before the informer cache has
     synced, `Collect()` emits `prometheus.NewInvalidMetric(...)`, which makes
     client_golang's handler return an HTTP 500 to the scraper (an actionable error
-    instead of a partial or blocking scrape — see `internal/metrics/util/cache_sync.go`
+    instead of a partial or blocking scrape - see `internal/metrics/util/cache_sync.go`
     and the `Collect` methods). OTEL observable callbacks have **no equivalent** of
     failing a collection back to the reader; a callback cannot turn "cache not synced"
     into a scrape error. This behavior would need redesigning (e.g. a separate
@@ -476,7 +476,7 @@ OTEL, the implications differ sharply by scope:
   - **controller-runtime's own metrics stay Prometheus-native.** The framework
     registers reconcile/workqueue metrics against its Prometheus registry and does not
     emit OTEL. Even after rewriting our collectors, those built-ins still require the
-    Prometheus registry (bridged or scraped) — you cannot fully leave Prometheus by
+    Prometheus registry (bridged or scraped) - you cannot fully leave Prometheus by
     changing only our code.
 
   Metric naming/semantics also differ (Prometheus `snake_case` + the `+Inf` sentinel

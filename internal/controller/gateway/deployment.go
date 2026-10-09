@@ -544,7 +544,7 @@ func applyReadinessGates(deployment *appsv1.Deployment, gatewayConfig *meridio2v
 }
 
 // injectRouterPodIdentityEnvVars finds the router container and ensures these downward API env vars are set: POD_NAME, POD_NAMESPACE, POD_UID
-// MERIDIO_GATEWAY_NAMESPACE is the Gateway's namespace (not necessarily the Pod's namespace — cross-namespace scenarios are possible in the future).
+// MERIDIO_GATEWAY_NAMESPACE is the Gateway's namespace (not necessarily the Pod's namespace - cross-namespace scenarios are possible in the future).
 // The router needs its own Pod's namespace to patch its own status.
 func injectRouterPodIdentityEnvVars(deployment *appsv1.Deployment) {
 	for i := range deployment.Spec.Template.Spec.Containers {

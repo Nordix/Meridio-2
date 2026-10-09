@@ -82,8 +82,8 @@ ssh -o StrictHostKeyChecking=no -i ~/.crc/machines/crc/id_ed25519 -p 2222 core@1
 
 OpenShift's kubelet rejects Pod-level unsafe sysctls unless explicitly allowlisted.
 This is a two-layer requirement:
-1. The **SCC** allows the Pod to declare the sysctls (admission control) — handled by the deploy step.
-2. The **KubeletConfig** allows the kubelet to actually apply them (runtime enforcement) — done here.
+1. The **SCC** allows the Pod to declare the sysctls (admission control) - handled by the deploy step.
+2. The **KubeletConfig** allows the kubelet to actually apply them (runtime enforcement) - done here.
 
 ```bash
 oc apply -f test/e2e/suites/openshift-crc/kubeletconfig.yaml
@@ -131,7 +131,7 @@ make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 
 `deploy-openshift-crc` depends on `push-images-openshift-crc`, so a single call handles:
 namespace creation, ImageStreams, image push (tag+push of locally-built images + vpn-gateway
-build), cert-manager install (idempotent — skipped if already present), SCCs, RBAC,
+build), cert-manager install (idempotent - skipped if already present), SCCs, RBAC,
 controller-manager (via kustomize overlay with RBAC finalizer patches + LB template override),
 VPN gateway, NADs, Gateway, routing, targets, and waits for all pods to become Ready.
 
@@ -157,7 +157,7 @@ make -C test/e2e deploy-openshift-crc KUBECTL=oc OCP_USE_NORDIX=true
 make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 ```
 
-**Use the default (build-and-push) flow when iterating on component code** — `OCP_USE_NORDIX=true`
+**Use the default (build-and-push) flow when iterating on component code** - `OCP_USE_NORDIX=true`
 deploys whatever is currently published on nordix, not your local changes.
 
 ### Validate
@@ -170,7 +170,7 @@ NS=meridio-2
 # All pods should be Running
 oc get pods -n $NS
 
-# Check BGP sessions — expect GW4_OCP_1 and GW6_OCP_1 both Established
+# Check BGP sessions - expect GW4_OCP_1 and GW6_OCP_1 both Established
 oc exec vpn-gateway -n $NS -- birdc show protocols
 
 # Check VIP routes learned via BGP
@@ -180,16 +180,16 @@ oc exec vpn-gateway -n $NS -- birdc show route
 oc exec vpn-gateway -n $NS -- ping -c 3 100.0.0.1
 oc exec vpn-gateway -n $NS -- ping6 -c 3 fd00:cafe:1::1
 
-# TCP load balancing — IPv4
+# TCP load balancing - IPv4
 oc exec vpn-gateway -n $NS -- ctraffic -address 100.0.0.1:5000 -nconn 100 -timeout 10s -stats all
 
-# TCP load balancing — IPv6
+# TCP load balancing - IPv6
 oc exec vpn-gateway -n $NS -- ctraffic -address '[fd00:cafe:1::1]:5000' -nconn 100 -timeout 10s -stats all
 
-# UDP load balancing — IPv4
+# UDP load balancing - IPv4
 oc exec vpn-gateway -n $NS -- ctraffic -udp -address 100.0.0.1:5001 -nconn 100 -timeout 10s -stats all
 
-# UDP load balancing — IPv6
+# UDP load balancing - IPv6
 oc exec vpn-gateway -n $NS -- ctraffic -udp -address '[fd00:cafe:1::1]:5001' -nconn 100 -timeout 10s -stats all
 ```
 
@@ -198,7 +198,7 @@ Expected results:
 - `birdc show route`: `100.0.0.1/32` and `fd00:cafe:1::1/128` learned via BGP
 - `ctraffic`: 0 failed connections, traffic distributed across 2 target pods
 
-> **Note**: Gateway API CRDs are pre-installed on OpenShift — no action needed.
+> **Note**: Gateway API CRDs are pre-installed on OpenShift - no action needed.
 
 ### Automated test run
 
@@ -215,7 +215,7 @@ make -C test/e2e test-openshift-crc KUBECTL=oc
 make -C test/e2e undeploy-openshift-crc KUBECTL=oc
 ```
 
-**Run `test-openshift-crc` as a separate step, with a gap after deployment finishes — do not
+**Run `test-openshift-crc` as a separate step, with a gap after deployment finishes - do not
 run it back-to-back with `deploy-openshift-crc` in the same invocation.** Waiting a minute or
 two between deployment and testing has been observed to reduce intermittent IPv6 traffic
 failures more consistently than retrying the test itself.
@@ -250,7 +250,7 @@ cannot run alongside the Kind-based suites in the same invocation.
 All targets accept `KUBECTL=oc` and derive registry paths from:
 - `OCP_REGISTRY_HOST` (default: `default-route-openshift-image-registry.apps-crc.testing`)
 - `OCP_NAMESPACE` (default: `meridio-2`)
-- `OCP_USE_NORDIX` (default: `false`) — if set to `true`, `controller-manager`,
+- `OCP_USE_NORDIX` (default: `false`) - if set to `true`, `controller-manager`,
   `stateless-load-balancer`, `router`, `network-sidecar`, and `example-target` are pulled
   directly from `registry.nordix.org` instead of being built and pushed to the CRC internal
   registry. `vpn-gateway` has no published image and is always built/pushed locally regardless
@@ -302,16 +302,16 @@ The differences above stem from OpenShift's stricter default security posture co
 Kubernetes. This section explains the underlying cause for each requirement.
 
 - **Seccomp (`Unconfined` on loadbalancer container)**: The `RuntimeDefault` seccomp profile blocks
-  `NETLINK_NETFILTER` messages — specifically nftables set management (`NFT_MSG_NEWSET`) and nfqueue
+  `NETLINK_NETFILTER` messages - specifically nftables set management (`NFT_MSG_NEWSET`) and nfqueue
   binding (`NFQNL_CFG_CMD_BIND`). Both are required by NFQLB/nftables in the loadbalancer container.
   Standard netlink operations (interface addresses, routes, policy rules) used by the router and
-  network-sidecar containers are **not** affected by `RuntimeDefault` — only the loadbalancer
+  network-sidecar containers are **not** affected by `RuntimeDefault` - only the loadbalancer
   container needs `Unconfined`.
 
 - **SELinux (`spc_t` on loadbalancer container)**: SELinux enforces at a separate kernel security
   module layer, independent of seccomp. Even when seccomp allows a syscall, `container_t`'s SELinux
   policy still lacks permissions for nfqueue bind and nftables set operations. Both seccomp **and**
-  SELinux restrictions must be relaxed together — fixing only one still results in denial from the
+  SELinux restrictions must be relaxed together - fixing only one still results in denial from the
   other. `spc_t` (super-privileged container) is scoped to the loadbalancer container only; the
   router container works fine under the default SELinux type.
 
@@ -321,7 +321,7 @@ Kubernetes. This section explains the underlying cause for each requirement.
 
 - **KubeletConfig for unsafe sysctls**: Declaring unsafe sysctls in a Pod spec is a two-layer gate.
   The SCC's `allowedUnsafeSysctls` only satisfies *admission control* (whether the Pod spec is
-  accepted). The kubelet separately enforces its own allowlist at *runtime* — without a matching
+  accepted). The kubelet separately enforces its own allowlist at *runtime* - without a matching
   `KubeletConfig`, the kubelet refuses to apply the sysctls even if the Pod was admitted.
 
 - **Pod-level sysctls instead of tuning CNI NAD**: OpenShift's Multus blocks the `tuning` CNI plugin
@@ -337,8 +337,8 @@ Kubernetes. This section explains the underlying cause for each requirement.
 - **RBAC finalizer permissions**: OpenShift enables the `OwnerReferencesPermissionEnforcement`
   admission controller by default (optional on vanilla Kubernetes). `ctrl.SetControllerReference()`
   sets `blockOwnerDeletion: true`, which requires explicit `/finalizers` sub-resource RBAC permissions
-  on the owner resources — `gateways/finalizers`, `distributiongroups/finalizers`, and
-  `pods/finalizers` — otherwise the controller-manager cannot set owner references on Deployments,
+  on the owner resources - `gateways/finalizers`, `distributiongroups/finalizers`, and
+  `pods/finalizers` - otherwise the controller-manager cannot set owner references on Deployments,
   LoadBalancerEndpointSlices, and EndpointNetworkConfigurations respectively. This is patched in here
   via `kustomization.yaml` rather than the base `config/rbac/manager-role.yaml` because vanilla
   Kubernetes doesn't enforce the check by default; moving these rules into the base role would be a
@@ -348,7 +348,7 @@ Kubernetes. This section explains the underlying cause for each requirement.
   CoreOS/OpenShift nodes and must be explicitly persisted via `/etc/modules-load.d/`.
 
 - **Pod anti-affinity removed**: The LB Deployment template's default anti-affinity (spread across
-  nodes) is meaningless — and blocks scheduling entirely — on a single-node cluster. Since Bridge CNI
+  nodes) is meaningless - and blocks scheduling entirely - on a single-node cluster. Since Bridge CNI
   supports multiple LB Pods sharing the same bridge on one node, anti-affinity is safely dropped here.
 
 ---
@@ -357,7 +357,7 @@ Kubernetes. This section explains the underlying cause for each requirement.
 
 - **KubeletConfig reboot**: Applying `kubeletconfig.yaml` triggers a MachineConfig rollout that
   reboots the CRC node. The single-node kubelet does not reliably auto-restart after reboot.
-  **Recommended recovery**: `crc stop && crc start` (not SSH kubelet nudge). One-time operation —
+  **Recommended recovery**: `crc stop && crc start` (not SSH kubelet nudge). One-time operation -
   the sysctl allowlist and module load persist across subsequent `crc stop`/`crc start` cycles.
 
 - **Disk pressure**: Default CRC disk is 32GB which is too small for all Meridio-2 images.
@@ -366,7 +366,7 @@ Kubernetes. This section explains the underlying cause for each requirement.
   `oc adm taint nodes crc node.kubernetes.io/disk-pressure:NoSchedule-`
 
 - **IPv6 convergence**: After fresh deployment, IPv6 traffic may fail for ~30 seconds while
-  nfqlb programs its flows and IPv6 NDP completes. Wait and retry — this is not a bug.
+  nfqlb programs its flows and IPv6 NDP completes. Wait and retry - this is not a bug.
 
 - **Ghost pods after CRC restart**: Force-delete with
   `oc delete pod <name> -n meridio-2 --force --grace-period=0`

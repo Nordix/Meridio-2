@@ -22,7 +22,7 @@ This assumes the `manager` container is at index 0 in the Deployment spec. The a
 
 ### Why JSON Patch works for modular args
 
-JSON Patch (RFC 6902) operates on the raw JSON document structure — it has no awareness of Kubernetes types, merge keys, or OpenAPI schemas. The `add` operation with the `/-` suffix appends to an array:
+JSON Patch (RFC 6902) operates on the raw JSON document structure - it has no awareness of Kubernetes types, merge keys, or OpenAPI schemas. The `add` operation with the `/-` suffix appends to an array:
 
 ```yaml
 - op: add
@@ -30,7 +30,7 @@ JSON Patch (RFC 6902) operates on the raw JSON document structure — it has no 
   value: --webhook-cert-path=/tmp/certs
 ```
 
-Each patch independently appends one arg without knowing what other args exist. This is what enables the modular composition — contrast with strategic merge patch, which would replace the entire `args` list (see below).
+Each patch independently appends one arg without knowing what other args exist. This is what enables the modular composition - contrast with strategic merge patch, which would replace the entire `args` list (see below).
 
 ### Brittleness
 
@@ -62,19 +62,19 @@ spec:
           name: stateless-load-balancer-templates
 ```
 
-Kubernetes strategic merge uses `name` as the merge key for `containers`, `volumeMounts`, `volumes`, and `env` — so these fields merge correctly without indexes.
+Kubernetes strategic merge uses `name` as the merge key for `containers`, `volumeMounts`, `volumes`, and `env` - so these fields merge correctly without indexes.
 
 ### Why it doesn't work for us
 
-The `args` field has **replace** semantics in strategic merge, not append. This is not a Kustomize limitation — it is baked into the Kubernetes API type definitions. Kustomize reads the OpenAPI schema to determine merge behavior per field.
+The `args` field has **replace** semantics in strategic merge, not append. This is not a Kustomize limitation - it is baked into the Kubernetes API type definitions. Kustomize reads the OpenAPI schema to determine merge behavior per field.
 
 Fields that support merge have a `patchStrategy:"merge"` tag with a `patchMergeKey` in the Kubernetes Go types (`k8s.io/api/core/v1/types.go`):
 
 ```go
-// Merges by name — has patchStrategy tag
+// Merges by name - has patchStrategy tag
 Env []EnvVar `json:"env,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
 
-// Replaces entirely — plain []string, no patch tags
+// Replaces entirely - plain []string, no patch tags
 Args []string `json:"args,omitempty"`
 ```
 
@@ -97,7 +97,7 @@ Since multiple patches add individual args (`--metrics-bind-address`, `--webhook
 | `volumeMounts` | `mountPath` | ✓ |
 | `env` | `name` | ✓ |
 | `ports` | `containerPort` | ✓ |
-| `args` | *(none — list replace)* | ✗ |
+| `args` | *(none - list replace)* | ✗ |
 
 ## Decision
 

@@ -363,7 +363,7 @@ func (r *DistributionGroupReconciler) createSlices(dg *meridio2v1alpha1.Distribu
 	slices = compacted
 
 	// Build new slices for remaining endpoints.
-	// Note: new slices and compaction-emptied slices are mutually exclusive —
+	// Note: new slices and compaction-emptied slices are mutually exclusive -
 	// remaining endpoints only exist when existing slices were full (no compaction possible),
 	// and compaction only empties slices when existing slices had spare capacity (no remaining).
 	for len(remainingEndpoints) > 0 {

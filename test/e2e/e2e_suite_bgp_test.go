@@ -42,7 +42,7 @@ import (
 //   - VIP withdrawn when the app is scaled to 0 replicas
 //   - VIP re-advertised when replicas are restored
 //   - VIP withdrawn when all backing pods become NotReady (readiness probe fails
-//     on the running pods — no rollout)
+//     on the running pods - no rollout)
 //   - VIP re-advertised when pods become Ready again
 //
 // The LB writes a per-DG readiness file (lb-ready-<dg>) only while at least one
@@ -51,7 +51,7 @@ import (
 // NotReady state) withdraws the VIP from the DCGW, and restoring readiness
 // re-advertises it.
 //
-// Pinned to the ipv4-simple topology (reused, not deployed here — same topology
+// Pinned to the ipv4-simple topology (reused, not deployed here - same topology
 // used by the Low MTU and Resiliency suites). These specs are disruptive and
 // drive the shared VPN gateway, so the tree is Serial (never concurrent with
 // other specs under `ginkgo -p`) and Ordered (deterministic sequence). State is
@@ -159,7 +159,7 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 	It("withdraws VIP from DCGW when all backing pods become NotReady", func() {
 		// Flip the running pods to NotReady in place by removing the readiness
 		// file the probe checks (see targets.yaml). This simulates the app's
-		// readiness probe starting to fail at runtime — no rollout, same pods.
+		// readiness probe starting to fail at runtime - no rollout, same pods.
 		// All endpoints go Ready=false, so the LB removes the lb-ready file and
 		// the router withdraws the VIP.
 		By("removing /tmp/ready on all target pods to fail their readiness probe")

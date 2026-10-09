@@ -46,7 +46,7 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 ### Hand-Maintained RBAC
 - `config/rbac/manager-role.yaml` - namespace-scoped Role (edit manually)
 - `config/rbac/manager-clusterrole.yaml` - ClusterRole for cluster-scoped resources (edit manually)
-- RBAC is NOT generated from kubebuilder markers — `make manifests` does not produce RBAC files
+- RBAC is NOT generated from kubebuilder markers - `make manifests` does not produce RBAC files
 
 ### Never Remove Scaffold Markers
 Do NOT delete `// +kubebuilder:scaffold:*` comments. CLI injects code at these markers.
@@ -60,6 +60,9 @@ Always use `kubebuilder create api` and `kubebuilder create webhook` to scaffold
 ### E2E Tests Require an Isolated Kind Cluster
 The e2e tests are designed to validate the solution in an isolated environment (similar to GitHub Actions CI).
 Ensure you run them against a dedicated [Kind](https://kind.sigs.k8s.io/) cluster (not your “real” dev/prod cluster).
+
+### Hyphens Only - No Em-dash or En-dash
+Never use em-dash (—) or en-dash (–) in any file; always use regular hyphens (-) instead.
 
 ### Branch Naming
 Do not use `/` in branch names (e.g., `fix/my-feature`). The CI pipeline uses branch names as Docker image tags, and `/` is not valid in container image tags. Use hyphens instead: `fix-my-feature`.

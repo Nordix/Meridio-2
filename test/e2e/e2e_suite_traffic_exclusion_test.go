@@ -38,8 +38,8 @@ import (
 // fails, no rollout), the load balancer stops distributing traffic to them
 // while the remaining Ready targets keep serving. Covers single-target
 // exclusion, recovery, and multi-target exclusion (scale to 4, exclude 2). The
-// primary check is traffic-side — a NotReady Pod's hostname MUST NOT appear in
-// the ctraffic per-connection host stats while a Ready Pod's MUST — backed by a
+// primary check is traffic-side - a NotReady Pod's hostname MUST NOT appear in
+// the ctraffic per-connection host stats while a Ready Pod's MUST - backed by a
 // control-plane checkpoint on the LoadBalancerEndpointSlice `ready` flag to make
 // failures easy to triage (DG controller vs. LB/dataplane).
 //
@@ -121,9 +121,9 @@ var _ = Describe("Traffic Exclusion", Label("ipv4"), Serial, Ordered, func() {
 	// endpointReady returns the LoadBalancerEndpointSlice `ready` flag for the
 	// endpoint backing the given Pod in dg-m1's slices, as a control-plane
 	// checkpoint that complements the traffic-side assertions. Returns:
-	//   "true"/"false" — the endpoint's ready flag
-	//   "absent"       — no endpoint for this Pod was found in any slice
-	//   "ERROR: ..."   — the lookup itself failed
+	//   "true"/"false" - the endpoint's ready flag
+	//   "absent"       - no endpoint for this Pod was found in any slice
+	//   "ERROR: ..."   - the lookup itself failed
 	endpointReady := func(pod string) string {
 		out, err := utils.Run(exec.Command("kubectl", "get", "lbeslice", "-n", namespace,
 			"-l", "meridio-2.nordix.org/distribution-group="+dgName, "-o", "json"))

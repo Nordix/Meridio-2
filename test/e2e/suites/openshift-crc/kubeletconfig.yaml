@@ -3,7 +3,7 @@
 #
 # OpenShift's kubelet rejects Pod-level unsafe sysctls at runtime unless
 # explicitly allowlisted here. This works together with the meridio-lb SCC
-# (which allows pods to declare them at admission) — both layers are required.
+# (which allows pods to declare them at admission) - both layers are required.
 #
 # WARNING: Applying this triggers a MachineConfig rollout which reboots the
 # CRC node (~3-5 minutes). Wait for the node to return to Ready before proceeding.

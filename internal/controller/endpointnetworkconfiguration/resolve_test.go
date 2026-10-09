@@ -455,7 +455,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
-	// Pod only has IPv4 address on net1 — no IPv6
+	// Pod only has IPv4 address on net1 - no IPv6
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
 	targetPod.Annotations = map[string]string{
 		"k8s.v1.cni.cncf.io/network-status": `[
@@ -479,7 +479,7 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
-	// Only IPv4 domain should be present — IPv6 skipped (no interface)
+	// Only IPv4 domain should be present - IPv6 skipped (no interface)
 	assert.Len(t, conn.Domains, 1)
 	assert.Equal(t, "IPv4", conn.Domains[0].IPFamily)
 	assert.Equal(t, "net1", conn.Domains[0].Network.InterfaceHint)
@@ -769,14 +769,14 @@ func TestSidecarContract_DualStack(t *testing.T) {
 		// Contract 4: VIPs must be parseable by net.ParseIP (plain IPs, not CIDRs)
 		for _, vip := range domain.VIPs {
 			ip := net.ParseIP(vip)
-			assert.NotNil(t, ip, "sidecar calls net.ParseIP on VIP %q — must not be CIDR", vip)
+			assert.NotNil(t, ip, "sidecar calls net.ParseIP on VIP %q - must not be CIDR", vip)
 			assert.NotContains(t, vip, "/", "VIP must be plain IP, not CIDR")
 		}
 
 		// Contract 5: NextHops must be parseable by net.ParseIP (plain IPs, not CIDRs)
 		for _, hop := range domain.NextHops {
 			ip := net.ParseIP(hop)
-			assert.NotNil(t, ip, "sidecar calls net.ParseIP on NextHop %q — must not be CIDR", hop)
+			assert.NotNil(t, ip, "sidecar calls net.ParseIP on NextHop %q - must not be CIDR", hop)
 			assert.NotContains(t, hop, "/", "NextHop must be plain IP, not CIDR")
 		}
 
@@ -786,7 +786,7 @@ func TestSidecarContract_DualStack(t *testing.T) {
 
 		// Contract 7: Network.InterfaceHint must be non-empty for NAD attachment type
 		assert.NotEmpty(t, domain.Network.InterfaceHint,
-			"InterfaceHint must be set for NAD — sidecar passes it to findInterfaceBySubnet")
+			"InterfaceHint must be set for NAD - sidecar passes it to findInterfaceBySubnet")
 	}
 
 	// Verify actual values for IPv4 domain
@@ -918,7 +918,7 @@ func TestHasConnectivityGate(t *testing.T) {
 			expected:      false,
 		},
 		{
-			name: "gate not declared — not applicable, include Pod",
+			name: "gate not declared - not applicable, include Pod",
 			pod: &corev1.Pod{
 				Status: corev1.PodStatus{},
 			},
@@ -939,7 +939,7 @@ func TestHasConnectivityGate(t *testing.T) {
 			expected:      false,
 		},
 		{
-			name: "IPv6-only gateway — IPv4 gate not declared, include Pod",
+			name: "IPv6-only gateway - IPv4 gate not declared, include Pod",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
 					ReadinessGates: []corev1.PodReadinessGate{
@@ -973,7 +973,7 @@ func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
 		wantIPv6 []string
 	}{
 		{
-			name: "all pods healthy and connected — all included",
+			name: "all pods healthy and connected - all included",
 			pods: []corev1.Pod{
 				makeLBPodWithGates("sllb-1", true, true, true),
 				makeLBPodWithGates("sllb-2", true, true, true),
@@ -981,7 +981,7 @@ func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
 			wantIPv4: []string{"192.168.100.1", "192.168.100.2"},
 		},
 		{
-			name: "one pod container not ready — excluded from both families",
+			name: "one pod container not ready - excluded from both families",
 			pods: []corev1.Pod{
 				makeLBPodWithGates("sllb-1", true, true, true),
 				makeLBPodWithGates("sllb-2", false, true, true), // container not ready
@@ -989,7 +989,7 @@ func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
 			wantIPv4: []string{"192.168.100.1"},
 		},
 		{
-			name: "pod has IPv4 gate True but IPv6 gate False — only in IPv4 hops",
+			name: "pod has IPv4 gate True but IPv6 gate False - only in IPv4 hops",
 			pods: []corev1.Pod{
 				makeLBPodWithGates("sllb-1", true, true, false),
 			},
@@ -997,14 +997,14 @@ func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
 			wantIPv6: nil,
 		},
 		{
-			name: "pod has no readiness gates — included (gate not applicable)",
+			name: "pod has no readiness gates - included (gate not applicable)",
 			pods: []corev1.Pod{
 				makeLBPodNoGates("sllb-1", true),
 			},
 			wantIPv4: []string{"192.168.100.1"},
 		},
 		{
-			name: "pod being deleted — excluded",
+			name: "pod being deleted - excluded",
 			pods: []corev1.Pod{
 				makeLBPodDeleting("sllb-1"),
 			},
@@ -1040,7 +1040,7 @@ func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
 			r.Client = fakeClient
 
 			subnetToType := map[string]string{"192.168.100.0/24": "NAD"}
-			if tt.wantIPv6 != nil || tt.name == "pod has IPv4 gate True but IPv6 gate False — only in IPv4 hops" {
+			if tt.wantIPv6 != nil || tt.name == "pod has IPv4 gate True but IPv6 gate False - only in IPv4 hops" {
 				subnetToType["2001:db8::/64"] = "NAD"
 			}
 

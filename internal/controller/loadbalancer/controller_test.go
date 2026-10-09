@@ -343,7 +343,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			}
 
-			// No L34Routes exist — direct parentRef should still match
+			// No L34Routes exist - direct parentRef should still match
 			fakeClient = newFakeClient(scheme)
 			controller.Client = fakeClient
 
@@ -611,7 +611,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 		})
 
 		It("should ignore slices scoped to a different Gateway", func() {
-			// Slice for this Gateway — should be processed
+			// Slice for this Gateway - should be processed
 			lbepsOurs := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
 				{
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
@@ -621,7 +621,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				},
 			})
 
-			// Slice for a different Gateway — should be excluded by field index
+			// Slice for a different Gateway - should be excluded by field index
 			lbepsOther := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
 				{
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
@@ -1445,7 +1445,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			//
 			// The DG lives in "other-ns" but its parentRef explicitly targets
 			// c.GatewayNamespace ("default"), so the parentRef-namespace check alone
-			// would not exclude it — only scoping the List call does.
+			// would not exclude it - only scoping the List call does.
 			dgOtherNs := &meridio2v1alpha1.DistributionGroup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "direct-dg",

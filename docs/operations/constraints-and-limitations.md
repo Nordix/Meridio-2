@@ -8,7 +8,7 @@ Items marked *(architectural constraint)* reflect deliberate design decisions th
 
 **1. ~~Dual-stack internal networking partially supported (IPv4 + IPv6 simultaneously)~~ (Resolved)**
 
-The DistributionGroup controller assigns Maglev IDs per DG per Gateway, shared across all networks (IPv4/IPv6). Initially the LB controller accumulated IPs from both IPv4 and IPv6 EndpointSlices per identifier and created policy routes for both families ([#70](https://github.com/Nordix/Meridio-2/issues/70), [#144](https://github.com/Nordix/Meridio-2/issues/144)). With the LoadBalancerEndpointSlice CRD ([#178](https://github.com/Nordix/Meridio-2/issues/178)), dual-stack addresses are co-located in a single endpoint entry — no cross-slice correlation needed.
+The DistributionGroup controller assigns Maglev IDs per DG per Gateway, shared across all networks (IPv4/IPv6). Initially the LB controller accumulated IPs from both IPv4 and IPv6 EndpointSlices per identifier and created policy routes for both families ([#70](https://github.com/Nordix/Meridio-2/issues/70), [#144](https://github.com/Nordix/Meridio-2/issues/144)). With the LoadBalancerEndpointSlice CRD ([#178](https://github.com/Nordix/Meridio-2/issues/178)), dual-stack addresses are co-located in a single endpoint entry - no cross-slice correlation needed.
 
 **2. ~~RBAC uses ClusterRole instead of namespace-scoped Roles (controller-manager)~~ (Resolved)**
 
@@ -24,13 +24,13 @@ No metrics are exposed by any component. Future metrics should include traffic-r
 
 **5. Network subnet CIDRs must uniquely identify a single interface IP per Pod** *(architectural constraint)*
 
-Each CIDR in `GatewayConfiguration.spec.internalSubnets` must match exactly one secondary interface IP within application Pods. The DistributionGroup controller uses these subnets to select the correct IP from Multus network-status annotations when building endpoint slices — if multiple interfaces match, the selected IP is ambiguous. Similarly, the network sidecar discovers the target interface by matching the subnet against interface addresses, and would apply VIPs and routing rules to the wrong interface if multiple interfaces match.
+Each CIDR in `GatewayConfiguration.spec.internalSubnets` must match exactly one secondary interface IP within application Pods. The DistributionGroup controller uses these subnets to select the correct IP from Multus network-status annotations when building endpoint slices - if multiple interfaces match, the selected IP is ambiguous. Similarly, the network sidecar discovers the target interface by matching the subnet against interface addresses, and would apply VIPs and routing rules to the wrong interface if multiple interfaces match.
 
 To avoid ambiguity, the default network (`0.0.0.0/0`, `::/0`) and `fe80::/10` link-local addresses are explicitly not accepted.
 
 **6. VIPs cannot be shared across Gateways** *(architectural constraint)*
 
-Each VIP (defined in `L34Route.spec.destinationCIDRs`) must belong to exactly one Gateway. The L34Route API enforces a single `parentRef`, so a given L34Route — and its VIPs — is bound to one Gateway. Reusing the same VIP address in L34Routes attached to different Gateways is not supported and leads to undefined behavior, as multiple LB Deployments would attract and load-balance the same traffic independently. Additionally, if an application Pod joins both Gateways, the network sidecar would assign the same VIP on different interfaces with conflicting source-based routing rules, making return path selection ambiguous.
+Each VIP (defined in `L34Route.spec.destinationCIDRs`) must belong to exactly one Gateway. The L34Route API enforces a single `parentRef`, so a given L34Route - and its VIPs - is bound to one Gateway. Reusing the same VIP address in L34Routes attached to different Gateways is not supported and leads to undefined behavior, as multiple LB Deployments would attract and load-balance the same traffic independently. Additionally, if an application Pod joins both Gateways, the network sidecar would assign the same VIP on different interfaces with conflicting source-based routing rules, making return path selection ambiguous.
 
 **7. Only flat (L2) secondary networks are supported** *(architectural constraint)*
 
@@ -46,7 +46,7 @@ Resource changes in `GatewayConfiguration.spec.verticalScaling` trigger Pod recr
 
 **9. LB uses dynamic routing table/fwmark ranges starting at fwmarkBase+2** *(architectural constraint)*
 
-The LB controller assigns fwmarks and routing table IDs dynamically per DistributionGroup. Each DG maps to one NFQLB instance — a named shared memory segment (`nfqlb init --shm=<dg-name>`) containing a Maglev hash table. The single `nfqlb flowlb` process reads all instances concurrently: when a packet arrives, nfqlb matches it to a flow, looks up the corresponding instance's hash table, selects a target slot, and sets the fwmark on the packet. Each instance gets a contiguous fwmark range of size `maxEndpoints` (from the DG's Maglev configuration, default 100). Ranges are allocated sequentially starting at `fwmarkBase+2` (default 5002 with `--fwmark-base=5000`) and packed without gaps — the allocator finds the first non-overlapping range based on actual `maxEndpoints` values of existing instances. The formula is `fwmark = dgOffset + endpoint_identifier`, where `dgOffset` is the per-DG base allocated by `getOffset()` (first DG gets `fwmarkBase+2`, next gets `fwmarkBase+2+maxEndpoints`, etc.) and `fwmark == tableID`. The first two values below the instance range (`fwmarkBase+0` and `fwmarkBase+1`) are reserved for drop-accounting (no-flow and no-targets marks used in nftables). This range must not overlap with other fwmark or routing table usage in the LB Pod's network namespace. At startup, the LB cleans up all stale policy routing rules with `mark >= fwmarkBase+2` from a previous instance. DG offset assignment is in-memory — different LB Pods may assign different offsets to the same DistributionGroup. This is acceptable as routing tables are local to each Pod.
+The LB controller assigns fwmarks and routing table IDs dynamically per DistributionGroup. Each DG maps to one NFQLB instance - a named shared memory segment (`nfqlb init --shm=<dg-name>`) containing a Maglev hash table. The single `nfqlb flowlb` process reads all instances concurrently: when a packet arrives, nfqlb matches it to a flow, looks up the corresponding instance's hash table, selects a target slot, and sets the fwmark on the packet. Each instance gets a contiguous fwmark range of size `maxEndpoints` (from the DG's Maglev configuration, default 100). Ranges are allocated sequentially starting at `fwmarkBase+2` (default 5002 with `--fwmark-base=5000`) and packed without gaps - the allocator finds the first non-overlapping range based on actual `maxEndpoints` values of existing instances. The formula is `fwmark = dgOffset + endpoint_identifier`, where `dgOffset` is the per-DG base allocated by `getOffset()` (first DG gets `fwmarkBase+2`, next gets `fwmarkBase+2+maxEndpoints`, etc.) and `fwmark == tableID`. The first two values below the instance range (`fwmarkBase+0` and `fwmarkBase+1`) are reserved for drop-accounting (no-flow and no-targets marks used in nftables). This range must not overlap with other fwmark or routing table usage in the LB Pod's network namespace. At startup, the LB cleans up all stale policy routing rules with `mark >= fwmarkBase+2` from a previous instance. DG offset assignment is in-memory - different LB Pods may assign different offsets to the same DistributionGroup. This is acceptable as routing tables are local to each Pod.
 
 **10. ~~DistributionGroups with only direct parentRefs not processed by LB~~ (Resolved)**
 
@@ -54,26 +54,26 @@ Fixed in PR #110. The `belongsToGateway` check now also inspects `DistributionGr
 
 **30. L34Route CIDR count is limited to 32 per field by the nfqlb data plane** *(architectural constraint)*
 
-`L34Route.spec.destinationCIDRs` and `spec.sourceCIDRs` allow `MaxItems=100` at the CRD level, but the data plane (nfqlb) accepts at most **32 CIDRs per field per flow** (`MAX_CIDRS` in nfqlb `src/lib/flow.c`). nfqlb's `parseCidrs()` rejects a longer list, which makes the `nfqlb flow-set` command fail — so the flow is **not programmed**. The limit is applied independently to the `--dsts` and `--srcs` lists, i.e. it is a per-field limit (32 destinationCIDRs and 32 sourceCIDRs separately).
+`L34Route.spec.destinationCIDRs` and `spec.sourceCIDRs` allow `MaxItems=100` at the CRD level, but the data plane (nfqlb) accepts at most **32 CIDRs per field per flow** (`MAX_CIDRS` in nfqlb `src/lib/flow.c`). nfqlb's `parseCidrs()` rejects a longer list, which makes the `nfqlb flow-set` command fail - so the flow is **not programmed**. The limit is applied independently to the `--dsts` and `--srcs` lists, i.e. it is a per-field limit (32 destinationCIDRs and 32 sourceCIDRs separately).
 
 To prevent silently non-functional configuration, the L34Route validating webhook rejects an L34Route with more than 32 entries in either CIDR field (constant `maxCIDRsPerFlow` in `internal/webhook/v1alpha1/l34route_webhook.go`, mirroring nfqlb's `MAX_CIDRS`). The CRD `MaxItems=100` is a higher ceiling that is intentionally left unchanged; the webhook is the load-bearing limit.
 
-Raising the effective limit requires an **nfqlb change** (increase `MAX_CIDRS`) plus bumping the webhook constant — no CRD change is required.
+Raising the effective limit requires an **nfqlb change** (increase `MAX_CIDRS`) plus bumping the webhook constant - no CRD change is required.
 
 **Planned/deferred:** raising the CRD `MaxItems` (e.g. to 1000) was considered but deferred; it would only widen the gap above the data-plane cap without increasing what actually works. Any such increase should follow (not precede) an increase of nfqlb's `MAX_CIDRS`.
 
 **Related scaling considerations for VIPs (`destinationCIDRs`):**
 
-- **nftables** imposes no practical limit — VIPs populate a dynamic named interval set matched by a single `ip daddr @vip-set` rule (O(1) per packet); it scales cleanly well beyond the nfqlb per-flow cap.
-- **BGP is the practical ceiling for total VIPs per Gateway.** Each VIP is advertised as an individual `/32` or `/128` static route (see the router controller); host routes cannot be aggregated. The number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit** (operator/peer configured). Exceeding it causes the peer to tear down the BGP session — a session-wide failure affecting all VIPs on that Gateway, and not detectable at admission. Note the nfqlb `MAX_CIDRS` limit is per L34Route flow, whereas the BGP/nftables cost scales with the union of all VIPs across the Gateway.
+- **nftables** imposes no practical limit - VIPs populate a dynamic named interval set matched by a single `ip daddr @vip-set` rule (O(1) per packet); it scales cleanly well beyond the nfqlb per-flow cap.
+- **BGP is the practical ceiling for total VIPs per Gateway.** Each VIP is advertised as an individual `/32` or `/128` static route (see the router controller); host routes cannot be aggregated. The number of VIPs a Gateway can advertise is ultimately bounded by the **upstream BGP peer's max-prefix limit** (operator/peer configured). Exceeding it causes the peer to tear down the BGP session - a session-wide failure affecting all VIPs on that Gateway, and not detectable at admission. Note the nfqlb `MAX_CIDRS` limit is per L34Route flow, whereas the BGP/nftables cost scales with the union of all VIPs across the Gateway.
 
 **31. L34Route port count is bounded by the nfqlb data-plane port-string buffer (~85 entries)** *(architectural constraint)*
 
-`L34Route.spec.sourcePorts` and `destinationPorts` accept up to `MaxItems=1000` at the CRD level, but the number of ports that actually take effect is smaller and bounded by the data plane. The LB controller passes a DistributionGroup's ports to nfqlb as a single comma-joined `--sports`/`--dports` value (see `internal/nfqlb` `Instance.AddFlow`), and nfqlb copies that value with `strndupa(str, 1024)` in `rangeSetAddStr()` (`src/lib/rangeset.c`) — anything beyond **1024 bytes is silently truncated in the data plane**. With the 11-byte-per-entry CRD item limit (`"65535-65535"`), roughly **85 port entries** fit before truncation.
+`L34Route.spec.sourcePorts` and `destinationPorts` accept up to `MaxItems=1000` at the CRD level, but the number of ports that actually take effect is smaller and bounded by the data plane. The LB controller passes a DistributionGroup's ports to nfqlb as a single comma-joined `--sports`/`--dports` value (see `internal/nfqlb` `Instance.AddFlow`), and nfqlb copies that value with `strndupa(str, 1024)` in `rangeSetAddStr()` (`src/lib/rangeset.c`) - anything beyond **1024 bytes is silently truncated in the data plane**. With the 11-byte-per-entry CRD item limit (`"65535-65535"`), roughly **85 port entries** fit before truncation.
 
 To prevent silently-truncated configuration, the L34Route validating webhook rejects a port set whose comma-joined form exceeds the nfqlb buffer (constant `nfqlbPortStringMaxBytes` in `internal/webhook/v1alpha1/l34route_webhook.go`, mirroring nfqlb's `strndupa` size). `"any"` is excluded from this accounting because the controller does not serialize a full-range/any port set to nfqlb.
 
-Raising the effective port capacity is a **data-plane change**: increase nfqlb's buffer and bump `nfqlbPortStringMaxBytes` together. No CRD change is required — the CRD `MaxItems` is deliberately a generous ceiling above this limit.
+Raising the effective port capacity is a **data-plane change**: increase nfqlb's buffer and bump `nfqlbPortStringMaxBytes` together. No CRD change is required - the CRD `MaxItems` is deliberately a generous ceiling above this limit.
 
 By contrast, `L34Route.spec.byteMatches` (`MaxItems=100`) has no fixed nfqlb data-plane cap; nfqlb stores matches in a dynamically-grown list. The `byteMatches` limit is a CRD-level ceiling only.
 
@@ -87,7 +87,7 @@ The router now gates VIP advertisement on LB readiness. The collocated LB contro
 
 ~~The router now sets per-IP-family Pod readiness gates (`meridio-2.nordix.org/ipv4-connectivity`, `meridio-2.nordix.org/ipv6-connectivity`) based on BGP session state (PR #142). However, the ENC controller does not yet consume these gates to filter next-hop lists (gh-123). Until step 3 is implemented, application Pods may still route return traffic through an LB that has lost external connectivity.~~
 
-The full three-step solution is now implemented: the gateway controller declares readiness gates (PR #125), the router sets gate conditions based on BGP state with damped transitions (PR #142), and the ENC controller filters next-hops using two-level checks — container readiness plus per-IP-family gate conditions (PR #155).
+The full three-step solution is now implemented: the gateway controller declares readiness gates (PR #125), the router sets gate conditions based on BGP state with damped transitions (PR #142), and the ENC controller filters next-hops using two-level checks - container readiness plus per-IP-family gate conditions (PR #155).
 
 **12. ~~BIRD error propagation missing~~ (Resolved)**
 
@@ -99,11 +99,11 @@ The BIRD configuration now includes `scan time` (default 10 seconds, configurabl
 
 **14. ~~PMTU handling not implemented in LB Pods~~ (Resolved)**
 
-PMTU handling is implemented: the LB controller creates a nftables PMTU SNAT chain at startup that rewrites ICMP Frag Needed / Packet Too Big source addresses to the VIP. Requires `fwmark_reflect` sysctls — see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods).
+PMTU handling is implemented: the LB controller creates a nftables PMTU SNAT chain at startup that rewrites ICMP Frag Needed / Packet Too Big source addresses to the VIP. Requires `fwmark_reflect` sysctls - see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods).
 
 **15. ~~BGP authentication not supported~~ (Resolved)**
 
-TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) is now supported via `spec.bgp.authentication` in the GatewayRouter CRD. TCP-AO is the successor to TCP MD5 (RFC 2385), offering stronger cryptographic algorithms and key rotation. Meridio v1 supported TCP-MD5; Meridio v2 supports TCP-AO instead — TCP-MD5 is not supported. Master keys are stored in Kubernetes Secrets referenced by each keychain entry. See [Router controller docs](../controllers/router.md#bgp-authentication-tcp-ao) for configuration details.
+TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) is now supported via `spec.bgp.authentication` in the GatewayRouter CRD. TCP-AO is the successor to TCP MD5 (RFC 2385), offering stronger cryptographic algorithms and key rotation. Meridio v1 supported TCP-MD5; Meridio v2 supports TCP-AO instead - TCP-MD5 is not supported. Master keys are stored in Kubernetes Secrets referenced by each keychain entry. See [Router controller docs](../controllers/router.md#bgp-authentication-tcp-ao) for configuration details.
 
 **16. ~~Static routing with BFD not supported~~ (Resolved)**
 
@@ -113,7 +113,7 @@ Static routing is now supported via `spec.protocol: Static` in the GatewayRouter
 
 **17. ~~BFD not fully restricted~~ (Resolved)**
 
-BFD source ports comply with RFC 5881 (range 49152–65535) when `net.ipv4.ip_local_port_range` is set to `49152 65535` in the LB Pod's network namespace via sysctl configuration. One way to achieve this is through a tuning NAD (see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods)). BFD sessions are restricted to directly connected peers (`accept direct`), which enforces single-hop BFD mode — the multi-hop BFD port (4784) is not opened. Sessions are further restricted to the configured external interface(s) per GatewayRouter.
+BFD source ports comply with RFC 5881 (range 49152-65535) when `net.ipv4.ip_local_port_range` is set to `49152 65535` in the LB Pod's network namespace via sysctl configuration. One way to achieve this is through a tuning NAD (see [Gateway controller docs](../controllers/gateway.md#sysctl-prerequisites-for-lb-pods)). BFD sessions are restricted to directly connected peers (`accept direct`), which enforces single-hop BFD mode - the multi-hop BFD port (4784) is not opened. Sessions are further restricted to the configured external interface(s) per GatewayRouter.
 
 ## Sidecar Controller
 
@@ -125,15 +125,15 @@ The sidecar implements restart recovery via hybrid approach: emptyDir persistenc
 
 Source-based routing rules (`ip rule`) are created without an explicit priority. The kernel auto-assigns priorities just below the `main` table (32766), which produces correct ordering for the current use case. However, the priority is not configurable.
 
-**20. Sidecar uses routing table ID range 50000–55000** *(architectural constraint)*
+**20. Sidecar uses routing table ID range 50000-55000** *(architectural constraint)*
 
-The network sidecar allocates kernel routing table IDs from the range 50000–55000 (one table per Gateway connection). This range must not overlap with routing tables used by other components in the Pod's network namespace. The range is configurable via `--min-table-id` / `--max-table-id` (or `MERIDIO_MIN_TABLE_ID` / `MERIDIO_MAX_TABLE_ID`).
+The network sidecar allocates kernel routing table IDs from the range 50000-55000 (one table per Gateway connection). This range must not overlap with routing tables used by other components in the Pod's network namespace. The range is configurable via `--min-table-id` / `--max-table-id` (or `MERIDIO_MIN_TABLE_ID` / `MERIDIO_MAX_TABLE_ID`).
 
 ## DistributionGroup Controller
 
 **21. ~~Default `maxEndpoints` per DistributionGroup is 32~~ (Resolved)**
 
-The CRD-level default for `maxEndpoints` has been removed. When the `maglev` block is specified, `maxEndpoints` must be set explicitly — the API server rejects `maglev: {}` without it. When the entire `maglev` block is omitted (DG defaults to type Maglev), the controller applies the built-in default of 102 (defined by `DefaultMaglevMaxEndpoints` in the API package).
+The CRD-level default for `maxEndpoints` has been removed. When the `maglev` block is specified, `maxEndpoints` must be set explicitly - the API server rejects `maglev: {}` without it. When the entire `maglev` block is omitted (DG defaults to type Maglev), the controller applies the built-in default of 102 (defined by `DefaultMaglevMaxEndpoints` in the API package).
 
 **22. Node failure detection relies on Kubernetes Pod eviction** *(architectural constraint)*
 
@@ -145,7 +145,7 @@ A DistributionGroup can be associated with a Gateway two ways: directly via `Dis
 
 This equal handling is a deliberate design decision, chosen primarily to keep the architecture extensible toward supporting multiple Gateway associations per DG in the future, rather than baking in special validation for the direct `parentRefs` path that would later have to be unwound.
 
-The implicit consequence is that an "invalid" direct `parentRef` is silently ignored rather than rejected: a `parentRef` naming a non-existent Gateway is dropped during resolution, and one naming a Gateway that is not Accepted by this controller is dropped by the Accepted filter. In either case the DG still functions if it has a valid indirect association — the unusable direct `parentRef` simply contributes nothing, and produces no error, event, or status condition. The one case where a stray `parentRef` changes behavior is when it resolves to an accepted Gateway *different* from the one reached indirectly: the DG then references more than one accepted Gateway and is frozen with `Ready=False`, reason `MultipleGateways` (single-Gateway restriction). If it resolves to the same Gateway, deduplication collapses them and the redundant `parentRef` is harmless.
+The implicit consequence is that an "invalid" direct `parentRef` is silently ignored rather than rejected: a `parentRef` naming a non-existent Gateway is dropped during resolution, and one naming a Gateway that is not Accepted by this controller is dropped by the Accepted filter. In either case the DG still functions if it has a valid indirect association - the unusable direct `parentRef` simply contributes nothing, and produces no error, event, or status condition. The one case where a stray `parentRef` changes behavior is when it resolves to an accepted Gateway *different* from the one reached indirectly: the DG then references more than one accepted Gateway and is frozen with `Ready=False`, reason `MultipleGateways` (single-Gateway restriction). If it resolves to the same Gateway, deduplication collapses them and the redundant `parentRef` is harmless.
 
 ## Deployment / Operations
 
@@ -159,7 +159,7 @@ The controller-manager now waits for TLS certificates before starting (default: 
 
 **26. Minimum Kubernetes version 1.31** *(architectural constraint)*
 
-Required by CEL CIDR/IP validation libraries used in CRD validation rules (`isCIDR()`, `cidr().prefixLength()`, `ip().family()`). For MVP, some CEL validations have been temporarily removed to allow running on older Kubernetes versions where test environments with 1.31+ were not available. This is a temporary workaround — the full CEL validations must be restored for production use.
+Required by CEL CIDR/IP validation libraries used in CRD validation rules (`isCIDR()`, `cidr().prefixLength()`, `ip().family()`). For MVP, some CEL validations have been temporarily removed to allow running on older Kubernetes versions where test environments with 1.31+ were not available. This is a temporary workaround - the full CEL validations must be restored for production use.
 
 **27. Upgrades not verified**
 

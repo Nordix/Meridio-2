@@ -6,7 +6,7 @@
 ---
 # BGP peering network (external) - bridge CNI with VLAN, dual-stack
 # Bridge CNI auto-creates br-meridio with vlan_filtering.
-# All Pods on same node share L2 (including IPv6 NDP) — no external wiring needed.
+# All Pods on same node share L2 (including IPv6 NDP) - no external wiring needed.
 # IPv4: 169.254.100.0/24 (.150 reserved for VPN gateway)
 # IPv6: fd00:cafe:100::/64 (::150 reserved for VPN gateway)
 apiVersion: k8s.cni.cncf.io/v1

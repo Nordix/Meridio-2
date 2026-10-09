@@ -32,7 +32,7 @@ nameSuffix: -ocp
 #
 # Note: the OpenShift-adapted LB template (lb-deployment.yaml) is NOT applied via a
 # ConfigMap patch here. It is injected by the deploy-suite Makefile macro, which
-# overrides MERIDIO_TEMPLATE_PATH to /templates-override — this takes precedence over
+# overrides MERIDIO_TEMPLATE_PATH to /templates-override - this takes precedence over
 # the default /templates path a ConfigMap patch would target.
 patches:
 - patch: |-

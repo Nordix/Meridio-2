@@ -2,7 +2,7 @@
 
 ## Overview
 
-The EndpointNetworkConfiguration (ENC) controller runs inside the controller-manager. It reconciles application Pods to produce `EndpointNetworkConfiguration` custom resources — one per Pod — that declare the desired network state: which Gateways the Pod connects to, which VIPs to assign, and which next-hops to use for source-based routing.
+The EndpointNetworkConfiguration (ENC) controller runs inside the controller-manager. It reconciles application Pods to produce `EndpointNetworkConfiguration` custom resources - one per Pod - that declare the desired network state: which Gateways the Pod connects to, which VIPs to assign, and which next-hops to use for source-based routing.
 
 The ENC is consumed by the sidecar controller (`internal/controller/sidecar/`) running inside each application Pod, which applies VIPs, policy routing rules, and ECMP routes to the Pod's network namespace.
 
@@ -27,15 +27,15 @@ A per-Pod declarative model provides several advantages over shared or service-c
 
 - **Scaling and noise reduction**: A change to one Pod's network state triggers a reconciliation event only for that Pod. A shared/global object would force every agent in the cluster to re-verify its state on any change, increasing blast radius, load, and the chance of optimistic-concurrency conflicts between multiple writers.
 - **Deterministic lifecycle management**: An `ownerReference` from the ENC to its application Pod ties the network metadata's lifecycle to the Pod. When the Pod is deleted, Kubernetes garbage collection removes the ENC automatically, avoiding the "stale state" problem where a controller must manually track and prune terminated Pods from a shared list.
-- **Architecture-agnostic processing**: The per-Pod resource is a simplified data contract. The consuming entity (sidecar/node agent) needs no "Gateway awareness" — it does not collect metadata from various infrastructure objects; it simply consumes the pre-calculated instructions (VIPs, routes, interface hints) in its own dedicated CR.
+- **Architecture-agnostic processing**: The per-Pod resource is a simplified data contract. The consuming entity (sidecar/node agent) needs no "Gateway awareness" - it does not collect metadata from various infrastructure objects; it simply consumes the pre-calculated instructions (VIPs, routes, interface hints) in its own dedicated CR.
 - **Observability and granular status**: Each endpoint has its own `.status` subresource, giving immediate visibility into whether a specific Pod failed to apply its routing rules, without cluttering a shared object or parsing logs to find the affected pool member. (See [No Status on ENC](#no-status-on-enc) for the current implementation state.)
 
 ### Why Declarative Kubernetes over a Custom Config Server?
 
 A direct channel like gRPC or a centralized custom configuration server might seem appealing, but the Kubernetes-native declarative pattern was chosen for several reasons:
 
-- **Persistence and state visibility**: A custom gRPC server creates hidden state invisible to standard Kubernetes tooling (`kubectl`). Using the API server as the persistence layer makes the configuration auditable, visible, and persistent — it survives controller restarts and provides a trail for troubleshooting network plumbing issues.
-- **Decoupling from ephemeral failures**: Direct gRPC requires a synchronous handshake where producer and consumer must both be healthy and reachable simultaneously. The declarative approach is asynchronous: the controller persists the intended state to the API server independently of the consumer. If the network configuration agent is temporarily down, the configuration remains buffered, and the system converges once the agent recovers — without stalling the controller.
+- **Persistence and state visibility**: A custom gRPC server creates hidden state invisible to standard Kubernetes tooling (`kubectl`). Using the API server as the persistence layer makes the configuration auditable, visible, and persistent - it survives controller restarts and provides a trail for troubleshooting network plumbing issues.
+- **Decoupling from ephemeral failures**: Direct gRPC requires a synchronous handshake where producer and consumer must both be healthy and reachable simultaneously. The declarative approach is asynchronous: the controller persists the intended state to the API server independently of the consumer. If the network configuration agent is temporarily down, the configuration remains buffered, and the system converges once the agent recovers - without stalling the controller.
 - **Built-in scalability and HA**: A custom, highly available, secure config database would duplicate functionality already provided by `etcd` and the Kubernetes API. Reusing cluster infrastructure avoids deploying, maintaining, and securing a separate HA service for networking metadata.
 - **Self-healing and drift compensation**: Unlike an imperative push (which may be lost during a network partition or restart), the controller pattern continuously reconciles observed state against desired state, automatically correcting configuration drift without complex retry logic in the application.
 
@@ -135,12 +135,12 @@ EndpointNetworkConfiguration (output, 1:1 with Pod)
 
 SLLBR Pod IPs serve as next-hops for source-based routing in application Pods. The controller applies two filtering levels to ensure only healthy, connected LB Pods are included:
 
-**Level 1 — Container Readiness:**
+**Level 1 - Container Readiness:**
 - Pod must be in `Running` phase
 - Pod must not be terminating (`DeletionTimestamp == nil`)
 - All containers must report `Ready` in their status
 
-**Level 2 — Per-IP-Family Connectivity Gate:**
+**Level 2 - Per-IP-Family Connectivity Gate:**
 - For each IP extracted from an SLLBR Pod, check the corresponding readiness gate:
   - IPv4 IP → requires `meridio-2.nordix.org/ipv4-connectivity = True`
   - IPv6 IP → requires `meridio-2.nordix.org/ipv6-connectivity = True`
@@ -251,7 +251,7 @@ The primary Pod watch uses a predicate to exclude LB Pods (those with `gateway.n
 
 When `--pod-cache-label` is configured (e.g., `meridio-2.nordix.org/managed=true`), the controller-manager's informer cache only stores Pods with that label. This reduces memory usage in large clusters where most Pods are unrelated to Meridio.
 
-**Edge case**: If the label is removed from a Pod at runtime, the Pod is evicted from the informer cache — triggering a delete event — but the Pod still exists in the API server. The ENC controller's reconciler sees `NotFound` and returns `nil`, relying on ownerReference GC. However, GC won't fire because the Pod still exists. The controller source notes this edge case and suggests calling `deleteENCIfExists` as a potential improvement.
+**Edge case**: If the label is removed from a Pod at runtime, the Pod is evicted from the informer cache - triggering a delete event - but the Pod still exists in the API server. The ENC controller's reconciler sees `NotFound` and returns `nil`, relying on ownerReference GC. However, GC won't fire because the Pod still exists. The controller source notes this edge case and suggests calling `deleteENCIfExists` as a potential improvement.
 
 ## Error Handling
 
@@ -260,9 +260,9 @@ When `--pod-cache-label` is configured (e.g., `meridio-2.nordix.org/managed=true
 | Pod fetch | API server error | Yes (error return) | Transient |
 | Pod NotFound | Pod deleted | No | ENC garbage-collected via ownerReference |
 | resolveGatewayConnections | List/Get failures | Yes (error return) | Transient API errors |
-| Gateway not accepted | Missing condition | No | Silently excluded — not an error |
-| GatewayConfig NotFound | Ref points to missing resource | No (silent) | `client.IgnoreNotFound` — skip this Gateway |
-| No interface for subnet | Pod lacks Multus IP in CIDR | No | Domain skipped — Pod may not have this network |
+| Gateway not accepted | Missing condition | No | Silently excluded - not an error |
+| GatewayConfig NotFound | Ref points to missing resource | No (silent) | `client.IgnoreNotFound` - skip this Gateway |
+| No interface for subnet | Pod lacks Multus IP in CIDR | No | Domain skipped - Pod may not have this network |
 | ENC create/update | API conflict (409) | Yes (`Requeue: true`) | Fast retry without backoff |
 | ENC create/update | Other API error | Yes (error return) | Transient |
 | ENC delete (non-running Pod) | API error | Yes (error return) | Transient |
@@ -322,7 +322,7 @@ The ENC controller shares the controller-manager's configuration. It uses:
 | `ControllerName` | `--controller-name` / `MERIDIO_CONTROLLER_NAME` | Used to filter accepted Gateways |
 | `Namespace` | `--namespace` / `MERIDIO_NAMESPACE` | Scopes resource listing |
 
-The controller does not have its own dedicated flags — it inherits all behavior from the controller-manager's shared configuration.
+The controller does not have its own dedicated flags - it inherits all behavior from the controller-manager's shared configuration.
 
 ### RBAC Requirements
 

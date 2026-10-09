@@ -1,6 +1,6 @@
 ---
 # VPN Gateway BIRD configuration (dual-stack)
-# Uses passive BGP — the gateway waits for LB router to initiate the session.
+# Uses passive BGP - the gateway waits for LB router to initiate the session.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -76,7 +76,7 @@ data:
       graceful restart off;
     }
 
-    # IPv4 BGP — passive, waits for LB router (ASN 64512) to connect
+    # IPv4 BGP - passive, waits for LB router (ASN 64512) to connect
     protocol bgp GW4_OCP from LINK {
       local 169.254.100.150 port 10179 as 4200000000;
       neighbor range 169.254.100.0/24 port 10179 as 64512;
@@ -89,7 +89,7 @@ data:
       };
     }
 
-    # IPv6 BGP — passive, waits for LB router (ASN 64512) to connect
+    # IPv6 BGP - passive, waits for LB router (ASN 64512) to connect
     protocol bgp GW6_OCP from LINK {
       local fd00:cafe:100::150 port 10179 as 4200000000;
       neighbor range fd00:cafe:100::/64 port 10179 as 64512;

@@ -35,7 +35,7 @@ import (
 //
 // Data-plane note: the load balancer is (almost) fully stateless Maglev. There
 // is no per-connection flow cache pinning an established connection to its
-// originally chosen target — the only stateful behaviour is that fragments of a
+// originally chosen target - the only stateful behaviour is that fragments of a
 // single IP packet are steered to the same target within a time window, which
 // does not provide connection stickiness. When the endpoint set changes, Maglev
 // rebuilds its lookup table and a fraction of established flows are remapped to
@@ -252,7 +252,7 @@ func scaleStep(oldN, newN int) {
 			hosts, _, err := handles[i].Wait()
 			Expect(err).NotTo(HaveOccurred(), "wait traffic for %s (%s)", gw.name, gw.vip)
 			// Established-flow disruption during a Maglev rebuild is expected and
-			// not bounded; only require that traffic kept flowing — connections
+			// not bounded; only require that traffic kept flowing - connections
 			// were served by endpoints through the transition. Steady-state
 			// correctness is asserted by the distribution spec below.
 			Expect(len(hosts)).To(BeNumerically(">", 0),

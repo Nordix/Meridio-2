@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide helps diagnose common issues with Meridio-2. To troubleshoot effectively, familiarize yourself with the system in a healthy state first — check logs, interfaces, and routing tables when everything works.
+This guide helps diagnose common issues with Meridio-2. To troubleshoot effectively, familiarize yourself with the system in a healthy state first - check logs, interfaces, and routing tables when everything works.
 
 ## Traffic Flow
 
@@ -59,9 +59,9 @@ kubectl get pods -n <namespace>
 ```
 
 Expected Pods:
-- **controller-manager** — 1 Pod, 1/1 Ready
-- **sllbr-\<gateway-name\>** — LB Pods (2 containers each: `loadbalancer` + `router`), count matches `GatewayConfiguration.spec.horizontalScaling.replicas` (default: 2). If `enforceReplicas: false` is set, the controller only seeds the initial count and defers to an external scaler (HPA/KEDA).
-- **Application Pods** — with network-sidecar container if using EndpointNetworkConfiguration
+- **controller-manager** - 1 Pod, 1/1 Ready
+- **sllbr-\<gateway-name\>** - LB Pods (2 containers each: `loadbalancer` + `router`), count matches `GatewayConfiguration.spec.horizontalScaling.replicas` (default: 2). If `enforceReplicas: false` is set, the controller only seeds the initial count and defers to an external scaler (HPA/KEDA).
+- **Application Pods** - with network-sidecar container if using EndpointNetworkConfiguration
 
 All Pods should be Running with all containers ready. Check for restarts.
 
@@ -143,7 +143,7 @@ kubectl logs -n <ns> <sllbr-pod> -c router
 
 Meridio-2 uses structured JSON logging via controller-runtime's zap logger.
 
-BIRD logs are not sent to stdout — they are written to a file inside the router container. To view BIRD logs:
+BIRD logs are not sent to stdout - they are written to a file inside the router container. To view BIRD logs:
 ```bash
 kubectl exec -n <ns> <sllbr-pod> -c router -- cat /var/log/bird/bird.log
 ```
@@ -165,9 +165,9 @@ The `ip` command works for read operations (`ip addr`, `ip rule`, `ip route show
 
 For tools requiring capabilities, two restrictions apply:
 
-1. **Container capabilities must include the required capability** — the default deployment template only adds the minimum capabilities needed for each container's main process. Additional capabilities (e.g., `NET_RAW` for `tcpdump`) must be added to `securityContext.capabilities.add`.
+1. **Container capabilities must include the required capability** - the default deployment template only adds the minimum capabilities needed for each container's main process. Additional capabilities (e.g., `NET_RAW` for `tcpdump`) must be added to `securityContext.capabilities.add`.
 
-2. **`no_new_privs` blocks file capabilities in interactive shells** — when `allowPrivilegeEscalation: false` is set (recommended security default), the kernel sets `no_new_privs=1`. This prevents processes spawned from a shell from gaining capabilities via `setcap`, even if the binary has file capabilities and the capability is in the bounding set. The container's main entrypoint is not affected because the container runtime sets up capabilities before `no_new_privs` takes effect. To use privileged tools interactively, `allowPrivilegeEscalation` must be temporarily set to `true`.
+2. **`no_new_privs` blocks file capabilities in interactive shells** - when `allowPrivilegeEscalation: false` is set (recommended security default), the kernel sets `no_new_privs=1`. This prevents processes spawned from a shell from gaining capabilities via `setcap`, even if the binary has file capabilities and the capability is in the bounding set. The container's main entrypoint is not affected because the container runtime sets up capabilities before `no_new_privs` takes effect. To use privileged tools interactively, `allowPrivilegeEscalation` must be temporarily set to `true`.
 
 | Tool | Capability needed | loadbalancer | router |
 |------|------------------|:---:|:---:|
@@ -197,9 +197,9 @@ kubectl debug -ti -n <ns> <pod> --image=alpine --target=<container> --custom=/tm
 
 Without the custom profile, the ephemeral container will fail with `CreateContainerConfigError: container has runAsNonRoot and image will run as root`.
 
-Note: When using `--target`, the ephemeral container inherits the Pod's security constraints — no additional capabilities can be granted. This is useful for read-only inspection (`ip addr`, `ip rule`, `ip route show`, `cat /proc/...`) and running unprivileged tools not present in the LB images.
+Note: When using `--target`, the ephemeral container inherits the Pod's security constraints - no additional capabilities can be granted. This is useful for read-only inspection (`ip addr`, `ip rule`, `ip route show`, `cat /proc/...`) and running unprivileged tools not present in the LB images.
 
-For tools requiring capabilities (`nft`, `tcpdump`, `nfqlb`), omit `--target` and use a custom profile with root and explicit capabilities. This gives the ephemeral container its own PID namespace (no process visibility into other containers) but shares the network namespace — which is what matters for network troubleshooting:
+For tools requiring capabilities (`nft`, `tcpdump`, `nfqlb`), omit `--target` and use a custom profile with root and explicit capabilities. This gives the ephemeral container its own PID namespace (no process visibility into other containers) but shares the network namespace - which is what matters for network troubleshooting:
 ```bash
 cat > /tmp/debug-privileged.json << 'EOF'
 {
@@ -216,7 +216,7 @@ kubectl debug -it -n <ns> <pod> --image=alpine --custom=/tmp/debug-privileged.js
 # Inside: apk add --no-cache nftables tcpdump && nft list ruleset && tcpdump -ni any
 ```
 
-Both `runAsUser: 0` and explicit `capabilities.add` are required — the container runtime drops all capabilities by default even for root.
+Both `runAsUser: 0` and explicit `capabilities.add` are required - the container runtime drops all capabilities by default even for root.
 
 ### nsenter from the node
 
@@ -237,9 +237,9 @@ This is the most reliable way to run privileged networking tools (`nft`, `tcpdum
 
 The router container runs BIRD 3.3.2 for BGP session management. It is built from
 source (pinned in `build/router/Dockerfile` via `ARG BIRD_VERSION`) rather than from
-the Alpine package, to pick the latest upstream release — which includes a memory-leak
+the Alpine package, to pick the latest upstream release - which includes a memory-leak
 fix not present in the older BIRD packaged by current Alpine releases (e.g. 3.2.3 on
-alpine:3.24) — and to keep the version reproducible. The full set of TCP-AO MAC
+alpine:3.24) - and to keep the version reproducible. The full set of TCP-AO MAC
 algorithms exposed by the GatewayRouter API (notably `cmac aes128`) additionally
 requires BIRD 3.3.1+.
 
@@ -249,7 +249,7 @@ requires BIRD 3.3.1+.
 kubectl exec -n <ns> <sllbr-pod> -c router -- birdc -s /var/run/bird/bird.ctl show status
 ```
 
-If BIRD is not running, `birdc` will fail with `Cannot connect to BIRD control socket`. Check the router container logs for startup errors. See also limitation about BIRD error propagation missing — the router controller does not crash if BIRD fails.
+If BIRD is not running, `birdc` will fail with `Cannot connect to BIRD control socket`. Check the router container logs for startup errors. See also limitation about BIRD error propagation missing - the router controller does not crash if BIRD fails.
 
 ### Check BGP session status
 
@@ -304,7 +304,7 @@ kubectl exec -n <ns> <sllbr-pod> -c router -- ip route show table 4096
 # Expected: default via <gateway-ip> dev <ext-interface> proto bird
 ```
 
-If routes are missing or delayed (up to 60 seconds), this may be the BIRD 3.x scan time issue — see limitations document.
+If routes are missing or delayed (up to 60 seconds), this may be the BIRD 3.x scan time issue - see limitations document.
 
 ### Check policy routing rules
 
@@ -377,7 +377,7 @@ table inet meridio-lb {
 
 - `ipv4-vips` / `ipv6-vips` sets contain VIPs from L34Route `destinationCIDRs`
 - `prerouting` chain queues VIP-destined traffic to nfqueue 0-3 for NFQLB processing
-- `output` chain queues locally-originated ICMP/ICMPv6 to VIPs — primarily needed for generating ICMP Fragmentation Needed / Packet Too Big replies back to endpoints when forwarded packets hit MTU limits on the external network
+- `output` chain queues locally-originated ICMP/ICMPv6 to VIPs - primarily needed for generating ICMP Fragmentation Needed / Packet Too Big replies back to endpoints when forwarded packets hit MTU limits on the external network
 - Packet/byte counters help verify traffic is reaching the LB
 
 Note: `nft` requires `NET_ADMIN` and `allowPrivilegeEscalation: true` as explained. Alternatively, use nsenter instead.
@@ -424,7 +424,7 @@ Shm: tshm-test-backend-indirect
 
 - `M` is the Maglev hash table size (prime near `maxEndpoints × 100`), `N` is the max endpoints capacity
 - `Lookup` shows the Maglev hash table entries (target indices)
-- `Active` lists active targets as `fwmark(index)` — each fwmark maps to a policy routing rule that forwards traffic to the target Pod IP. Different DGs use different fwmark ranges (e.g., 5000+ vs 6024+) based on their DG ID offset
+- `Active` lists active targets as `fwmark(index)` - each fwmark maps to a policy routing rule that forwards traffic to the target Pod IP. Different DGs use different fwmark ranges (e.g., 5000+ vs 6024+) based on their DG ID offset
 
 ### Check NFQLB flows
 
@@ -485,7 +485,7 @@ The sidecar runs in application Pods and configures VIPs and source-based routin
 
 ### Prerequisites
 
-Application Pods must be attached to the same secondary network(s) as the LB Pods (e.g., via Multus NAD annotations). Meridio-2 does not provision or manage secondary network connectivity — it assumes the network is already in place. If a Pod is not attached to the expected network, the sidecar will fail to find a matching interface and the DistributionGroup controller will not include the Pod in LoadBalancerEndpointSlices.
+Application Pods must be attached to the same secondary network(s) as the LB Pods (e.g., via Multus NAD annotations). Meridio-2 does not provision or manage secondary network connectivity - it assumes the network is already in place. If a Pod is not attached to the expected network, the sidecar will fail to find a matching interface and the DistributionGroup controller will not include the Pod in LoadBalancerEndpointSlices.
 
 The sidecar container requires `NET_ADMIN` capability for netlink operations (adding VIPs, configuring routing rules and tables). This must be set in the application Pod's sidecar container spec:
 ```yaml
@@ -523,7 +523,7 @@ VIPs should appear as /32 (IPv4) or /128 (IPv6) addresses on the secondary inter
 kubectl exec -n <ns> <pod> -c <sidecar> -- ip rule
 ```
 
-Expected: rules for each VIP pointing to a routing table in the 50000–55000 range.
+Expected: rules for each VIP pointing to a routing table in the 50000-55000 range.
 
 ### Check ECMP routes to LB Pods
 
@@ -554,16 +554,16 @@ kubectl get gateway -n <ns> <name> -o jsonpath='{.status.conditions}' | jq .
 
 Two condition types are used (per Gateway API GEP-1364):
 
-**`Accepted`** — indicates whether the Gateway configuration is valid:
-- `Accepted=True`, reason `Accepted` — GatewayClass matches the controller and GatewayConfiguration is valid. Message: `"Gateway accepted by <controller-name>"`.
-- `Accepted=False`, reason `InvalidParameters` — validation failed. The message describes the specific issue (e.g., missing GatewayConfiguration, invalid template, bad network attachment config).
-- `Accepted=Unknown`, reason `Pending` — the Gateway is not managed by any controller. Message: `"Waiting for controller"`. Common causes:
+**`Accepted`** - indicates whether the Gateway configuration is valid:
+- `Accepted=True`, reason `Accepted` - GatewayClass matches the controller and GatewayConfiguration is valid. Message: `"Gateway accepted by <controller-name>"`.
+- `Accepted=False`, reason `InvalidParameters` - validation failed. The message describes the specific issue (e.g., missing GatewayConfiguration, invalid template, bad network attachment config).
+- `Accepted=Unknown`, reason `Pending` - the Gateway is not managed by any controller. Message: `"Waiting for controller"`. Common causes:
   - No GatewayClass exists with `spec.controllerName` matching the controller-manager's `--controller-name` (default: `meridio-2.nordix.org/gateway-controller`). The Gateway's `spec.gatewayClassName` must reference a GatewayClass whose `controllerName` matches. Without a matching GatewayClass, no controller will claim the Gateway.
   - The controller released a previously managed Gateway (e.g., `gatewayClassName` was changed to a different GatewayClass).
 
-**`Programmed`** — indicates whether the LB Deployment has been reconciled:
-- `Programmed=True`, reason `Programmed` — LB Deployment has been created or updated successfully. Message: `"LB Deployment workload reconciled (Pods may still be initializing)"`.
-- `Programmed=False`, reason `Invalid` — a permanent error prevented Deployment creation (e.g., name collision with an existing Deployment not owned by this Gateway). The message describes the error.
+**`Programmed`** - indicates whether the LB Deployment has been reconciled:
+- `Programmed=True`, reason `Programmed` - LB Deployment has been created or updated successfully. Message: `"LB Deployment workload reconciled (Pods may still be initializing)"`.
+- `Programmed=False`, reason `Invalid` - a permanent error prevented Deployment creation (e.g., name collision with an existing Deployment not owned by this Gateway). The message describes the error.
 
 `status.addresses` should list VIPs from L34Routes. If empty, check that L34Routes exist with `parentRefs` pointing to this Gateway and that `destinationCIDRs` are set.
 
@@ -580,19 +580,19 @@ kubectl get distg -n <ns> <dg-name> -o jsonpath='{.status.conditions}' | jq .
 
 Two condition types are used:
 
-**`Ready`** — indicates whether the DG has active endpoints:
-- `Ready=True`, reason `EndpointsAvailable` — LoadBalancerEndpointSlices have been reconciled with at least one endpoint.
-- `Ready=False`, reason `NoEndpoints` — no endpoints are available. The `message` field explains why:
-  - `"No Pods match selector"` — no Pods match the DG's label selector.
-  - `"No Gateways reference this DistributionGroup"` — no L34Route links this DG to a Gateway (check `parentRefs` or L34Route `backendRefs`).
-  - `"No accepted Gateways found"` — referenced Gateways don't have `Accepted=True` (Gateway may not exist or GatewayConfiguration is invalid).
-  - `"No network context available"` — the GatewayConfiguration has no `internalSubnets` configured.
-  - `"No endpoints available"` — Pods exist but none have an IP matching the network subnets.
-- `Ready=False`, reason `MultipleGateways` — the DG is referenced by more than one accepted Gateway. Reconciliation is skipped until the conflict is resolved.
+**`Ready`** - indicates whether the DG has active endpoints:
+- `Ready=True`, reason `EndpointsAvailable` - LoadBalancerEndpointSlices have been reconciled with at least one endpoint.
+- `Ready=False`, reason `NoEndpoints` - no endpoints are available. The `message` field explains why:
+  - `"No Pods match selector"` - no Pods match the DG's label selector.
+  - `"No Gateways reference this DistributionGroup"` - no L34Route links this DG to a Gateway (check `parentRefs` or L34Route `backendRefs`).
+  - `"No accepted Gateways found"` - referenced Gateways don't have `Accepted=True` (Gateway may not exist or GatewayConfiguration is invalid).
+  - `"No network context available"` - the GatewayConfiguration has no `internalSubnets` configured.
+  - `"No endpoints available"` - Pods exist but none have an IP matching the network subnets.
+- `Ready=False`, reason `MultipleGateways` - the DG is referenced by more than one accepted Gateway. Reconciliation is skipped until the conflict is resolved.
 
-**`CapacityExceeded`** (Maglev only) — present only when the number of matching Pods exceeds `maxEndpoints`:
-- `CapacityExceeded=True`, reason `MaglevCapacityExceeded` — some Pods were excluded from LoadBalancerEndpointSlices because the Maglev table is full. The message lists affected networks with counts (e.g., `"10.0.0.0/24: 5/37 pods excluded (32 capacity)"`).
-- Absent — capacity is sufficient; all matching Pods have Maglev IDs assigned.
+**`CapacityExceeded`** (Maglev only) - present only when the number of matching Pods exceeds `maxEndpoints`:
+- `CapacityExceeded=True`, reason `MaglevCapacityExceeded` - some Pods were excluded from LoadBalancerEndpointSlices because the Maglev table is full. The message lists affected networks with counts (e.g., `"10.0.0.0/24: 5/37 pods excluded (32 capacity)"`).
+- Absent - capacity is sufficient; all matching Pods have Maglev IDs assigned.
 
 ### Check LoadBalancerEndpointSlices
 
@@ -607,16 +607,16 @@ kubectl get lbeslice -n <ns> -l meridio-2.nordix.org/distribution-group=<dg-name
 ```
 
 Each LoadBalancerEndpointSlice has:
-- `spec.distributionGroupName` — the owning DistributionGroup name
-- `spec.gatewayRef` — the Gateway this slice is scoped to (name + namespace)
+- `spec.distributionGroupName` - the owning DistributionGroup name
+- `spec.gatewayRef` - the Gateway this slice is scoped to (name + namespace)
 - OwnerReference pointing to the DistributionGroup (ensures GC on DG deletion)
-- Label `meridio-2.nordix.org/distribution-group` — convenience label for kubectl filtering
+- Label `meridio-2.nordix.org/distribution-group` - convenience label for kubectl filtering
 
 Dual-stack endpoints are co-located in a single entry (no per-family split). Each endpoint should have:
-- `spec.endpoints[].target` — Pod name and UID
-- `spec.endpoints[].addresses` — list of IPs with family annotation (e.g., `[{ip: "10.0.0.5", family: "IPv4"}, {ip: "fd00::5", family: "IPv6"}]`)
-- `spec.endpoints[].ready` — `true` if the Pod is Ready
-- `spec.endpoints[].identifier` — Maglev slot index (e.g., `5`). This is the identifier used by the LB controller to activate targets in the NFQLB shared memory instance
+- `spec.endpoints[].target` - Pod name and UID
+- `spec.endpoints[].addresses` - list of IPs with family annotation (e.g., `[{ip: "10.0.0.5", family: "IPv4"}, {ip: "fd00::5", family: "IPv6"}]`)
+- `spec.endpoints[].ready` - `true` if the Pod is Ready
+- `spec.endpoints[].identifier` - Maglev slot index (e.g., `5`). This is the identifier used by the LB controller to activate targets in the NFQLB shared memory instance
 
 If LoadBalancerEndpointSlices are missing:
 - Check the DistributionGroup status conditions for the specific reason (see "Check DistributionGroup status" above)
@@ -632,7 +632,7 @@ kubectl get gatewayconfiguration -n <ns> <name> -o yaml
 ```
 
 Check:
-- `spec.networkAttachments` — lists the secondary network interfaces (NADs) attached to LB Pods. Must include both the external interface (towards the gateway router) and the internal interface(s) (towards application Pods). Network attachments may also be defined in the LB deployment template; the GatewayConfiguration entries are merged on top.
-- `spec.internalSubnets` — lists the CIDRs of the internal network(s) where application Pod IPs reside. Used by the DistributionGroup controller to select the correct Pod IP when building LoadBalancerEndpointSlices. Must cover all application Pod secondary IPs.
+- `spec.networkAttachments` - lists the secondary network interfaces (NADs) attached to LB Pods. Must include both the external interface (towards the gateway router) and the internal interface(s) (towards application Pods). Network attachments may also be defined in the LB deployment template; the GatewayConfiguration entries are merged on top.
+- `spec.internalSubnets` - lists the CIDRs of the internal network(s) where application Pod IPs reside. Used by the DistributionGroup controller to select the correct Pod IP when building LoadBalancerEndpointSlices. Must cover all application Pod secondary IPs.
 
 Missing or misconfigured entries here are a common cause of traffic issues even when all resources show healthy status.

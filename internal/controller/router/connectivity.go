@@ -137,7 +137,7 @@ func BuildFamilyMap(gatewayRouters []*meridio2v1alpha1.GatewayRouter) map[string
 }
 
 // patchGateCondition patches a single Pod status condition using a strategic merge patch.
-// No Get required — always writes unconditionally. The caller decides whether to call it.
+// No Get required - always writes unconditionally. The caller decides whether to call it.
 func (cgm *ConnectivityGateManager) patchGateCondition(ctx context.Context, conditionType string, status bool) error {
 	condStatus := corev1.ConditionFalse
 	if status {
@@ -159,7 +159,7 @@ func (cgm *ConnectivityGateManager) patchGateCondition(ctx context.Context, cond
 	))
 }
 
-// SetAllGatesFalse(ctx) error — called on startup (defense-in-depth)
+// SetAllGatesFalse(ctx) error - called on startup (defense-in-depth)
 func (cgm *ConnectivityGateManager) SetAllGatesFalse(ctx context.Context) error {
 	var errFinal error
 	if cgm.ipv4Gate != nil {
@@ -219,7 +219,7 @@ func (cgm *ConnectivityGateManager) handleGate(ctx context.Context, gate *bool, 
 	// recovers, the hold timer runs but the gate never went False on the API.
 	// This bypasses damping for one cycle. Acceptable: the LB has connectivity
 	// (it recovered), traffic is safe, and the scenario requires both a failed API
-	// write AND immediate recovery within one tick — extremely narrow window.
+	// write AND immediate recovery within one tick - extremely narrow window.
 
 	// Start hold timer if not already started
 	now := time.Now()

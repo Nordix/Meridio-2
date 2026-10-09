@@ -292,7 +292,7 @@ The controller reconciles when:
 **ObservedGeneration:** Tracks which Gateway.spec version was evaluated
 
 **Message format is a load-bearing contract.** The Accepted `Message` is
-`gatewayutil.GatewayAcceptedMessagePrefix` + the controller name — i.e.
+`gatewayutil.GatewayAcceptedMessagePrefix` + the controller name - i.e.
 `"Gateway accepted by <controller-name>"` (`acceptedMessage` in `status.go`).
 Internally, this format is how a Gateway is recognized as one we handle
 (`gatewayutil.IsGatewayAcceptedByController` matches on that prefix), so any edit
@@ -346,7 +346,7 @@ horizontalScaling:
 ```
 
 **Behavior:**
-- `enforceReplicas=true` (default): Always enforce the configured replicas value — manual edits or external changes are reconciled back
+- `enforceReplicas=true` (default): Always enforce the configured replicas value - manual edits or external changes are reconciled back
 - `enforceReplicas=false`: Apply replicas on initial creation only, skip updates (HPA/KEDA manages)
 
 ### Vertical Scaling
@@ -478,11 +478,11 @@ networkAttachments:
 
 ### Sysctl Prerequisites for LB Pods
 
-The LB Pod's network namespace requires specific sysctls for correct operation. These are **not** set by the controller — they must be applied externally via one of:
+The LB Pod's network namespace requires specific sysctls for correct operation. These are **not** set by the controller - they must be applied externally via one of:
 
-1. **Multus CNI tuning plugin** (recommended) — attach a `sysctl-tuning` NAD in GatewayConfiguration's `networkAttachments`
-2. **Init container** — privileged init container running `sysctl -w ...`
-3. **Pod `securityContext.sysctls`** — requires the sysctls to be listed as safe/unsafe in kubelet config
+1. **Multus CNI tuning plugin** (recommended) - attach a `sysctl-tuning` NAD in GatewayConfiguration's `networkAttachments`
+2. **Init container** - privileged init container running `sysctl -w ...`
+3. **Pod `securityContext.sysctls`** - requires the sysctls to be listed as safe/unsafe in kubelet config
 
 **Required sysctls:**
 

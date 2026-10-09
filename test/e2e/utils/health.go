@@ -72,7 +72,7 @@ type TargetHealth struct {
 // suite: Gateway status, LB Pod readiness, BGP session state, target ENC
 // readiness, and VIP reachability. Suite- or protocol-specific checks (SCTP
 // associations, TCP-AO key rotation, etc.) are intentionally not modeled
-// here — layer those on top locally within the test that needs them.
+// here - layer those on top locally within the test that needs them.
 type ServiceHealth struct {
 	Namespace string
 	Gateways  []GatewayHealth
@@ -80,7 +80,7 @@ type ServiceHealth struct {
 }
 
 // VerifyHealthy asserts the full ServiceHealth as a sequence of independent
-// Eventually blocks — one per gateway condition/target group — rather than
+// Eventually blocks - one per gateway condition/target group - rather than
 // one big retry loop. Each sub-check converges and reports on its own, so a
 // slow-to-establish BGP session (for example) fails with its own clear
 // message and stops retrying unrelated, already-satisfied checks (Gateway

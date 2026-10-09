@@ -51,7 +51,7 @@ var _ = Describe("getOffset", func() {
 				nfqlbInstanceConfig: &nfqlbInstanceConfig{maxTargets: 10},
 			},
 		}
-		// Gap at 5010-5049 (40 slots), requesting 32 — should fit
+		// Gap at 5010-5049 (40 slots), requesting 32 - should fit
 		offset, err := getOffset(5000, instances, 32)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(offset).To(Equal(5010))
@@ -68,7 +68,7 @@ var _ = Describe("getOffset", func() {
 				nfqlbInstanceConfig: &nfqlbInstanceConfig{maxTargets: 10},
 			},
 		}
-		// Gap at 5010-5014 (5 slots), requesting 32 — doesn't fit, goes after svc-b
+		// Gap at 5010-5014 (5 slots), requesting 32 - doesn't fit, goes after svc-b
 		offset, err := getOffset(5000, instances, 32)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(offset).To(Equal(5025))

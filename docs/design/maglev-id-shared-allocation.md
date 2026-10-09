@@ -1,6 +1,6 @@
 # Study: Maglev ID Allocation and Dual-Stack Support
 
-**Issue:** [#70 — Maglev ID allocation must be shared within a DistributionGroup](https://github.com/Nordix/Meridio-2/issues/70)
+**Issue:** [#70 - Maglev ID allocation must be shared within a DistributionGroup](https://github.com/Nordix/Meridio-2/issues/70)
 
 ---
 
@@ -21,7 +21,7 @@ the last-processed slice overwrote the previous entry. This caused:
 - **Non-deterministic routing**: Race of EndpointSlice updates; order of items after
   list operation was undefined.
 - **Cross-Pod identifier collision**: Pod-A got `maglev:3` in IPv4, Pod-B got `maglev:3`
-  in IPv6 — one overwrote the other.
+  in IPv6 - one overwrote the other.
 - **Broken target removal**: Deactivating an identifier removed it for all IP families.
 
 Creating multiple NFQLB hash tables per DG (e.g., one per IP family) is not viable. NFQLB
@@ -68,7 +68,7 @@ in this document makes different trade-offs across these dimensions.
 
 Can a DistributionGroup be linked to multiple Gateways?
 
-- **Single Gateway per DG** (current `parentRefs maxItems=1`): Simplifies everything —
+- **Single Gateway per DG** (current `parentRefs maxItems=1`): Simplifies everything -
   no Gateway context needed on EndpointSlices, no cross-Gateway coordination.
 - **Multiple Gateways per DG**: Requires encoding Gateway context on EndpointSlices (or
   in DG status), and handling shared vs exclusive EndpointSlice organization. Users can
@@ -80,7 +80,7 @@ Can a DistributionGroup be linked to multiple Gateways?
 ### Maglev ID scoping
 
 At what level are Maglev IDs assigned? This is related to but independent of DG-to-Gateway
-cardinality and EndpointSlice organization — cardinality determines the relationship model,
+cardinality and EndpointSlice organization - cardinality determines the relationship model,
 slice organization determines how data is structured, and ID scoping determines where IDs
 are unique.
 
@@ -111,7 +111,7 @@ Can DGs and Gateways reside in different namespaces?
 ### EndpointSlice organization
 
 How are EndpointSlices structured and associated with Gateways? This is independent of
-Maglev ID scoping — the same ID scoping can be implemented with different slice
+Maglev ID scoping - the same ID scoping can be implemented with different slice
 organizations.
 
 - **Per network only** (current): One set of slices per CIDR, no Gateway dimension.
@@ -172,7 +172,7 @@ Proposed complementary mechanisms (explored in later sections, not necessarily i
 - NetworkConsistency condition: alert operators to partial network presence
 
 **Pros:**
-- Simplest model — no Gateway dimension on EndpointSlices
+- Simplest model - no Gateway dimension on EndpointSlices
 - No Gateway label or ownerReference needed; all EndpointSlices owned by a DG serve its
   single Gateway
 - EndpointSlice naming unchanged: `<dg>-<hashCIDR>-<index>`
@@ -182,7 +182,7 @@ Proposed complementary mechanisms (explored in later sections, not necessarily i
   disambiguation needed.
 - The `parentRefs` field already has `maxItems: 1` in the CRD
 - Users who need the same Pods behind multiple Gateways create multiple DGs with the same
-  selector — trivial, explicit, no hidden coupling
+  selector - trivial, explicit, no hidden coupling
 
 **Indirect multi-Gateway detection:**
 
@@ -194,21 +194,21 @@ reference). The DG controller handles this by:
 2. If more than one Gateway is found: set `Ready=False, Reason=MultipleGatewaysDetected,
    Message="DistributionGroup is referenced by multiple Gateways; only a single Gateway
    is supported"` and skip reconciliation. Existing EndpointSlices are preserved (no
-   teardown — avoids disrupting traffic if the conflict is transient or accidental).
+   teardown - avoids disrupting traffic if the conflict is transient or accidental).
 3. If exactly one Gateway: proceed normally
 4. If zero Gateways: existing behavior (no EndpointSlices, status reflects no referenced
    Gateways)
 
-**Trade-off — asymmetric network presence:**
+**Trade-off - asymmetric network presence:**
 
 With shared allocation, a Pod that has IPs in only a subset of the DG's networks still
 consumes an ID slot globally. For example, if Pod-A has only an IPv4 address and gets
-`maglev:5`, that ID is reserved across all networks — no other Pod can use `maglev:5` in
+`maglev:5`, that ID is reserved across all networks - no other Pod can use `maglev:5` in
 the IPv6 EndpointSlice. Pod-A simply won't appear in the IPv6 slice.
 
 In the NFQLB hash table, `maglev:5` is still a valid entry. When an IPv6 packet hashes to
 a bucket pointing to identifier 5, the LB sets the corresponding fwmark, but no IPv6 route
-exists in that routing table. The packet gets dropped — a localized blackhole for that hash
+exists in that routing table. The packet gets dropped - a localized blackhole for that hash
 bucket in IPv6.
 
 Severity depends on the degree of asymmetry:
@@ -240,7 +240,7 @@ Split each DG into an IPv4 and IPv6 NFQLB instance, with L34Route flows split pe
 **Pros:**
 - No change to DG controller's per-CIDR allocation model
 - Each hash table is internally consistent
-- Natively supports DG-to-multi-Gateway linkage — EndpointSlices are scoped per network
+- Natively supports DG-to-multi-Gateway linkage - EndpointSlices are scoped per network
   only, with no Gateway context needed. The LB splits them by IP family internally.
 
 **Problems:**
@@ -252,7 +252,7 @@ Split each DG into an IPv4 and IPv6 NFQLB instance, with L34Route flows split pe
   Splitting a DG into sub-tables would require fine-grained selector criteria based on
   cluster-internal details (IP family) that are not meaningful at the external traffic
   classification level.
-- L34Routes can match both IPv4 and IPv6 packets while referencing a single DG — splitting
+- L34Routes can match both IPv4 and IPv6 packets while referencing a single DG - splitting
   would require duplicating or rewriting route logic on the nfqlb level.
 
 **Verdict:** Not desirable. Adds per-packet runtime overhead instead of one-time
@@ -279,12 +279,12 @@ Alternatively, ownerReferences can encode the Gateway relationship (see common i
 below), with the same namespace constraint.
 
 **Pros:**
-- Natively supports DG-to-multi-Gateway setup — each Gateway gets its own set of slices
+- Natively supports DG-to-multi-Gateway setup - each Gateway gets its own set of slices
   with independent Maglev IDs
-- Supports DG and Gateway in different namespaces without label length limitations — two
+- Supports DG and Gateway in different namespaces without label length limitations - two
   fixed-key labels with namespace and name as values (label values allow up to 63
   characters each, no need to encode both into a single key)
-- Simple labeling — fixed keys, no dynamic label names
+- Simple labeling - fixed keys, no dynamic label names
 - ID allocation naturally scoped per Gateway
 - No cross-Gateway coordination needed
 - Adding/removing a Gateway from a DG doesn't reshuffle IDs for other Gateways
@@ -302,7 +302,7 @@ below), with the same namespace constraint.
 A single EndpointSlice can serve multiple Gateways when they share the same internal
 network. The slice carries association metadata indicating which Gateways it belongs to.
 
-**Gateway association — labeling challenges:**
+**Gateway association - labeling challenges:**
 
 Labels are flat key-value pairs. Encoding a one-to-many relationship (EndpointSlice →
 multiple Gateways) doesn't map cleanly:
@@ -312,7 +312,7 @@ multiple Gateways) doesn't map cleanly:
 - Dynamic label keys like `meridio-2.nordix.org/gateway-<namespace>-<name>: ""` work for
   multiple Gateways (one label per Gateway) but are unusual, length-limited (63 chars
   after prefix), and harder to query
-- Cross-namespace Gateways compound the problem — the label key must encode both namespace
+- Cross-namespace Gateways compound the problem - the label key must encode both namespace
   and name
 
 **Pros:**
@@ -326,10 +326,10 @@ multiple Gateways) doesn't map cleanly:
   must use the same IDs for both, which means ID allocation can no longer be independent
   per Gateway. This applies regardless of IP family mode (IPv4-only, IPv6-only, or
   dual-stack). In dual-stack mode, if only one family's network is shared while the other
-  is separate, the constraint is amplified — the shared family's IDs dictate allocation
+  is separate, the constraint is amplified - the shared family's IDs dictate allocation
   for the non-shared family too (the LB expects one ID per Pod across all families),
   pulling more networks into the cross-Gateway coordination scope.
-- Updating a shared slice affects all Gateways using it — larger blast radius
+- Updating a shared slice affects all Gateways using it - larger blast radius
 - Dynamic label keys are harder to query and validate
 
 #### Common issues for B1 and B2
@@ -338,9 +338,9 @@ multiple Gateways) doesn't map cleanly:
 
 Adding the Gateway as a second owner on EndpointSlices was considered but has fundamental
 problems:
-- GC requires all owners to be gone before deleting dependents — DG deletion alone won't
+- GC requires all owners to be gone before deleting dependents - DG deletion alone won't
   clean up EndpointSlices if Gateway still exists
-- Kubernetes requires ownerReferences to point to objects in the same namespace — cross-
+- Kubernetes requires ownerReferences to point to objects in the same namespace - cross-
   namespace Gateway-to-DG linking is impossible via ownerReferences
 - LBs still need DG context first, so ownerReference is an additional filter, not a
   replacement for the DG-first discovery flow
@@ -377,7 +377,7 @@ single-Gateway restriction was selected for the current implementation.
 An alternative to encoding Gateway context on EndpointSlices (Option B). Instead of
 marking EndpointSlices with labels or ownerReferences, the DG's `status` field serves as
 a discovery index, listing which EndpointSlices exist and which Gateways they serve.
-Option C supports both exclusive and shared EndpointSlice organization internally — the
+Option C supports both exclusive and shared EndpointSlice organization internally - the
 DG controller can change its strategy without affecting how LBs discover slices.
 
 The DG controller maintains this index as part of its normal status updates.
@@ -403,20 +403,20 @@ The LB would: get DG → read `status.endpointSlices` → filter entries by its 
 
 **Pros:**
 - No labels or ownerReferences needed for Gateway association on EndpointSlices
-- DG status is a custom resource — full schema control, no Kubernetes API constraints
+- DG status is a custom resource - full schema control, no Kubernetes API constraints
 - Supports multi-Gateway and cross-namespace natively (status can reference Gateways in
-  any namespace — no ownerReference same-namespace constraint)
+  any namespace - no ownerReference same-namespace constraint)
 - No label key length limits or dynamic key conventions
-- Agnostic to EndpointSlice organization — natively supports both exclusive (one Gateway
+- Agnostic to EndpointSlice organization - natively supports both exclusive (one Gateway
   per entry) and shared (multiple Gateways per entry) approaches. The DG controller can
   change its internal strategy without affecting how LBs discover slices. The status is
   the stable contract.
 - No GC interference (status is data, not an ownership relationship)
 - LB discovery is a direct lookup by name (no list+filter on EndpointSlices)
-- Dynamic expansion supported naturally — adding/removing Gateways, EndpointSlice splits
+- Dynamic expansion supported naturally - adding/removing Gateways, EndpointSlice splits
   due to capacity, network changes all handled through the normal reconcile cycle. The
   status is rebuilt from actual state each reconcile.
-- Extensible — the DG status can be extended with new fields (e.g., schema version,
+- Extensible - the DG status can be extended with new fields (e.g., schema version,
   Maglev ID extraction hints, per-slice metadata) without changing EndpointSlice format.
   New fields don't break old consumers (they ignore unknown fields), and new consumers
   can fall back when fields are absent. This makes Option C the most upgrade-resilient
@@ -429,31 +429,31 @@ The LB would: get DG → read `status.endpointSlices` → filter entries by its 
   migration.
 
 **Cons:**
-- Unconventional pattern — using status as a discovery index rather than purely
+- Unconventional pattern - using status as a discovery index rather than purely
   informational reporting. Not prohibited, but unusual. No known Kubernetes project uses
   status as a lookup table for owned resources; the standard pattern is labels +
   ownerReferences. There may be undocumented reasons why this pattern hasn't been adopted
   in the ecosystem.
-- DG controller must keep status in sync with actual EndpointSlices — another thing to
+- DG controller must keep status in sync with actual EndpointSlices - another thing to
   reconcile (though the DG controller already maintains status)
 - Transient staleness: the DG controller updates EndpointSlices and status in separate
   API calls, so there's a brief window where the status references an EndpointSlice that
   doesn't exist yet (or still references a deleted one). LBs must handle NotFound
   gracefully. Self-healing on next DG reconcile.
-- Status update frequency increases with the number of EndpointSlices and Gateways —
+- Status update frequency increases with the number of EndpointSlices and Gateways -
   every EndpointSlice change triggers a status update on the DG, increasing conflict
   probability and API server load. Practically manageable (status entries are small,
   ~200 bytes each), but a consideration at scale.
 - Reduced motivation with a custom resource (Option D): Option C's primary value is for
   the EndpointSlice world where custom fields cannot be added. With a custom resource,
   `gatewayRef` and `distributionGroup` fields can be added directly to the resource and
-  queried via field selectors — making the DG status index unnecessary for discovery.
+  queried via field selectors - making the DG status index unnecessary for discovery.
   Option C retains value only for gradual migration scenarios (see Combining Option C
   with Option D).
 
 **Verdict:** Option C avoids the labeling and ownerReference challenges of B1/B2 by moving
 Gateway association to the DG status. It is a discovery mechanism rather than an
-EndpointSlice organization strategy — it can be combined with either exclusive slices
+EndpointSlice organization strategy - it can be combined with either exclusive slices
 (B1-style) or shared slices (B2-style). However, shared slices retain the cross-Gateway
 Maglev ID coordination problem regardless of how discovery works, making Option C combined
 with exclusive slices the natural combination. Option C is the most extensible and
@@ -528,8 +528,8 @@ spec:
 - **Capacity splitting supported**: Multiple objects per DG when endpoint count exceeds a
   single object's practical capacity (etcd size limits, watch event size). The "Slice"
   naming convention signals this. A Pod's dual-stack addresses always reside in the same
-  object — splitting is by endpoint count, not by IP family.
-- **Cleaner LB consumption**: LB reads one object type with all information needed —
+  object - splitting is by endpoint count, not by IP family.
+- **Cleaner LB consumption**: LB reads one object type with all information needed -
   addresses, IDs, readiness. No multi-slice correlation for IP families, no Zone parsing.
 - **Field-selector-based discovery**: The `spec.distributionGroup` field can be indexed
   for server-side filtering, avoiding the 63-character label value limit that constrains
@@ -547,7 +547,7 @@ spec:
   EndpointSlices. The DG controller must produce the new type instead of EndpointSlices.
 - **Consumer impact**: Any current or future component that reads endpoint data would need
   to understand the new type. However, the per-consumer-type architecture (see
-  `meridio2-endpoint-producer-consumer-architecture.md`) addresses this by design — each
+  `meridio2-endpoint-producer-consumer-architecture.md`) addresses this by design - each
   consumer class gets a tailored resource, so the `LoadBalancerEndpointSlice` is the LB's
   dedicated contract, not a generic endpoint store that all consumers must parse.
 
@@ -599,9 +599,9 @@ The mechanism works regardless of upgrade ordering (CM first or LBs first):
 - Post-upgrade cleanup: CM stops producing `legacy` entries and deletes old EndpointSlices.
 
 **Key properties:**
-- Ordering doesn't matter — `preferred` is only populated when the new-format object
+- Ordering doesn't matter - `preferred` is only populated when the new-format object
   exists; absence means "use old path"
-- Old LBs never read the DG status — completely unaffected
+- Old LBs never read the DG status - completely unaffected
 - The CM bears the cost of dual-write during migration
 
 **Limitations:**
@@ -618,7 +618,7 @@ The mechanism works regardless of upgrade ordering (CM first or LBs first):
 ### Consider adding ipFamily field
 
 Consider adding an explicit `ipFamily` field (`IPv4` / `IPv6`) to each InternalSubnet entry:
-- Makes intent explicit — no guessing from CIDR format
+- Makes intent explicit - no guessing from CIDR format
 - Enables CEL validation for duplicate detection and cross-validation
 - Consistent with `NetworkDomain.ipFamily` in the EndpointNetworkConfiguration API
 
@@ -677,7 +677,7 @@ The LB needs awareness of which IP families it should expect per target to:
 
 How this awareness is provided (startup config, DG status field, endpoint resource field)
 remains an open question. Requiring the LB to resolve GatewayConfiguration directly was
-considered but conflicts with the "dumb consumer" principle — the LB should process
+considered but conflicts with the "dumb consumer" principle - the LB should process
 whatever endpoints it receives without understanding the upstream configuration chain.
 
 ---
@@ -685,11 +685,11 @@ whatever endpoints it receives without understanding the upstream configuration 
 ## Network Degradation and Activation Policy (explored)
 
 *This section explores how the system should handle partial network presence and endpoint
-readiness. These are proposals — no decisions have been committed.*
+readiness. These are proposals - no decisions have been committed.*
 
 ### The Fundamental Tension
 
-Maglev's value is connection stickiness — once a flow is assigned to a target, it stays
+Maglev's value is connection stickiness - once a flow is assigned to a target, it stays
 there. Withdrawing a target from the hash table reshuffles ~1/N of all buckets, disrupting
 existing connections for other Pods. Keeping a broken target preserves stickiness for
 everyone else but blackholes traffic for that slot.
@@ -703,24 +703,24 @@ The key distinction is: **can traffic physically reach the target?**
 across all targets' connections (twice) for a transient event.
 
 For long-lived connections (the primary Maglev use case), the conservative approach
-(ignore readiness, keep target in hash table) is preferable — it sacrifices new connections
+(ignore readiness, keep target in hash table) is preferable - it sacrifices new connections
 to the failed target but preserves all existing connections to healthy targets.
 
 This trade-off is specific to consistent hashing. For round-robin (future distribution
-type), deactivating a target has no cascading effect — there's no hash table to reshuffle.
+type), deactivating a target has no cascading effect - there's no hash table to reshuffle.
 
 ### Degradation Scenarios
 
 **Partial IP family loss** (Pod loses one IP family):
-- The route for the lost family physically cannot work — no IP to route to
+- The route for the lost family physically cannot work - no IP to route to
 - Keeping the target means guaranteed blackhole for that family's traffic in that bucket
 - Deactivating causes one reshuffle but redirects traffic to targets that can serve it
 
 **Single-network degradation** (Pod loses its only IP/interface):
-- Same as above — no route possible
+- Same as above - no route possible
 
 **Pod readiness change** (PodReady=False, but IPs still present):
-- The route still exists — traffic might still work
+- The route still exists - traffic might still work
 - Deactivating causes two reshuffles (deactivate + reactivate on recovery), disrupting
   other targets' connections twice
 - Keeping it means new connections to that target may fail, but all other targets are
@@ -730,7 +730,7 @@ type), deactivating a target has no cascading effect — there's no hash table t
 - An operational decision, not a failure
 
 **Practical likelihood:** With static secondary network configuration (Multus thin plugin),
-losing an interface or IP on a running Pod is extremely unlikely — interfaces are created
+losing an interface or IP on a running Pod is extremely unlikely - interfaces are created
 at Pod startup and persist for the Pod's lifetime. The realistic scenarios are Pod startup
 (IP not yet assigned), config changes, and node failure (Pod stays "ready" with stale
 status until Kubernetes eviction ~5m40s with default tolerations). Note: Multus thick
@@ -739,7 +739,7 @@ scenarios more realistic. Currently, only static secondary configuration is supp
 
 ### DG Controller Role
 
-The DG controller currently acts as a truthful mirror of Pod network state — it sets the
+The DG controller currently acts as a truthful mirror of Pod network state - it sets the
 `Ready` field based on actual Pod readiness and includes Pods in EndpointSlices based on
 their actual IPs, without policy decisions about partial presence.
 
@@ -793,7 +793,7 @@ remaining family's slice.
 - Finer granularity than v1's all-or-nothing approach
 
 **Cons:**
-- Silent blackhole for the missing family's traffic — harder to diagnose
+- Silent blackhole for the missing family's traffic - harder to diagnose
 - Requires the DG controller to make policy decisions about partial presence
 - Operator mistakes would not disrupt the working family but the broken family's
   blackhole could go unnoticed
@@ -831,14 +831,14 @@ Document as a current implementation limitation, not an architectural constraint
 
 The path to cross-namespace support is clear:
 1. LB finds relevant DGs via L34Routes (which already resolve cross-namespace backendRefs
-   — the code checks `backendRef.Namespace` and compares against `distGroup.Namespace`)
+   - the code checks `backendRef.Namespace` and compares against `distGroup.Namespace`)
 2. For each DG, the LB knows the DG's namespace from the backendRef
 3. It lists EndpointSlices in that namespace filtered by the DG name label
 4. The only changes needed: extend the LB's cache scope and replace hardcoded
    `InNamespace(c.GatewayNamespace)` calls with the DG's actual namespace
 
 The single-Gateway restriction ensures EndpointSlices are unambiguous regardless of
-namespace topology — all slices owned by a DG serve exactly one Gateway.
+namespace topology - all slices owned by a DG serve exactly one Gateway.
 
 Note: DGs are namespace-scoped and their label selector only matches Pods in the same
 namespace. So even with cross-namespace DG-to-Gateway references, application Pods must
@@ -851,7 +851,7 @@ the Gateway is in the same namespace as the DG and its EndpointSlices. Kubernete
 ownerReferences to point to objects in the same namespace as the dependent. A cluster-wide
 controller-manager can manage objects across namespaces (it's just API calls), but the
 ownerReference relationship itself is namespace-scoped. This means cross-namespace
-Gateway-to-DG linking via ownerReferences is fundamentally impossible — labels or another
+Gateway-to-DG linking via ownerReferences is fundamentally impossible - labels or another
 discovery mechanism would be required.
 
 ---
@@ -862,11 +862,11 @@ discovery mechanism would be required.
 
 When a DG is deleted and the reconciler is triggered (via `.Owns()` watch on EndpointSlices),
 the `r.Get()` call returns NotFound. The current code calls `client.IgnoreNotFound(err)` and
-returns nil — it does **not** actively delete EndpointSlices. Cleanup relies entirely on
+returns nil - it does **not** actively delete EndpointSlices. Cleanup relies entirely on
 Kubernetes GC via the DG's ownerReference (`controller: true`).
 
 The `deleteAllOwnedSlices` function is only called when the DG exists but has zero matching
-Pods — it is not part of the deletion path.
+Pods - it is not part of the deletion path.
 
 ### Improvement idea
 
@@ -877,7 +877,7 @@ carries `req.Name` and `req.Namespace` (the DG's identity), and EndpointSlices h
 ```go
 if err := r.Get(ctx, req.NamespacedName, &dg); err != nil {
     if apierrors.IsNotFound(err) {
-        // DG gone — clean up orphaned EndpointSlices by label
+        // DG gone - clean up orphaned EndpointSlices by label
         return r.deleteSlicesByLabel(ctx, req.Namespace, req.Name)
     }
     return ctrl.Result{}, err
@@ -896,7 +896,7 @@ deleted.
 Kubernetes object names are limited to 253 characters, and label values are limited to 63
 characters. Since DG names are used as label values on EndpointSlices
 (`meridio-2.nordix.org/distribution-group: <dg-name>`), the practical DG name limit is 63
-characters — not 253. This is currently an implicit limitation, not enforced at the CRD/API
+characters - not 253. This is currently an implicit limitation, not enforced at the CRD/API
 level. Gateway names would be subject to the same limitation if used as label values (e.g.,
 in Option B1).
 
@@ -912,7 +912,7 @@ label constraint on input names.
 **Note on Option D (custom resource):** With a custom resource replacing EndpointSlices,
 the DG name would be stored in a spec field (e.g., `spec.distributionGroup`) rather than a
 label, removing the 63-character label value limitation. However, the object naming
-challenge remains — multiple custom endpoint objects may coexist per DG (due to capacity
+challenge remains - multiple custom endpoint objects may coexist per DG (due to capacity
 splitting), requiring a naming convention that ensures uniqueness across slices.
 
 ---
@@ -930,7 +930,7 @@ was explored as a possible migration bridge between EndpointSlices and Option D.
 
 The core Kubernetes EndpointSlice controller creates separate EndpointSlices per Service,
 even when two Services select the exact same Pods. There is no deduplication or sharing
-across Services — each Service owns its own set of slices independently. Kubernetes chose
+across Services - each Service owns its own set of slices independently. Kubernetes chose
 clear ownership and simplicity over data footprint optimization.
 
 This precedent supports the same trade-off in Meridio-2: exclusive per-DG (and potentially
@@ -954,7 +954,7 @@ microservices (API versioning, backward/forward compatibility contracts).
 ### Established Patterns
 
 **1. Additive-only changes (the Kubernetes API way):**
-Never remove or rename fields — only add new ones. Old consumers ignore unknown fields.
+Never remove or rename fields - only add new ones. Old consumers ignore unknown fields.
 New consumers use new fields if present, fall back if not. Rollback is safe because old
 producers still write the fields old consumers need.
 *Limitation:* Fields accumulate forever.
@@ -973,7 +973,7 @@ still exist.
 
 **4. Consumer-side adaptation (the pragmatic approach):**
 Accept that consumers must handle N format versions. Keep N small (current + previous).
-*Limitation:* Does not inherently guarantee rollback — once old-format data is removed,
+*Limitation:* Does not inherently guarantee rollback - once old-format data is removed,
 rolling back the producer leaves a gap until it regenerates. Consumers accumulate legacy
 interpretation code over time.
 

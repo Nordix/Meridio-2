@@ -1,12 +1,12 @@
-# pkg/app — Meridio-2 Controller Manager Extension Point
+# pkg/app - Meridio-2 Controller Manager Extension Point
 
 This package allows downstream consumers to embed Meridio-2's controllers in their own binary and register additional controllers that share the same manager instance.
 
 ## Benefits
 
-- **Shared informer cache** — one set of API watches (no duplicated list/watch connections)
-- **Shared leader election** — one leader across all controllers (consistent state)
-- **Single binary** — one process, one pod, minimal operational overhead
+- **Shared informer cache** - one set of API watches (no duplicated list/watch connections)
+- **Shared leader election** - one leader across all controllers (consistent state)
+- **Single binary** - one process, one pod, minimal operational overhead
 
 ## Exported API
 
@@ -96,13 +96,13 @@ Full flag list: see `--help` output.
 
 All controllers (built-in and additional) share a single leader election with ID `e9d059a3.nordix.org`. This means:
 
-- **Only one instance can be leader** — if you deploy multiple replicas with `--leader-elect=true`, only the leader runs reconcilers.
-- **Do not run the extended binary alongside the standard Meridio-2 binary** in the same namespace with leader election enabled — they will compete for the same lease, causing split-brain or mutual exclusion.
-- **Deploy one or the other** — either the default `controller-manager` binary or your extended binary, not both.
+- **Only one instance can be leader** - if you deploy multiple replicas with `--leader-elect=true`, only the leader runs reconcilers.
+- **Do not run the extended binary alongside the standard Meridio-2 binary** in the same namespace with leader election enabled - they will compete for the same lease, causing split-brain or mutual exclusion.
+- **Deploy one or the other** - either the default `controller-manager` binary or your extended binary, not both.
 
 ### Scheme Registration
 
-The manager's scheme is populated with Meridio-2 and Gateway API types before `ControllerSetup` functions are called. Additional types can be registered via `mgr.GetScheme()` inside `ControllerSetup` — this is safe because informers start lazily when `mgr.Start()` is called (after all setup functions complete).
+The manager's scheme is populated with Meridio-2 and Gateway API types before `ControllerSetup` functions are called. Additional types can be registered via `mgr.GetScheme()` inside `ControllerSetup` - this is safe because informers start lazily when `mgr.Start()` is called (after all setup functions complete).
 
 ### RBAC
 

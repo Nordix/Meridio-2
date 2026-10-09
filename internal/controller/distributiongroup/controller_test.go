@@ -671,7 +671,7 @@ func TestReconcile_DGWithDirectParentRef(t *testing.T) {
 	})
 	gw := tcNewGateway(true)
 	gwConfig := tcNewGatewayConfig()
-	// No L34Route — DG references Gateway directly
+	// No L34Route - DG references Gateway directly
 	pod := tcNewPod("pod-1", true, "192.168.100.10")
 
 	r, c := tcSetupReconciler(dg, gw, gwConfig, pod)
@@ -702,7 +702,7 @@ func TestReconcile_Idempotent(t *testing.T) {
 	slices1 := tcListSlices(t, c)
 	require.Len(t, slices1, 1)
 
-	// Second reconcile — same result, no extra slices
+	// Second reconcile - same result, no extra slices
 	result, err = r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
@@ -737,7 +737,7 @@ func TestReconcile_MaglevIDStability(t *testing.T) {
 	}
 	require.Len(t, initialIDs, 2)
 
-	// Second reconcile — IDs must be preserved
+	// Second reconcile - IDs must be preserved
 	result, err = r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
@@ -791,7 +791,7 @@ func TestReconcile_CapacityExceededConditionRemovedOnRecovery(t *testing.T) {
 
 	r, c := tcSetupReconciler(dg, gw, gwConfig, route, pod1, pod2)
 
-	// First reconcile — capacity exceeded (2 pods, 1 slot)
+	// First reconcile - capacity exceeded (2 pods, 1 slot)
 	_, err := r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	updated := tcGetDG(t, c)
@@ -800,7 +800,7 @@ func TestReconcile_CapacityExceededConditionRemovedOnRecovery(t *testing.T) {
 	// Remove one Pod to recover capacity
 	require.NoError(t, c.Delete(context.Background(), pod2))
 
-	// Second reconcile — capacity recovered
+	// Second reconcile - capacity recovered
 	_, err = r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	updated = tcGetDG(t, c)
@@ -820,7 +820,7 @@ func TestReconcile_CleanupWhenPodsDisappear(t *testing.T) {
 
 	r, c := tcSetupReconciler(dg, gw, gwConfig, route, pod)
 
-	// First reconcile — creates slice
+	// First reconcile - creates slice
 	result, err := r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
@@ -829,7 +829,7 @@ func TestReconcile_CleanupWhenPodsDisappear(t *testing.T) {
 	// Delete the Pod
 	require.NoError(t, c.Delete(context.Background(), pod))
 
-	// Second reconcile — should delete slice
+	// Second reconcile - should delete slice
 	result, err = r.Reconcile(context.Background(), tcReconcileRequest())
 	require.NoError(t, err)
 	assert.Equal(t, ctrl.Result{}, result)

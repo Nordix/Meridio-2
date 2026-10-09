@@ -20,7 +20,7 @@ import "github.com/prometheus/client_golang/prometheus"
 
 // Config-error reason label values for ConfigErrors. Each maps to a distinct netlink object
 // layer the sidecar operates at, so a failure points at a specific diagnosis:
-//   - link: interface lookup/enumeration (LinkByName/LinkList) — Pod networking / Multus / interface
+//   - link: interface lookup/enumeration (LinkByName/LinkList) - Pod networking / Multus / interface
 //     not ready.
 //   - address: VIP address add/remove (AddrAdd/AddrDel).
 //   - route: policy-routing rule and route ops (RuleAdd/RouteReplace/...); rules and routes share
@@ -36,13 +36,13 @@ const (
 // not lazily collected: a failed netlink op is a point-in-time event with no durable external
 // source to read at scrape time, so it is counted at the failure site (see #236).
 //
-// It carries no pod label — each sidecar exposes its own per-Pod /metrics endpoint, so Pod
+// It carries no pod label - each sidecar exposes its own per-Pod /metrics endpoint, so Pod
 // identity is 1:1 with the scrape target and supplied by the scraper (instance/pod).
 //
 // Being a counter, the value resets to zero on process restart. Consume via rate()/increase()
 // (both reset-aware) and, for restart-aware interpretation, pair with process_start_time_seconds
 // (exposed for free by controller-runtime's process collector) rather than container-restart
-// metrics — the former reflects controller-process restarts even when a supervisor keeps the
+// metrics - the former reflects controller-process restarts even when a supervisor keeps the
 // container alive.
 //
 // A nil *ConfigErrors is a valid no-op: Inc on a nil receiver does nothing, so the reconcile path

@@ -39,7 +39,7 @@ var l34routelog = logf.Log.WithName("l34route-resource")
 // maxCIDRsPerFlow is the maximum number of CIDRs the data plane (nfqlb) accepts
 // per field for a single flow. It mirrors nfqlb's MAX_CIDRS (src/lib/flow.c):
 // parseCidrs() rejects a list longer than this (returns NULL), which makes the
-// nfqlb flow-set command fail — so the flow is not programmed. nfqlb applies the
+// nfqlb flow-set command fail - so the flow is not programmed. nfqlb applies the
 // limit independently to the --dsts and --srcs lists, so it is enforced per field
 // here (destinationCIDRs and sourceCIDRs separately).
 //
@@ -48,7 +48,7 @@ var l34routelog = logf.Log.WithName("l34route-resource")
 // with a clear error rather than silently failing to program at runtime.
 //
 // Raising the effective limit requires increasing nfqlb's MAX_CIDRS AND this
-// constant together — no CRD change is needed.
+// constant together - no CRD change is needed.
 // See docs/operations/constraints-and-limitations.md.
 const maxCIDRsPerFlow = 32
 
@@ -62,7 +62,7 @@ const maxCIDRsPerFlow = 32
 // silently dropped at runtime.
 //
 // Raising the effective port capacity requires increasing nfqlb's buffer AND
-// this constant together — no CRD change is needed.
+// this constant together - no CRD change is needed.
 // See docs/operations/constraints-and-limitations.md.
 const nfqlbPortStringMaxBytes = 1024
 
@@ -282,8 +282,8 @@ type ports struct {
 // exceed the data-plane (nfqlb) port-string buffer (nfqlbPortStringMaxBytes).
 // The controller passes ports to nfqlb as a single comma-joined --sports/--dports
 // value (see internal/nfqlb Instance.AddFlow), and nfqlb truncates that value at
-// nfqlbPortStringMaxBytes. Enforcing the joined length here — rather than a fixed
-// item count — tracks the real constraint exactly regardless of individual port
+// nfqlbPortStringMaxBytes. Enforcing the joined length here - rather than a fixed
+// item count - tracks the real constraint exactly regardless of individual port
 // or range widths.
 //
 // Full-range sets are exempt: when the set contains a full-range token ("any" or

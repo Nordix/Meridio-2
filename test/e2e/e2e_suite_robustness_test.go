@@ -60,7 +60,7 @@ var robServiceHealth = e2eutils.ServiceHealth{
 }
 
 // robTrafficExpectations are the traffic checks that must pass alongside
-// robServiceHealth to consider the data path fully intact — TCP and UDP
+// robServiceHealth to consider the data path fully intact - TCP and UDP
 // over both IP families, matching the checks the Dual Stack suite itself
 // exercises in steady state.
 var robTrafficExpectations = []e2eutils.TrafficExpectation{
@@ -94,7 +94,7 @@ var _ = Describe("Robustness", Label("dual-stack"), Serial, Ordered, func() {
 	// to Ready, resumes reconciling, and the data path is healthy again
 	// afterward. This test does not assert zero-disruption *during* the
 	// outage window itself (no traffic is generated concurrently with the
-	// restart) — only that nothing is left broken once the new Pod is Ready.
+	// restart) - only that nothing is left broken once the new Pod is Ready.
 	Context("Controller-manager", func() {
 		It("restarts cleanly, resumes reconciling, and the data path is healthy again afterward", func() {
 			By("finding the controller-manager Pod")

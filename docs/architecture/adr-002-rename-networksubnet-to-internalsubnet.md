@@ -22,7 +22,7 @@ It has no relation to external-facing networks (e.g., the router's BGP peering i
 
 Rename `NetworkSubnet` → `InternalSubnet` and `networkSubnets` → `internalSubnets` to clearly communicate that this field describes the internal application-facing network, not external connectivity.
 
-Additionally, simplify the structure from `CIDRs []string` to `CIDR string` — each entry represents exactly one subnet (one CIDR, one IP family). Dual-stack requires two entries.
+Additionally, simplify the structure from `CIDRs []string` to `CIDR string` - each entry represents exactly one subnet (one CIDR, one IP family). Dual-stack requires two entries.
 
 ## Consequences
 

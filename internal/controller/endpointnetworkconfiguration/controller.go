@@ -69,7 +69,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			// Pod deleted → ENC garbage-collected via ownerReference.
 			// Note: if pod-cache-label filtering is enabled and the label is removed
 			// at runtime, the Pod is evicted from cache (triggering this path) but
-			// still exists — GC won't fire. Calling deleteENCIfExists here instead
+			// still exists - GC won't fire. Calling deleteENCIfExists here instead
 			// of returning nil would handle that edge case.
 			return ctrl.Result{}, nil
 		}

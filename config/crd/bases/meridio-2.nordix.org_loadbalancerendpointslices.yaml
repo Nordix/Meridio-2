@@ -70,7 +70,7 @@ spec:
                 description: |-
                   distributionGroupName is the name of the DistributionGroup that owns this slice.
                   Same-namespace relationship is enforced by ownerReference.
-                  Immutable because the slice's identity is tied to its owning DG — Kubernetes
+                  Immutable because the slice's identity is tied to its owning DG - Kubernetes
                   resource names cannot change, and ownerReference binds the slice lifecycle to
                   the DG. Reassigning a slice to a different DG is not a valid operation.
                 minLength: 1

@@ -4,7 +4,7 @@
 
 The controller-manager can be configured to only cache Pods that carry a specific label. This reduces memory usage and event processing overhead in namespaces with many unrelated Pods.
 
-When enabled, only Pods with the configured label are visible to the controller-manager's informer cache. All controllers (DG, ENC, Gateway) operate exclusively on labeled Pods. Unlabeled Pods are invisible — no events, no List/Get results.
+When enabled, only Pods with the configured label are visible to the controller-manager's informer cache. All controllers (DG, ENC, Gateway) operate exclusively on labeled Pods. Unlabeled Pods are invisible - no events, no List/Get results.
 
 ## Configuration
 
@@ -42,7 +42,7 @@ When enabling pod cache filtering on an existing deployment:
 
 2. **Upgrade the controller-manager** with `--pod-cache-label` set.
 
-3. **LB Pods** rolling update proceeds — the controller-manager updates the Deployment template with the label. Pre-labeled old Pods remain visible throughout; new Pods inherit the label from the template.
+3. **LB Pods** rolling update proceeds - the controller-manager updates the Deployment template with the label. Pre-labeled old Pods remain visible throughout; new Pods inherit the label from the template.
 
 If pre-labeling is skipped:
 - Application Pods without the label will not have ENCs created/updated. Existing ENCs become stale (ownerReference GC won't fire because the Pod still exists).

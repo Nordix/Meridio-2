@@ -41,7 +41,7 @@ import (
 //	Phase B (no BFD): only when the BGP hold timer (15s) expires
 //
 // The failure is injected by bringing the VPN gateway's VLAN subinterface down
-// (ip link set vlan13 down) — no BGP NOTIFICATION or TCP teardown reaches the
+// (ip link set vlan13 down) - no BGP NOTIFICATION or TCP teardown reaches the
 // peer, so the receiver must rely on its own timers. Between the phases the
 // router is patched at runtime to remove the `bfd` block; the original config
 // (with BFD) is restored in AfterAll.

@@ -43,18 +43,18 @@ import (
 // separate "gateway_namespace" alongside "gateway". This follows the kube-state-metrics
 // convention of a name label paired with its own namespace label rather than folding namespace
 // into the name. It matters because the controller-manager can watch all namespaces (empty
-// --namespace), and a DG's resolved Gateway can live in a different namespace than the DG — so
+// --namespace), and a DG's resolved Gateway can live in a different namespace than the DG - so
 // "gateway"/"dg" names alone are not unique across the metric stream.
 //
 // # ready has no Gateway dimension
 //
 // Ready is DG-wide, not per-Gateway: DistributionGroupReconciler.updateStatus sets it from
-// hasEndpoints := len(desiredSlices) > 0, an OR across every Gateway's slices — the reconciler
+// hasEndpoints := len(desiredSlices) > 0, an OR across every Gateway's slices - the reconciler
 // has no "Ready under Gateway A but not B" concept. So ready carries only "dg"/"namespace", one
 // series per DG, reflecting distributiongroup.IsReady(dg) as-is.
 //
 // Note: IsReady currently means "has any assigned endpoint" (a slice exists), not "has any ready
-// endpoint" — per-endpoint LoadBalancerEndpoint.Ready is not consulted. This metric mirrors the
+// endpoint" - per-endpoint LoadBalancerEndpoint.Ready is not consulted. This metric mirrors the
 // existing condition as-is rather than inventing a metrics-only readiness under the same name;
 // whether the condition itself should consider per-endpoint readiness is a separate open design
 // question for the reconciler.
@@ -64,11 +64,11 @@ import (
 // A DG's Gateway association for these two metrics is the union of two independently-derived sets:
 //   - Referenced-and-accepted Gateways: distributiongroup.ListReferencedGateways (the reconciler's
 //     own parentRef/L34Route-backendRef walk) filtered by gatewayutil.IsGatewayAcceptedByController. Covers
-//     a DG newly bound to a Gateway before any slices exist — endpoints is correctly 0 there,
+//     a DG newly bound to a Gateway before any slices exist - endpoints is correctly 0 there,
 //     rather than the Gateway being absent from the stream.
 //   - Gateways with currently-owned LoadBalancerEndpointSlices, read off each slice's
 //     Spec.GatewayRef. Covers slices still lingering for a Gateway no longer referenced/accepted
-//     (e.g. between unlinking and the reconciler's next cleanup) — reported as-is, since the goal
+//     (e.g. between unlinking and the reconciler's next cleanup) - reported as-is, since the goal
 //     is to report durable state, not adjudicate staleness.
 //
 // A DG with an empty union (unbound: no accepted reference, no owned slices) still emits
@@ -81,7 +81,7 @@ import (
 // broadcast across every Gateway label would misreport (A's count would include B's slices).
 //
 // max_endpoints is a genuine per-Gateway cap, not just a per-Gateway-attributed shared value: for
-// Maglev, MaglevConfig's doc states IDs are assigned per DG and per Gateway — each Gateway gets
+// Maglev, MaglevConfig's doc states IDs are assigned per DG and per Gateway - each Gateway gets
 // its own independent Maglev table, and the LB controller uses per-DG-per-Gateway ID offsets for
 // fwmark routing. So endpoints{gateway="A"}/max_endpoints{gateway="A"} is a valid per-Gateway
 // utilization query. dg.Spec.Maglev.MaxEndpoints is one DG-wide configured value by design,
@@ -91,7 +91,7 @@ import (
 // # max_endpoints is not Maglev-specific
 //
 // DistributionGroupSpec.Type is an extensible discriminator (only Maglev exists today). This
-// metric is kept generic — one name, always emitted for every DG regardless of Type — since a
+// metric is kept generic - one name, always emitted for every DG regardless of Type - since a
 // capacity concept is plausible for future strategies. resolveMaxEndpoints switches on Type so a
 // future type gets a deliberate branch rather than silently inheriting Maglev's default. A type
 // with no bounded-capacity concept reports +Inf ("no upper bound") rather than omitting the
@@ -120,7 +120,7 @@ type gatewayRef struct {
 // NewDistributionGroupCollector creates a DistributionGroupCollector. prefix must already be
 // validated (see internal/common/metrics.ValidatePrefix). cacheWaiter is typically the
 // manager's own cache (mgr.GetCache()); collectTimeout bounds how long Collect will wait for it
-// to sync before giving up and reporting a collection error for that scrape — see
+// to sync before giving up and reporting a collection error for that scrape - see
 // CacheSyncWaiter.
 func NewDistributionGroupCollector(
 	c client.Client, cacheWaiter metricsutil.CacheSyncWaiter, collectTimeout time.Duration, namespace, controllerName, prefix string,
@@ -163,7 +163,7 @@ func (c *DistributionGroupCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector. It lists DistributionGroups (and per DG resolves
 // referenced Gateways and owned slices) from the informer cache fresh on every call (safe per
-// the package doc), first waiting for the cache to sync — bounded by collectTimeout, a cheap
+// the package doc), first waiting for the cache to sync - bounded by collectTimeout, a cheap
 // no-op once synced (see CacheSyncWaiter / syncGate). The up-front gate matters especially here,
 // where one Collect reads four object types.
 func (c *DistributionGroupCollector) Collect(ch chan<- prometheus.Metric) {
@@ -225,7 +225,7 @@ func (c *DistributionGroupCollector) collectDG(
 
 // resolveGatewayRefs returns the Gateway(s) to emit endpoints/max_endpoints under for dg: the
 // union of referenced-and-accepted Gateways (distributiongroup.ListReferencedGateways +
-// gatewayutil.IsGatewayAcceptedByController) and Gateways with owned slices (endpointsByGateway's keys) —
+// gatewayutil.IsGatewayAcceptedByController) and Gateways with owned slices (endpointsByGateway's keys) -
 // see the "Gateway label semantics" section of the DistributionGroupCollector doc for why both
 // sets matter. Falls back to a single zero-value gatewayRef only when the union is empty
 // (genuinely unbound).
@@ -263,7 +263,7 @@ func (c *DistributionGroupCollector) resolveGatewayRefs(
 // DistributionGroupReconciler.listOwnedSlices): field-indexed by spec.distributionGroupName,
 // narrowed to slices actually controlled by this DG (guards against manually-created slices with
 // a matching name but no ownerRef). Each slice is scoped to one Gateway via Spec.GatewayRef, so
-// counts are keyed per (name, namespace) rather than summed DG-wide — see the "endpoints and
+// counts are keyed per (name, namespace) rather than summed DG-wide - see the "endpoints and
 // max_endpoints are both per-Gateway" section of the DistributionGroupCollector doc for why.
 func (c *DistributionGroupCollector) countOwnedEndpointsByGateway(
 	ctx context.Context, dg *meridio2v1alpha1.DistributionGroup,
@@ -291,7 +291,7 @@ func (c *DistributionGroupCollector) countOwnedEndpointsByGateway(
 // resolveMaxEndpoints returns the upper bound on endpoint count for dg, per its distribution
 // strategy (dg.Spec.Type). Switches explicitly on Type rather than only checking
 // dg.Spec.Maglev != nil, so that a future DistributionGroupType gets a deliberate branch here
-// instead of silently falling into the Maglev default — see the "max_endpoints is not
+// instead of silently falling into the Maglev default - see the "max_endpoints is not
 // Maglev-specific" doc on DistributionGroupCollector.
 func resolveMaxEndpoints(dg *meridio2v1alpha1.DistributionGroup) float64 {
 	switch dg.Spec.Type {

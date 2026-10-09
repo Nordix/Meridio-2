@@ -53,7 +53,7 @@ stringData:
 
 ## Key Rotation Procedure
 
-A hitless key rotation requires coordination between Meridio and the remote BGP peer. The exact commands for the remote end depend on your router vendor/software — the steps below describe only what needs to happen logically on each side.
+A hitless key rotation requires coordination between Meridio and the remote BGP peer. The exact commands for the remote end depend on your router vendor/software - the steps below describe only what needs to happen logically on each side.
 
 ### Prerequisites
 
@@ -181,7 +181,7 @@ Remove key ID 1 from the remote peer.
 
 ## Partial Resolution Failures
 
-When the router controller cannot read a Secret referenced by a GatewayRouter's keychain (Secret does not exist, key not found in Secret data, or RBAC denies access), it **retains the previous BIRD configuration unchanged** and logs the unresolved reference at info level. It does not return an error or requeue explicitly — the controller relies on its watches on Secrets and GatewayRouters to re-trigger reconciliation once the missing data appears.
+When the router controller cannot read a Secret referenced by a GatewayRouter's keychain (Secret does not exist, key not found in Secret data, or RBAC denies access), it **retains the previous BIRD configuration unchanged** and logs the unresolved reference at info level. It does not return an error or requeue explicitly - the controller relies on its watches on Secrets and GatewayRouters to re-trigger reconciliation once the missing data appears.
 
 This means:
 
@@ -191,7 +191,7 @@ This means:
 
 ### No Status Feedback
 
-The router controller currently provides **no status field or condition** to indicate whether the requested authentication configuration has been successfully applied to BIRD. Multiple LB Pods each run independent router controller instances watching the same GatewayRouter — writing status from multiple writers would cause condition flapping and race conflicts.
+The router controller currently provides **no status field or condition** to indicate whether the requested authentication configuration has been successfully applied to BIRD. Multiple LB Pods each run independent router controller instances watching the same GatewayRouter - writing status from multiple writers would cause condition flapping and race conflicts.
 
 Operators must infer success from:
 
@@ -203,7 +203,7 @@ Operators must infer success from:
 
 To minimize the risk of partial resolution failures during key rotation:
 
-1. **Keep keys in a single Secret** (or few Secrets) per GatewayRouter rather than one Secret per key. Kubernetes guarantees atomic updates within a single Secret — all keys appear simultaneously.
+1. **Keep keys in a single Secret** (or few Secrets) per GatewayRouter rather than one Secret per key. Kubernetes guarantees atomic updates within a single Secret - all keys appear simultaneously.
 2. **Create Secrets before referencing them** in the GatewayRouter keychain. Apply the Secret first, then update the GatewayRouter.
 3. **Do not delete Secrets** that are still referenced by any GatewayRouter keychain. Remove the keychain entry first, then delete the Secret.
 
@@ -223,6 +223,6 @@ Unknown values are passed through to BIRD and rejected at config load time.
 
 ## See Also
 
-- [Router controller documentation](../controllers/router.md#bgp-authentication-tcp-ao) — implementation details, RBAC, watch strategy
-- [RFC 5925 — The TCP Authentication Option](https://datatracker.ietf.org/doc/html/rfc5925)
-- [BIRD 3 documentation — BGP authentication](https://bird.network.cz/?get_doc&v=30&f=bird-6.html#ss6.3)
+- [Router controller documentation](../controllers/router.md#bgp-authentication-tcp-ao) - implementation details, RBAC, watch strategy
+- [RFC 5925 - The TCP Authentication Option](https://datatracker.ietf.org/doc/html/rfc5925)
+- [BIRD 3 documentation - BGP authentication](https://bird.network.cz/?get_doc&v=30&f=bird-6.html#ss6.3)

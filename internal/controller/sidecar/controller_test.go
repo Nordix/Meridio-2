@@ -374,7 +374,7 @@ func TestReconcile_InterfaceNotFound_SetsStatusFailed_Requeues(t *testing.T) {
 
 	result, err := c.Reconcile(context.Background(), reconcileRequest())
 
-	// InterfaceNotFoundError is transient — requeue
+	// InterfaceNotFoundError is transient - requeue
 	assert.Error(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
 
@@ -444,7 +444,7 @@ func TestReconcile_StaleGatewayCleanup(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, c.tableIDs.activeGateways(), 2)
 
-	// Remove gw-b — re-fetch to get current resourceVersion after status update
+	// Remove gw-b - re-fetch to get current resourceVersion after status update
 	var updated meridio2v1alpha1.EndpointNetworkConfiguration
 	err = fakeClient.Get(context.Background(), reconcileRequest().NamespacedName, &updated)
 	assert.NoError(t, err)
@@ -490,7 +490,7 @@ func TestReconcile_DomainRemoved_CleansUpRules(t *testing.T) {
 	tableID, _ := c.tableIDs.lookup("gw-a")
 	assert.Len(t, nl.rulesForTable(tableID), 2)
 
-	// Remove v6 domain — re-fetch to get current resourceVersion after status update
+	// Remove v6 domain - re-fetch to get current resourceVersion after status update
 	var updated meridio2v1alpha1.EndpointNetworkConfiguration
 	err = fakeClient.Get(context.Background(), reconcileRequest().NamespacedName, &updated)
 	assert.NoError(t, err)
@@ -913,7 +913,7 @@ func newFakeConfigErrors() *fakeConfigErrors {
 func (f *fakeConfigErrors) Inc(reason string) { f.counts[reason]++ }
 
 // v4Gateway returns a single-gateway ENC with one IPv4 domain on subnet 192.168.1.0/24 (hint
-// net1) — the fixed topology the ConfigErrors tests drive against a mock interface of the same
+// net1) - the fixed topology the ConfigErrors tests drive against a mock interface of the same
 // subnet.
 func v4Gateway() *meridio2v1alpha1.EndpointNetworkConfiguration {
 	return newENC(meridio2v1alpha1.GatewayConnection{

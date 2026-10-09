@@ -21,7 +21,7 @@ limitations under the License.
 // All metrics here are lazy/pull-based: each Collector reads current state from the manager's
 // informer cache (via client.Client.List/Get) only when Collect is invoked by a scrape, never
 // from a background loop or the reconcile path. This decouples metrics from reconciliation and
-// gives correct lifecycle behavior for free — a deleted Gateway or DistributionGroup stops
+// gives correct lifecycle behavior for free - a deleted Gateway or DistributionGroup stops
 // appearing in the next Collect, and Prometheus marks the series stale on its own.
 //
 // See internal/metrics/util.CacheSyncWaiter for why every Collect waits for the informer cache
@@ -49,14 +49,14 @@ import (
 //
 // gateway_count counts Gateways whose Accepted=True condition was set by this controller
 // (gatewayutil.IsGatewayAcceptedByController), matching the billing-relevant semantics finalized
-// in issue #153 — it reflects Gateways we have actually accepted.
+// in issue #153 - it reflects Gateways we have actually accepted.
 //
 // gateway_programmed is emitted for every Gateway destined for this controller by its
 // GatewayClass (Gateway.spec.gatewayClassName -> GatewayClass.spec.controllerName == our name),
 // independent of the Accepted condition. This is the same ownership test the Gateway reconciler
 // gates on (shouldManageGateway). Gating on the GatewayClass rather than the Accepted condition
-// lets gateway_programmed report 0/1 for the whole lifetime a Gateway is class-ours — including
-// before we have Accepted it, or after Accepted was reset (e.g. a transient state) — rather than
+// lets gateway_programmed report 0/1 for the whole lifetime a Gateway is class-ours - including
+// before we have Accepted it, or after Accepted was reset (e.g. a transient state) - rather than
 // emitting no series in those windows, which is the operationally useful behavior for tracking
 // whether our data plane is programmed.
 //
@@ -84,7 +84,7 @@ type GatewayCollector struct {
 // NewGatewayCollector creates a GatewayCollector. prefix must already be validated
 // (see internal/common/metrics.ValidatePrefix). cacheWaiter is typically the manager's own
 // cache (mgr.GetCache()); collectTimeout bounds how long Collect will wait for it to sync
-// before giving up and reporting a collection error for that scrape — see CacheSyncWaiter.
+// before giving up and reporting a collection error for that scrape - see CacheSyncWaiter.
 func NewGatewayCollector(
 	c client.Client, cacheWaiter metricsutil.CacheSyncWaiter, collectTimeout time.Duration, namespace, controllerName, prefix string,
 ) *GatewayCollector {
@@ -115,7 +115,7 @@ func (c *GatewayCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector. It lists Gateways (and GatewayClasses, to resolve
 // class-based ownership for gateway_programmed) from the informer cache fresh on every call,
-// first waiting for the cache to sync — bounded by collectTimeout, a cheap no-op once synced
+// first waiting for the cache to sync - bounded by collectTimeout, a cheap no-op once synced
 // (see CacheSyncWaiter / syncGate).
 //
 // On sync-timeout or List failure it emits an invalid metric rather than returning silently:

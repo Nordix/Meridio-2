@@ -15,7 +15,7 @@ networkSidecar:
   minTableID: 50000
   maxTableID: 55000
 
-# NAD annotation — no IPs, VIPs are managed by the sidecar via ENC.
+# NAD annotation - no IPs, VIPs are managed by the sidecar via ENC.
 # Override to match your cluster's NAD names and interface names.
 # Leave namespace empty to default to the release namespace.
 #

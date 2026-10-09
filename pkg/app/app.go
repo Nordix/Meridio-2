@@ -389,20 +389,20 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 // (see internal/metrics/controllermanager) against controller-runtime's metrics.Registry,
 // when metrics are enabled (--metrics-bind-address != "0").
 //
-// This MUST run synchronously before mgr.Start(cfg) — not in a goroutine, not after:
+// This MUST run synchronously before mgr.Start(cfg) - not in a goroutine, not after:
 // controller-runtime brings the metrics HTTP server up very early (before caches, before leader
 // election), so registration deferred past mgr.Start could let a scrape hit /metrics before the
 // collectors exist, returning an incomplete set with no error. This is the registration half of
 // the startup-timing story CacheSyncWaiter (internal/metrics/util) handles on the scrape side.
 //
 // It also establishes a cross-package invariant the collectors' sync-gate relies on: every type
-// a collector reads — DistributionGroup, Gateway, L34Route, LoadBalancerEndpointSlice — is
+// a collector reads - DistributionGroup, Gateway, L34Route, LoadBalancerEndpointSlice - is
 // watched by a built-in reconciler registered above, whose .For/.Owns/.Watches calls put the
 // informers into the cache tracker before mgr.Start() syncs them, so the collectors' up-front
 // WaitForCacheSync (which waits only on already-tracked informers) covers them. A collector
 // reading an un-watched type would not hang or read stale data (its first List/Get lazily
 // registers and syncs that informer, bounded by collectTimeout), but that inline sync lands
-// after the gate passed — reintroducing the partial snapshot the gate intends to prevent. Such
+// after the gate passed - reintroducing the partial snapshot the gate intends to prevent. Such
 // a collector should weigh adding a watch so its types are covered by the gate too.
 func registerMetricsCollectors(mgr ctrl.Manager, cfg *config.ManagerConfig) error {
 	logger := ctrl.Log.WithName("metrics")
