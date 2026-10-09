@@ -92,6 +92,11 @@ func newTestLBEPS(dg *meridio2v1alpha1.DistributionGroup, endpoints []meridio2v1
 type mockNFQLB struct {
 	instances  map[string]*mockNFQLBInstance
 	fwmarkBase int
+	// deleteInstanceErr, when set, is returned by DeleteInstance instead of
+	// succeeding, without removing the instance from m.instances — mirrors the
+	// real NFQueueLoadBalancer keeping a failed deletion's instance (and its
+	// fwmark offset) reserved for retry.
+	deleteInstanceErr error
 }
 
 func newMockNFQLB() *mockNFQLB {
@@ -112,12 +117,19 @@ func (m *mockNFQLB) AddInstance(_ context.Context, name string, _ ...nfqlb.Insta
 }
 
 func (m *mockNFQLB) DeleteInstance(_ context.Context, name string) error {
+	if m.deleteInstanceErr != nil {
+		return m.deleteInstanceErr
+	}
 	delete(m.instances, name)
 	return nil
 }
 
 func (m *mockNFQLB) DropFwmarks() (nolb, notargets int) {
 	return m.fwmarkBase, m.fwmarkBase + 1
+}
+
+func (m *mockNFQLB) GCStaleInstances(_ context.Context, _ map[string]struct{}) error {
+	return nil
 }
 
 // mockNFQLBInstance mocks a single NFQLB instance (per DistributionGroup).
@@ -469,6 +481,40 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}
 			Expect(controller.reconcileNFQLBInstance(ctx, dg4)).To(Succeed())
 			Expect(controller.instances).To(HaveKey("dg-4"))
+		})
+
+		It("keeps the instance tracked for retry when DeleteInstance fails, "+
+			"but still removes the readiness file independently", func() {
+			readinessDir := GinkgoT().TempDir()
+			controller.Readiness = readiness.NewManager(readinessDir)
+
+			dg := &meridio2v1alpha1.DistributionGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: "dg-1", Namespace: namespace},
+			}
+			Expect(controller.reconcileNFQLBInstance(ctx, dg)).To(Succeed())
+			Expect(controller.Readiness.Set("dg-1")).To(Succeed())
+			Expect(controller.Readiness.IsReady()).To(BeTrue())
+
+			mockNfqlb.deleteInstanceErr = errors.New("shm busy")
+
+			_, err := controller.cleanupDistributionGroup(ctx, "dg-1")
+			Expect(err).To(HaveOccurred())
+
+			Expect(controller.instances).To(HaveKey("dg-1"),
+				"a failed DeleteInstance must keep the DG tracked so the next "+
+					"reconcile retries cleanup instead of forgetting it")
+
+			Expect(controller.Readiness.IsReady()).To(BeFalse(),
+				"the readiness file must be removed even though NFQLB cleanup "+
+					"is still stuck retrying — otherwise this DG's VIP keeps "+
+					"being advertised via BGP for a DG that no longer exists")
+
+			// Once the underlying delete succeeds, retrying cleanup must
+			// finish the job and drop tracking.
+			mockNfqlb.deleteInstanceErr = nil
+			_, err = controller.cleanupDistributionGroup(ctx, "dg-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(controller.instances).ToNot(HaveKey("dg-1"))
 		})
 	})
 

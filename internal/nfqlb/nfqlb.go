@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -91,7 +92,12 @@ func (nfqlb *NFQueueLoadBalancer) startingOffset() int {
 
 // Start nfqlb process in 'flowlb' mode supporting multiple shared mem lbs at once
 // https://github.com/Nordix/nfqueue-loadbalancer/blob/1.1.4/src/nfqlb/cmdFlowLb.c#L238
-// (Returned context gets cancelled when nfqlb process stops for whatever reason)
+//
+// Blocks until the nfqlb process exits or ctx is cancelled. Returns nil only if
+// ctx was cancelled (deliberate shutdown); any other termination — including a
+// clean exit(0) — is reported as an error so the caller can treat a dead
+// dataplane as fatal (see cmd/stateless-load-balancer/cmd/run.go, which cancels
+// its own context and lets Kubernetes restart the container).
 //
 // Note:
 // nfqlb process is supposed to run while the load-balancer container
@@ -118,11 +124,31 @@ func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 	)
 
 	stdoutStderr, err := cmd.CombinedOutput()
-	if err != nil && !errors.Is(err, context.Cause(ctx)) {
+
+	// nfqlb is a long-running process for the lifetime of this container; it
+	// is only ever expected to stop via ctx cancellation (container shutdown).
+	// Any other termination — including a clean exit(0) — means the dataplane
+	// is gone while the container is still alive, so it must be reported as
+	// an error. The caller (cmd/stateless-load-balancer/cmd/run.go) cancels
+	// the manager's context on error, crashing the container so Kubernetes
+	// restarts it. Treating exit(0) as success here would leave `running`
+	// permanently false with no process alive to flip it back: new NFQLB
+	// instances fail forever while already-tracked instances keep accepting
+	// target/flow changes against a dead daemon.
+	//
+	// ctx.Err() != nil is checked instead of comparing err against
+	// context.Cause(ctx): exec.CommandContext kills the process with SIGKILL
+	// on cancellation, so CombinedOutput's error is "signal: killed"
+	// (an *exec.ExitError), never the context's cancellation error itself —
+	// errors.Is against context.Cause(ctx) would never match.
+	if ctx.Err() != nil {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("failed starting nfqlb with flowlb ; %w; %s", err, stdoutStderr)
 	}
 
-	return nil
+	return fmt.Errorf("nfqlb flowlb terminated unexpectedly without a context cancellation ; %s", stdoutStderr)
 }
 
 // flowList runs the nfqlb flow-list commands and returns the output.
@@ -283,6 +309,10 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 		opt(config)
 	}
 
+	if err := validateMaxTargets(config.maxTargets, MaxOffset-nfqlb.startingOffset()); err != nil {
+		return nil, fmt.Errorf("invalid instance config for %q: %w", name, err)
+	}
+
 	offset, err := getOffset(nfqlb.startingOffset(), nfqlb.instances, config.maxTargets)
 	if err != nil {
 		return nil, err
@@ -321,8 +351,14 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 }
 
 // DeleteInstance deletes a nfqlb instance and all related configuration (targets and flows).
+// Cleanup order is: targets/routes, then flows, then the shm segment unlink last.
+// The instance is removed from nfqlb.instances (releasing its fwmark offset for reuse)
+// only after every step succeeds. If any step fails, the instance remains tracked (so
+// its offset cannot be handed to a different DG while stale routes for it may still
+// exist) and the caller is expected to retry DeleteInstance on the next reconcile.
 func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name string) error {
 	nfqlb.mu.Lock()
+	defer nfqlb.mu.Unlock()
 
 	nfqlbInstance, exists := nfqlb.instances[name]
 	if !exists {
@@ -331,15 +367,35 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: delete instance", "instance", name)
 
-	delete(nfqlb.instances, name)
-
-	// Safe to release nfqlb.mu before locking instance.mu: the instance was
-	// already removed from the map above, so heal() (which iterates
-	// nfqlb.instances under nfqlb.mu) will no longer see it.
-	nfqlb.mu.Unlock()
-
 	nfqlbInstance.mu.Lock()
 	defer nfqlbInstance.mu.Unlock()
+
+	var errs []error
+
+	for targetIdentifier := range nfqlbInstance.targets {
+		if err := nfqlbInstance.deleteTargetNoLock(ctx, targetIdentifier); err != nil {
+			errs = append(errs, fmt.Errorf("delete target %d: %w", targetIdentifier, err))
+		}
+	}
+
+	flows, err := nfqlb.flowList(ctx)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("list flows: %w", err))
+	} else {
+		for _, flow := range flows {
+			if flow.ServerName == name {
+				if err := nfqlbInstance.DeleteFlow(ctx, flow); err != nil {
+					errs = append(errs, fmt.Errorf("delete flow %s: %w", flow.GetName(), err))
+				}
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		// Targets/flows are not fully cleaned up: keep the instance (and its
+		// offset) reserved rather than unlinking shm and losing track of it.
+		return fmt.Errorf("failed cleaning up nfqlb instance %q, shm not deleted: %w", name, errors.Join(errs...))
+	}
 
 	// unlink the shared mem file
 	//nolint:gosec
@@ -355,29 +411,85 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 		return fmt.Errorf("failed deleting nfqlb instance ; %w; %s", err, stdoutStderr)
 	}
 
-	var errs []error
-
-	for targetIdentifier := range nfqlbInstance.targets {
-		if err := nfqlbInstance.deleteTargetNoLock(ctx, targetIdentifier); err != nil {
-			errs = append(errs, fmt.Errorf("delete target %d: %w", targetIdentifier, err))
-		}
-	}
-
-	flows, err := nfqlb.flowList(ctx)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("list flows: %w", err))
-		return errors.Join(errs...)
-	}
-
-	for _, flow := range flows {
-		if flow.ServerName == name {
-			if err := nfqlbInstance.DeleteFlow(ctx, flow); err != nil {
-				errs = append(errs, fmt.Errorf("delete flow %s: %w", flow.GetName(), err))
-			}
-		}
-	}
+	// Only release the offset for reuse once targets, flows, and the shm
+	// segment are all confirmed gone.
+	delete(nfqlb.instances, name)
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: instance deleted", "instance", name)
+
+	return nil
+}
+
+// shmDir is the directory nfqlb uses for its shared-memory segments.
+// Overridable in tests.
+var shmDir = "/dev/shm"
+
+// GCStaleInstances removes NFQLB shared-memory segments left over from a
+// previous process lifetime (container restart) whose owning instance no
+// longer exists.
+//
+// Why this is needed: /dev/shm is a pod-sandbox-lifetime mount, but
+// nfqlb.instances (and the LB controller's own tracking map) is rebuilt
+// from scratch on every container start. If a DistributionGroup is deleted
+// while the container is down (or otherwise never reaches a clean
+// DeleteInstance call before a restart), its shm segment is never visited
+// again by anything in this process — nothing short of a sweep like this one
+// discovers it. Over repeated restarts and scale churn this accumulates
+// unboundedly.
+//
+// keep is the set of instance names (DistributionGroup names) that are
+// currently known-live, independent of nfqlb.instances — the caller is
+// expected to derive it from the Kubernetes API (the authoritative source),
+// not from any in-memory NFQLB state, since the whole point is to recover
+// state that this process's memory does not have.
+//
+// Safety: only files directly under shmDir whose name passes validateName
+// (the same validation applied to instance names before they are ever
+// passed to `nfqlb init --shm=`) are considered for deletion. Entries that
+// are already tracked in nfqlb.instances are never touched, even if absent
+// from keep, to avoid racing a concurrent AddInstance/DeleteInstance call
+// for the same name.
+func (nfqlb *NFQueueLoadBalancer) GCStaleInstances(ctx context.Context, keep map[string]struct{}) error {
+	entries, err := os.ReadDir(shmDir)
+	if err != nil {
+		return fmt.Errorf("failed to read %s for NFQLB shm garbage collection: %w", shmDir, err)
+	}
+
+	nfqlb.mu.Lock()
+	defer nfqlb.mu.Unlock()
+
+	var errs []error
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+
+		if validateName(name) != nil {
+			// Not a name this package would ever have passed to `nfqlb init --shm=`;
+			// leave unrelated files alone.
+			continue
+		}
+		if _, tracked := nfqlb.instances[name]; tracked {
+			continue
+		}
+		if _, live := keep[name]; live {
+			continue
+		}
+
+		ctrl.LoggerFrom(ctx).Info("nfqlb: garbage collecting stale shm instance", "instance", name)
+
+		//nolint:gosec
+		cmd := exec.CommandContext(ctx, nfqlb.nfqlbPath, "delete", fmt.Sprintf("--shm=%s", name))
+		if stdoutStderr, err := cmd.CombinedOutput(); err != nil {
+			errs = append(errs, fmt.Errorf("delete stale shm %q: %w; %s", name, err, stdoutStderr))
+			continue
+		}
+
+		ctrl.LoggerFrom(ctx).Info("nfqlb: stale shm instance garbage collected", "instance", name)
+	}
 
 	return errors.Join(errs...)
 }

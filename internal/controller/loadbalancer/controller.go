@@ -18,6 +18,7 @@ package loadbalancer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -192,22 +194,38 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Cleanup NFQLB service
+	var errs []error
+
+	// Cleanup NFQLB service. Only drop our own tracking (c.instances/targets/flows)
+	// once DeleteInstance actually succeeds — if it fails, the NFQLB layer keeps the
+	// instance (and its fwmark offset) reserved for retry, so forgetting it here would
+	// mean nothing ever calls DeleteInstance again for this DG (reconcileNFQLBInstance
+	// only acts when the DG is absent from c.instances, and a deleted DG never
+	// reappears to re-trigger creation).
 	if _, exists := c.instances[distGroupName]; exists {
 		logr.Info("Deleting NFQLB service", "distGroup", distGroupName)
 		if err := c.NFQLB.DeleteInstance(ctx, distGroupName); err != nil {
-			logr.Error(err, "Failed to delete NFQLB service", "distGroup", distGroupName)
+			logr.Error(err, "Failed to delete NFQLB service, will retry", "distGroup", distGroupName)
+			errs = append(errs, fmt.Errorf("failed to delete NFQLB service for %q: %w", distGroupName, err))
+		} else {
+			delete(c.instances, distGroupName)
+			delete(c.targets, distGroupName)
+			delete(c.flows, distGroupName)
 		}
-		delete(c.instances, distGroupName)
-		delete(c.targets, distGroupName)
-		delete(c.flows, distGroupName)
 	}
 
 	// Note: nftables manager is shared, not cleaned up per-DG
 
-	// Remove readiness file
+	// Remove readiness file. Attempted independently of the NFQLB cleanup above —
+	// a stuck DeleteInstance must not keep this DG's VIP advertised via BGP
+	// (readiness.Manager.IsReady() is keyed off file presence) while cleanup retries.
 	if err := c.Readiness.Remove(distGroupName); err != nil {
 		logr.Error(err, "Failed to remove readiness file", "distGroup", distGroupName)
+		errs = append(errs, fmt.Errorf("failed to remove readiness file for %q: %w", distGroupName, err))
+	}
+
+	if len(errs) > 0 {
+		return ctrl.Result{}, errors.Join(errs...)
 	}
 
 	return ctrl.Result{}, nil
@@ -269,13 +287,32 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 		return nil
 	}
 
-	// Deduplicate: a DG may be referenced both directly and via L34Route
+	enqueued, err := c.listOwnedDistributionGroupKeys(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list DistributionGroups in gatewayEnqueue")
+	}
+
+	requests := make([]ctrl.Request, 0, len(enqueued))
+	for key := range enqueued {
+		requests = append(requests, ctrl.Request{NamespacedName: key})
+	}
+
+	return requests
+}
+
+// listOwnedDistributionGroupKeys returns the set of DistributionGroup ObjectKeys that
+// belong to this Gateway, via direct spec.parentRefs or indirectly through an L34Route.
+// Both lists are attempted independently so a failure in one does not suppress results
+// from the other; the returned error (if any) is the combination of both failures, with
+// whatever partial results were gathered already included in the returned map.
+func (c *Controller) listOwnedDistributionGroupKeys(ctx context.Context) (map[client.ObjectKey]struct{}, error) {
 	enqueued := make(map[client.ObjectKey]struct{})
+	var errs []error
 
 	// 1. Direct: DGs with spec.parentRefs pointing to this Gateway
 	dgList := &meridio2v1alpha1.DistributionGroupList{}
 	if err := c.List(ctx, dgList, client.InNamespace(c.GatewayNamespace)); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to list DistributionGroups in gatewayEnqueue")
+		errs = append(errs, fmt.Errorf("failed to list DistributionGroups: %w", err))
 	} else {
 		for _, dg := range dgList.Items {
 			for _, parentRef := range dg.Spec.ParentRefs {
@@ -295,7 +332,7 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 	// 2. Indirect: DGs referenced by L34Routes that point to this Gateway
 	l34routeList := &meridio2v1alpha1.L34RouteList{}
 	if err := c.List(ctx, l34routeList, client.InNamespace(c.GatewayNamespace)); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to list L34Routes in gatewayEnqueue, returning partial results")
+		errs = append(errs, fmt.Errorf("failed to list L34Routes: %w", err))
 	} else {
 		for i := range l34routeList.Items {
 			route := &l34routeList.Items[i]
@@ -310,12 +347,7 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 		}
 	}
 
-	requests := make([]ctrl.Request, 0, len(enqueued))
-	for key := range enqueued {
-		requests = append(requests, ctrl.Request{NamespacedName: key})
-	}
-
-	return requests
+	return enqueued, errors.Join(errs...)
 }
 
 func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
@@ -369,6 +401,31 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("failed to index LoadBalancerEndpointSlice by gatewayRef.name: %w", err)
 	}
 
+	// GC NFQLB shm segments left over from a previous process lifetime (container
+	// restart) once per DistributionGroup deleted while this container was down —
+	// nothing else ever revisits those segments, since both nfqlb.instances and
+	// c.instances start empty on every startup. Runs once, after the manager's
+	// caches have synced, so the "live" set reflects the full current DG list
+	// rather than a partial one.
+	//
+	// Errors are logged, not returned: a Runnable's error is sent to the manager's
+	// shared errChan and crashes the whole process (see controller-runtime
+	// internal.go Start()). A GC failure (e.g. one unparseable or busy segment)
+	// must not take down an otherwise-healthy load balancer — that would recreate
+	// the exact kind of outage this sweep exists to prevent.
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		if !mgr.GetCache().WaitForCacheSync(ctx) {
+			log.Log.Info("Cache sync did not complete, skipping NFQLB shm garbage collection")
+			return nil
+		}
+		if err := c.gcStaleNFQLBInstances(ctx); err != nil {
+			log.Log.Error(err, "NFQLB shm garbage collection failed; stale segments may remain until next restart")
+		}
+		return nil
+	})); err != nil {
+		return fmt.Errorf("failed to register NFQLB shm garbage collector: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&meridio2v1alpha1.DistributionGroup{}).
 		Watches(&meridio2v1alpha1.LoadBalancerEndpointSlice{}, handler.EnqueueRequestsFromMapFunc(c.endpointSliceEnqueue)).
@@ -376,6 +433,23 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&gatewayv1.Gateway{}, handler.EnqueueRequestsFromMapFunc(c.gatewayEnqueue)).
 		Named("loadbalancer").
 		Complete(c)
+}
+
+// gcStaleNFQLBInstances lists the DistributionGroups currently owned by this Gateway
+// and asks the NFQLB layer to remove any shm segment not in that set. See
+// NFQueueLoadBalancer.GCStaleInstances for why this sweep is necessary.
+func (c *Controller) gcStaleNFQLBInstances(ctx context.Context) error {
+	keys, err := c.listOwnedDistributionGroupKeys(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list owned DistributionGroups for NFQLB shm garbage collection: %w", err)
+	}
+
+	keep := make(map[string]struct{}, len(keys))
+	for key := range keys {
+		keep[key.Name] = struct{}{}
+	}
+
+	return c.NFQLB.GCStaleInstances(ctx, keep)
 }
 
 // endpointSliceEnqueue maps LoadBalancerEndpointSlice events to DistributionGroup reconcile requests

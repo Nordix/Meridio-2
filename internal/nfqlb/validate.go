@@ -41,6 +41,27 @@ func validateName(name string) error {
 	return nil
 }
 
+// validateMaxTargets validates an instance's maxTargets (the Maglev N
+// parameter, and the size of the instance's contiguous fwmark range).
+//
+// available is the largest range a single instance can ever occupy, i.e.
+// MaxOffset - startingOffset(). Rejecting an over-budget value here keeps it
+// distinguishable from errIdentifierOffset, which getOffset returns when a
+// legitimately-sized instance cannot be placed because existing instances
+// have filled the range. The two have different causes and different fixes:
+// this one is an invalid request, that one is genuine capacity exhaustion.
+func validateMaxTargets(maxTargets, available int) error {
+	if maxTargets <= 0 {
+		return fmt.Errorf("maxTargets must be >= 1 (got %d)", maxTargets)
+	}
+	if maxTargets > available {
+		return fmt.Errorf(
+			"maxTargets %d cannot fit: a single instance may occupy at most %d fwmarks (upper limit %d)",
+			maxTargets, available, MaxOffset)
+	}
+	return nil
+}
+
 // validateCIDRs validates a slice of CIDR strings.
 func validateCIDRs(cidrs []string) error {
 	for _, cidr := range cidrs {
