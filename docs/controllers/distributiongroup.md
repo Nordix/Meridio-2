@@ -104,7 +104,7 @@ Only process Gateways with `Accepted=True` condition set by the Gateway controll
 
 ### 5. Enforce Single-Gateway Restriction
 If more than one accepted Gateway references the DG (directly or via L34Routes):
-- Set `Ready=False` with reason `MultipleGateways`
+- Set `Available=False` with reason `MultipleGateways`
 - Skip reconciliation (existing slices are preserved/frozen)
 - The operator must resolve the conflict by removing one Gateway's reference
 
@@ -388,7 +388,7 @@ GatewayConfiguration:
 
 ### No Matching Pods
 - Delete all owned LoadBalancerEndpointSlices
-- Set `Ready=False` status
+- Set `Available=False` status
 
 ### Gateway Not Accepted
 - Skip Gateway (no network context extracted)
