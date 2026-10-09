@@ -308,12 +308,12 @@ var _ = Describe("Endpoint Scaling", Label("dual-stack"), Serial, Ordered, func(
 			}).Should(Succeed())
 		}
 
-		By("verifying DistributionGroups are Ready")
+		By("verifying DistributionGroups are Available")
 		for _, dg := range []string{"dg-bds1", "dg-bds2"} {
 			dg := dg
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "distg", dg, "-n", scalingNamespace,
-					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+					"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("True"))

@@ -33,7 +33,7 @@ const (
 	kindDistributionGroup    = "DistributionGroup"
 
 	// Status condition types
-	conditionTypeReady            = "Ready"
+	conditionTypeAvailable        = "Available"
 	conditionTypeCapacityExceeded = "CapacityExceeded"
 
 	// Status condition reasons
@@ -52,9 +52,9 @@ const (
 	messageMultipleGateways     = "DistributionGroup is referenced by multiple Gateways; only a single Gateway is supported"
 )
 
-// ConditionTypeReady and ReasonEndpointsAvailable re-export the corresponding private constants
+// ConditionTypeAvailable and ReasonEndpointsAvailable re-export the corresponding private constants
 // above for reuse by the controller-manager metrics collectors
 const (
-	ConditionTypeReady       = conditionTypeReady
+	ConditionTypeAvailable   = conditionTypeAvailable
 	ReasonEndpointsAvailable = reasonEndpointsAvailable
 )

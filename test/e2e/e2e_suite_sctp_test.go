@@ -108,15 +108,15 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label("ipv4"), func() {
 					}
 				})
 
-				It("should have DistributionGroups Ready", func() {
+				It("should have DistributionGroups Available", func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "distg", gw.dgName, "-n", suite.namespace,
-								"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+								"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
 							out, err := utils.Run(cmd)
 							g.Expect(err).NotTo(HaveOccurred())
-							g.Expect(out).To(Equal("True"), "%s should be Ready", gw.dgName)
+							g.Expect(out).To(Equal("True"), "%s should be Available", gw.dgName)
 						}).Should(Succeed())
 					}
 				})

@@ -104,7 +104,7 @@ Only process Gateways with `Accepted=True` condition set by the Gateway controll
 
 ### 5. Enforce Single-Gateway Restriction
 If more than one accepted Gateway references the DG (directly or via L34Routes):
-- Set `Ready=False` with reason `MultipleGateways`
+- Set `Available=False` with reason `MultipleGateways`
 - Skip reconciliation (existing slices are preserved/frozen)
 - The operator must resolve the conflict by removing one Gateway's reference
 
@@ -220,7 +220,7 @@ configuration change.
 - Kubernetes core controller keeps 1 empty slice per Service for faster endpoint addition
 - Our controller manages secondary networks with dynamic attachment
 - Empty slices provide no value (no "warm cache" benefit for secondary networks)
-- Cleaner resource model: no slices = no endpoints = `Ready=False` status
+- Cleaner resource model: no slices = no endpoints = `Available=False` status
 
 **Why no strict managed-by filtering:**
 - Always use ownerReference-based filtering (in-memory), never filter by `managed-by` label at API level
@@ -232,7 +232,7 @@ configuration change.
 - Trade-off: Slightly higher memory usage vs operational simplicity
 
 ### 11. Update DistributionGroup Status
-**Ready condition:**
+**Available condition:**
 - `True` if LoadBalancerEndpointSlices with endpoints exist
 - `False` if no endpoints available, with specific reason:
   - "No Pods match selector"
@@ -388,7 +388,7 @@ GatewayConfiguration:
 
 ### No Matching Pods
 - Delete all owned LoadBalancerEndpointSlices
-- Set `Ready=False` status
+- Set `Available=False` status
 
 ### Gateway Not Accepted
 - Skip Gateway (no network context extracted)
