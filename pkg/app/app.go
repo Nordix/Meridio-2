@@ -45,6 +45,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -215,6 +216,9 @@ func validateConfig(cfg *config.ManagerConfig) error {
 	if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
 		return fmt.Errorf("metrics-prefix: %w", err)
 	}
+	if err := cfg.ValidateKubeAPI(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -325,7 +329,17 @@ func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 		}
 	}
 
-	return ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restCfg, err := cfg.RESTConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	setupLog.Info("Kubernetes API client tuning",
+		"cacheSyncTimeout", cfg.CacheSyncTimeout,
+		"clientRateLimiting", cfg.RateLimitingEnabled(),
+		"qps", restCfg.QPS, "burst", restCfg.Burst)
+
+	return ctrl.NewManager(restCfg, ctrl.Options{
 		Scheme:                        scheme,
 		Cache:                         cacheOptions,
 		Metrics:                       metricsServerOptions,
@@ -338,6 +352,11 @@ func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 		RenewDeadline:                 &cfg.RenewDeadline,
 		RetryPeriod:                   &cfg.RetryPeriod,
 		LeaderElectionReleaseOnCancel: cfg.LeaderElectionReleaseOnCancel,
+		// Manager-wide default for every controller registered below. Controllers
+		// that do not set their own CacheSyncTimeout inherit this value.
+		Controller: ctrlconfig.Controller{
+			CacheSyncTimeout: cfg.CacheSyncTimeout,
+		},
 	})
 }
 

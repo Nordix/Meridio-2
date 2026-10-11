@@ -65,6 +65,10 @@ spec:
           - --leader-elect
           - --controller-name=meridio-2.nordix.org/gateway-controller
           - --health-probe-bind-address=:8081
+          # Scale tuning (optional). Raise for large deployments where the initial
+          # informer cache sync exceeds the default 2m deadline.
+          # See docs/operations/scale-tuning.md
+          # - --cache-sync-timeout=5m
         image: controller-manager:latest
         imagePullPolicy: IfNotPresent
         name: manager
