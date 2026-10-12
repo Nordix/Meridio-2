@@ -557,6 +557,16 @@ spec:
 - Default: `stateless-load-balancer`
 - Injected by Kustomize replacement (handles namePrefix)
 
+**`--lb-cache-sync-timeout`**:
+- Informer cache sync timeout propagated to the rendered LB Deployments as
+  `MERIDIO_CACHE_SYNC_TIMEOUT` on the `loadbalancer` container
+- Default: `0` — the LB deployment template is left untouched
+- A value already set in the template takes precedence, so manual template edits
+  remain a valid override
+- Changing it rolls the LB Pods, since it modifies the Pod template
+- Does not affect the controller-manager's own cache; see
+  [Scale Tuning](../operations/scale-tuning.md)
+
 **`--cert-wait-timeout`**:
 - Duration to wait for certificate files before starting
 - Default: `10s`

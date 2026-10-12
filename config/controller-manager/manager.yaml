@@ -66,9 +66,11 @@ spec:
           - --controller-name=meridio-2.nordix.org/gateway-controller
           - --health-probe-bind-address=:8081
           # Scale tuning (optional). Raise for large deployments where the initial
-          # informer cache sync exceeds the default 2m deadline.
+          # informer cache sync exceeds the default 2m deadline. The second flag
+          # propagates the timeout to the rendered LB Deployments.
           # See docs/operations/scale-tuning.md
           # - --cache-sync-timeout=5m
+          # - --lb-cache-sync-timeout=5m
         image: controller-manager:latest
         imagePullPolicy: IfNotPresent
         name: manager
@@ -91,12 +93,14 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        # TODO(user): Configure the resources accordingly based on the project requirements.
+        # Baseline for small deployments (< 1000 L34Routes). The informer cache
+        # holds every watched object, so memory and CPU both scale with object
+        # count — see docs/operations/scale-tuning.md for per-tier guidance.
         # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
             cpu: 500m
-            memory: 128Mi
+            memory: 512Mi
           requests:
             cpu: 10m
             memory: 64Mi

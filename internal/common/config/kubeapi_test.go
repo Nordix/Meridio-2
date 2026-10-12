@@ -179,6 +179,37 @@ func TestKubeAPIConfig_ExposedByBinaryConfigs(t *testing.T) {
 		}
 	})
 
+	// The LB timeout is a separate manager-only knob: it is not applied to the
+	// manager's own cache, it is propagated to the rendered LB Deployments.
+	t.Run("manager lb-cache-sync-timeout", func(t *testing.T) {
+		cfg := &ManagerConfig{}
+		fs := pflag.NewFlagSet("manager", pflag.ContinueOnError)
+		cfg.AddFlags(fs)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		cfg.BindEnv(fs)
+		if cfg.LBCacheSyncTimeout != 0 {
+			t.Errorf("LBCacheSyncTimeout = %s, want 0 (leave the LB template untouched)", cfg.LBCacheSyncTimeout)
+		}
+
+		t.Setenv("MERIDIO_LB_CACHE_SYNC_TIMEOUT", "8m")
+		cfg = &ManagerConfig{}
+		fs = pflag.NewFlagSet("manager", pflag.ContinueOnError)
+		cfg.AddFlags(fs)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		cfg.BindEnv(fs)
+		if cfg.LBCacheSyncTimeout != 8*time.Minute {
+			t.Errorf("LBCacheSyncTimeout = %s, want 8m", cfg.LBCacheSyncTimeout)
+		}
+		if cfg.CacheSyncTimeout != DefaultCacheSyncTimeout {
+			t.Errorf("CacheSyncTimeout = %s, want %s — the LB knob must not affect the manager's own cache",
+				cfg.CacheSyncTimeout, DefaultCacheSyncTimeout)
+		}
+	})
+
 	t.Run("loadbalancer", func(t *testing.T) {
 		cfg := &LoadBalancerConfig{}
 		fs := pflag.NewFlagSet("lb", pflag.ContinueOnError)

@@ -20,18 +20,28 @@ move.
 
 ## Which components cache L34Routes
 
-| Component | Watches L34Routes | Cache scope |
-|---|---|---|
-| controller-manager | Yes (Gateway, DistributionGroup, ENC controllers) | `--namespace`, or **all namespaces** when empty |
-| stateless-load-balancer | Yes | The Gateway's namespace |
-| router | No (GatewayRouters only) | The Gateway's namespace |
-| network-sidecar | No (single ENC) | Own Pod's ENC |
+| Component | Watches L34Routes | Other cached kinds | Cache scope |
+|---|---|---|---|
+| controller-manager | Yes (Gateway, DistributionGroup, ENC controllers) | Gateways, GatewayClasses, GatewayConfigurations, DistributionGroups, ENCs, LoadBalancerEndpointSlices, Deployments, Pods | `--namespace`, or **all namespaces** when empty |
+| stateless-load-balancer | Yes | Gateways, DistributionGroups, LoadBalancerEndpointSlices | The Gateway's namespace |
+| router | No | Gateways, GatewayRouters, **all Secrets** | The Gateway's namespace |
+| network-sidecar | No (single ENC) | — | Own Pod's ENC |
 
 The LB only reconciles L34Routes that reference its own Gateway, but it caches all
 L34Routes in the namespace — filtering happens when mapping events to reconcile
 requests, not at the cache level. Cache-level filtering is not currently possible
 without either mandating labels on user-owned L34Routes or depending on CRD
 `selectableFields` (Kubernetes 1.31+).
+
+The router does not watch L34Routes, but it is not unconditionally cheap either: its
+Secret watch (for TCP-AO keychains) is unfiltered, so its informer caches **every**
+Secret in the Gateway's namespace — see
+[BGP Authentication (TCP-AO)](../controllers/router.md#bgp-authentication-tcp-ao).
+In a namespace that also holds unrelated Secrets (Helm release data, image pull
+credentials, service account tokens) this can dominate the router's cache and its sync
+time. The router currently exposes no tuning flags; if its sync becomes a problem, the
+practical mitigations are to deploy Gateways into a dedicated namespace or to reduce the
+Secret count there.
 
 ## Configuration
 
@@ -41,6 +51,7 @@ Precedence: flags > environment variables > defaults.
 | Flag | Env Var | Default | Description |
 |---|---|---|---|
 | `--cache-sync-timeout` | `MERIDIO_CACHE_SYNC_TIMEOUT` | `2m` | Time limit for each controller's initial informer cache sync. `0` falls back to the controller-runtime default (2m). |
+| `--lb-cache-sync-timeout` | `MERIDIO_LB_CACHE_SYNC_TIMEOUT` | `0` (template unchanged) | **Controller-manager only.** Cache sync timeout propagated to the rendered LB Deployments as `MERIDIO_CACHE_SYNC_TIMEOUT`. Does not affect the manager's own cache. |
 | `--kube-api-qps` | `MERIDIO_KUBE_API_QPS` | `-1` (disabled) | Sustained client-side request rate towards the API server. Values `<= 0` disable client-side rate limiting. |
 | `--kube-api-burst` | `MERIDIO_KUBE_API_BURST` | `30` | Client-side burst allowance. Only effective when `--kube-api-qps > 0`. |
 
@@ -91,28 +102,41 @@ of the cache.
 Both binaries log the effective settings at startup:
 
 ```
-INFO  setup  Kubernetes API client tuning  {"cacheSyncTimeout": "5m0s", "clientRateLimiting": false, "qps": -1, "burst": 30}
+INFO  setup  Kubernetes API client tuning  {"cacheSyncTimeout": "5m0s", "lbCacheSyncTimeout": "5m0s", "clientRateLimiting": false, "qps": -1, "burst": 30}
 ```
 
 ## Applying the settings
 
 **Controller-manager** — add the flag to the manager container's `args`, or the env var to
-its `env`, in your deployment overlay:
+its `env`, in your deployment overlay. Set `--lb-cache-sync-timeout` at the same time so the
+LB Pods are tuned along with the manager:
 
 ```yaml
 args:
   - run
   - --cache-sync-timeout=5m
+  - --lb-cache-sync-timeout=5m
 ```
 
-**Stateless-load-balancer** — LB Pods are rendered by the controller-manager from the LB
-deployment template (`--template-path`, default `/templates`). Set the env var on the
-`loadbalancer` container in that template; existing LB Deployments are updated on the next
-reconcile:
+**Stateless-load-balancer** — LB Pods are not launched directly; the controller-manager
+renders them from the LB deployment template (`--template-path`, default `/templates`).
+`--lb-cache-sync-timeout` above is the normal way to tune them: the gateway controller
+injects `MERIDIO_CACHE_SYNC_TIMEOUT` into the `loadbalancer` container of every LB
+Deployment it manages. The LB Pods roll when the value changes.
+
+To override a single value or to set something the flag does not cover, edit the
+`loadbalancer` container's `env` in the template ConfigMap directly — a value present in
+the template always wins over the flag:
 
 ```yaml
 - name: MERIDIO_CACHE_SYNC_TIMEOUT
   value: "5m"
 ```
 
-Raising the LB's CPU limit requires editing the same template.
+Note that template edits propagate lazily: nothing watches the ConfigMap, so the change
+takes effect only after the kubelet refreshes the mounted volume (up to ~1 minute) and the
+next Gateway reconcile — which, with the default 10h resync, may not be imminent in an idle
+cluster. Touch the Gateway or restart the controller-manager to apply it immediately.
+
+Raising the LB's CPU limit is done either through the same template or through
+`GatewayConfiguration.spec.verticalScaling`.

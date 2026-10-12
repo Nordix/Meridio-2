@@ -20,14 +20,15 @@ import (
 	"fmt"
 
 	"k8s.io/client-go/discovery"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/client-go/rest"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
-// CheckGatewayAPI verifies that Gateway API CRDs are installed in the cluster
-func CheckGatewayAPI() error {
-	config := ctrl.GetConfigOrDie()
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+// CheckGatewayAPI verifies that Gateway API CRDs are installed in the cluster.
+// The caller supplies the REST config so this one-shot discovery call uses the
+// same client settings as the manager.
+func CheckGatewayAPI(cfg *rest.Config) error {
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create discovery client: %w", err)
 	}

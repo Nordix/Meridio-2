@@ -23,6 +23,7 @@ import (
 	"maps"
 	"net"
 	"strings"
+	"time"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -171,6 +172,10 @@ func (r *GatewayReconciler) reconcileDeploymentSpec(base, template *appsv1.Deplo
 	// Inject downward API env vars for router Pod identity (POD_NAME, POD_NAMESPACE, POD_UID) - after applying GatewayConfiguration in case it changes the container spec
 	injectRouterPodIdentityEnvVars(desired)
 
+	// Propagate the operator's LB cache sync tuning - after applying GatewayConfiguration
+	// for the same reason
+	injectLBCacheSyncTimeout(desired, r.LBCacheSyncTimeout)
+
 	return desired
 }
 
@@ -278,6 +283,39 @@ func injectGatewayEnvVars(deployment *appsv1.Deployment, gatewayName string) {
 				break
 			}
 		}
+	}
+}
+
+// injectLBCacheSyncTimeout sets MERIDIO_CACHE_SYNC_TIMEOUT on the loadbalancer
+// container so that LB Pods inherit the operator's cache sync tuning. LB Pods cache
+// all L34Routes in the Gateway's namespace, so at scale their initial informer sync
+// can exceed the controller-runtime default just like the manager's.
+//
+// A zero timeout means the flag was not set: leave the template untouched. A value
+// already present in the template always wins, so a manual template edit remains a
+// valid override and the controller does not fight it on every reconcile.
+func injectLBCacheSyncTimeout(deployment *appsv1.Deployment, timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+
+	for i := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[i]
+		if container.Name != containerLoadBalancer {
+			continue
+		}
+
+		for j := range container.Env {
+			if container.Env[j].Name == envCacheSyncTimeout {
+				return // template wins
+			}
+		}
+
+		container.Env = append(container.Env, corev1.EnvVar{
+			Name:  envCacheSyncTimeout,
+			Value: timeout.String(),
+		})
+		return
 	}
 }
 
@@ -549,7 +587,7 @@ func applyReadinessGates(deployment *appsv1.Deployment, gatewayConfig *meridio2v
 func injectRouterPodIdentityEnvVars(deployment *appsv1.Deployment) {
 	for i := range deployment.Spec.Template.Spec.Containers {
 		container := &deployment.Spec.Template.Spec.Containers[i]
-		if container.Name == "router" {
+		if container.Name == containerRouter {
 			// Check if env vars already exist to avoid unnecessary updates
 			hasPodName := false
 			hasPodNamespace := false

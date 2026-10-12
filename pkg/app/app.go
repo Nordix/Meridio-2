@@ -42,6 +42,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -138,7 +139,14 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 	setupLog := ctrl.Log.WithName("setup")
 	setupLog.Info("starting controller-manager", "config", cfg)
 
-	if err := validate(cfg); err != nil {
+	// Build the tuned REST config once: the prerequisite checks and the manager
+	// must talk to the API server with the same client settings.
+	restCfg, err := cfg.RESTConfig()
+	if err != nil {
+		return err
+	}
+
+	if err := validate(cfg, restCfg); err != nil {
 		return fmt.Errorf("config validation: %w", err)
 	}
 
@@ -146,7 +154,7 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 		return err
 	}
 
-	mgr, err := setupManager(cfg)
+	mgr, err := setupManager(cfg, restCfg)
 	if err != nil {
 		return fmt.Errorf("setup manager: %w", err)
 	}
@@ -185,7 +193,7 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 }
 
 // validate checks configuration preconditions.
-func validate(cfg *config.ManagerConfig) error {
+func validate(cfg *config.ManagerConfig, restCfg *rest.Config) error {
 	if err := validateConfig(cfg); err != nil {
 		return err
 	}
@@ -194,7 +202,7 @@ func validate(cfg *config.ManagerConfig) error {
 		return err
 	}
 
-	if err := prerequisites.CheckGatewayAPI(); err != nil {
+	if err := prerequisites.CheckGatewayAPI(restCfg); err != nil {
 		return fmt.Errorf("gateway API CRDs not found: %w\n\n"+
 			"Install for example with:\n"+
 			"  kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml",
@@ -217,7 +225,10 @@ func validateConfig(cfg *config.ManagerConfig) error {
 		return fmt.Errorf("metrics-prefix: %w", err)
 	}
 	if err := cfg.ValidateKubeAPI(); err != nil {
-		return err
+		return fmt.Errorf("kube API tuning: %w", err)
+	}
+	if cfg.LBCacheSyncTimeout < 0 {
+		return fmt.Errorf("lb-cache-sync-timeout cannot be negative (got %s)", cfg.LBCacheSyncTimeout)
 	}
 	return nil
 }
@@ -268,7 +279,7 @@ func waitForCerts(cfg *config.ManagerConfig) error {
 }
 
 // setupManager creates a configured ctrl.Manager.
-func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
+func setupManager(cfg *config.ManagerConfig, restCfg *rest.Config) (ctrl.Manager, error) {
 	scheme := runtime.NewScheme()
 	setupLog := ctrl.Log.WithName("setup")
 
@@ -329,13 +340,9 @@ func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 		}
 	}
 
-	restCfg, err := cfg.RESTConfig()
-	if err != nil {
-		return nil, err
-	}
-
 	setupLog.Info("Kubernetes API client tuning",
 		"cacheSyncTimeout", cfg.CacheSyncTimeout,
+		"lbCacheSyncTimeout", cfg.LBCacheSyncTimeout,
 		"clientRateLimiting", cfg.RateLimitingEnabled(),
 		"qps", restCfg.QPS, "burst", restCfg.Burst)
 
@@ -380,6 +387,7 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 		Namespace:          cfg.Namespace,
 		TemplatePath:       cfg.TemplatePath,
 		LBServiceAccount:   cfg.LBServiceAccount,
+		LBCacheSyncTimeout: cfg.LBCacheSyncTimeout,
 		PodCacheLabelKey:   podCacheLabelKey,
 		PodCacheLabelValue: podCacheLabelValue,
 	}).SetupWithManager(mgr); err != nil {
