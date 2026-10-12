@@ -220,7 +220,7 @@ func TestParseProtocolDetail(t *testing.T) {
 			// Live BIRD 3.2.3 capture: one active ipv4 channel plus a disabled
 			// ipv6 channel (Input/Output filter REJECT, Routes: 0,0). Summing
 			// yields the active channel's counts. Since is the default
-			// human-readable format, so EstablishedUnix stays nil.
+			// human-readable format, so LastStateChangeUnix stays nil.
 			name: "dual channel, active ipv4 + disabled ipv6",
 			output: `BIRD 3.2.3 ready.
 Name       Proto      Table      State  Since         Info
@@ -289,7 +289,7 @@ NBR-static1 Static     ---        up     1759518307
 			p := result[0]
 			assertIntPtr(t, "RoutesImported", p.RoutesImported, tt.wantImported)
 			assertIntPtr(t, "RoutesExported", p.RoutesExported, tt.wantExported)
-			assertInt64Ptr(t, "EstablishedUnix", p.EstablishedUnix, tt.wantEstablished)
+			assertInt64Ptr(t, "LastStateChangeUnix", p.LastStateChangeUnix, tt.wantEstablished)
 		})
 	}
 }
@@ -532,11 +532,11 @@ NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Establish
 
 // TestGetProtocolStatuses_InvalidSocket verifies that a birdc failure (e.g. no
 // BIRD instance listening on the socket) is surfaced as an error rather than
-// silently swallowed, since GetProtocolStatuses is now called by callers (e.g.
+// silently swallowed, since GetProtocolStatuses is called by callers (e.g.
 // an independent metrics collector) that need to distinguish "fetch failed"
 // from "no protocols configured".
 func TestGetProtocolStatuses_InvalidSocket(t *testing.T) {
-	_, err := GetProtocolStatuses(context.Background(), "/nonexistent/bird.ctl")
+	_, err := NewClient("/nonexistent/bird.ctl").GetProtocolStatuses(context.Background())
 	if err == nil {
 		t.Fatal("expected error for nonexistent socket, got nil")
 	}
@@ -545,7 +545,7 @@ func TestGetProtocolStatuses_InvalidSocket(t *testing.T) {
 // TestGetBfdSessions_InvalidSocket mirrors TestGetProtocolStatuses_InvalidSocket
 // for the BFD sessions query.
 func TestGetBfdSessions_InvalidSocket(t *testing.T) {
-	_, err := GetBfdSessions(context.Background(), "/nonexistent/bird.ctl")
+	_, err := NewClient("/nonexistent/bird.ctl").GetBfdSessions(context.Background())
 	if err == nil {
 		t.Fatal("expected error for nonexistent socket, got nil")
 	}
@@ -559,7 +559,7 @@ func TestGetProtocolStatuses_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := GetProtocolStatuses(ctx, "/nonexistent/bird.ctl")
+	_, err := NewClient("/nonexistent/bird.ctl").GetProtocolStatuses(ctx)
 	if err == nil {
 		t.Fatal("expected error for canceled context, got nil")
 	}
