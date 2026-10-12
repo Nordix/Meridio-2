@@ -37,6 +37,9 @@ type nfqlbInstance interface {
 	DeleteFlow(ctx context.Context, flow nfqlb.Flow) error
 	AddTarget(ctx context.Context, ips []string, identifier int) error
 	DeleteTarget(ctx context.Context, identifier int) error
+	// FwmarkRange returns the instance's fwmark range (base = identifier 0's fwmark,
+	// count = maxTargets); used to install per-DG/per-target counter rules.
+	FwmarkRange() (base, count int)
 }
 
 // NFQLBManagerAdapter wraps *nfqlb.NFQueueLoadBalancer to implement nfqlbManager.

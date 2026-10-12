@@ -40,6 +40,7 @@ type LoadBalancerConfig struct {
 	MetricsAddr           string
 	MetricsPrefix         string
 	MetricsCollectTimeout time.Duration
+	PerTargetMetrics      bool
 	SecureMetrics         bool
 	MetricsCertPath       string
 	MetricsCertName       string
@@ -80,6 +81,10 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&c.MetricsCollectTimeout, "metrics-collect-timeout", 5*time.Second,
 		"Maximum time a single metrics scrape may spend reading nfqlb (flow-list/show) before "+
 			"reporting a collection error. Keep below Prometheus's scrape_timeout (default 10s).")
+	fs.BoolVar(&c.PerTargetMetrics, "enable-per-target-metrics", false,
+		"Enable per-target packet counters (opt-in). Installs per-fwmark nftables counter rules and "+
+			"emits <prefix>_lb_target_packets_total{gateway,dg,target}. Off by default due to high "+
+			"Prometheus cardinality (~1 series per target × DG × gateway).")
 	fs.BoolVar(&c.SecureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	fs.StringVar(&c.MetricsCertPath, "metrics-cert-path", "",
@@ -105,6 +110,7 @@ func (c *LoadBalancerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-bind-address", "MERIDIO_METRICS_ADDR", &c.MetricsAddr)
 	bindString(fs, "metrics-prefix", "MERIDIO_METRICS_PREFIX", &c.MetricsPrefix)
 	bindDuration(fs, "metrics-collect-timeout", "MERIDIO_METRICS_COLLECT_TIMEOUT", &c.MetricsCollectTimeout)
+	bindBool(fs, "enable-per-target-metrics", "MERIDIO_ENABLE_PER_TARGET_METRICS", &c.PerTargetMetrics)
 	bindBool(fs, "metrics-secure", "MERIDIO_METRICS_SECURE", &c.SecureMetrics)
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)

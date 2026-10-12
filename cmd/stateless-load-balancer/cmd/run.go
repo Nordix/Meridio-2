@@ -56,9 +56,10 @@ var (
 // Compile-time assertions that the concrete types wired into the LB metrics collectors satisfy
 // the collector reader interfaces. These guard against silent drift when either side changes.
 var (
-	_ lbmetrics.StatsReader    = (*nfqlb.NFQueueLoadBalancer)(nil)
-	_ lbmetrics.RouteReader    = (*nfqlb.NFQueueLoadBalancer)(nil)
-	_ lbmetrics.NftablesReader = (*nftablesmanager.Manager)(nil)
+	_ lbmetrics.StatsReader      = (*nfqlb.NFQueueLoadBalancer)(nil)
+	_ lbmetrics.RouteReader      = (*nfqlb.NFQueueLoadBalancer)(nil)
+	_ lbmetrics.NftablesReader   = (*nftablesmanager.Manager)(nil)
+	_ lbmetrics.PacketByteReader = (*nftablesmanager.Manager)(nil)
 )
 
 func init() {
@@ -205,6 +206,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
 		Readiness:        readiness.NewManager(cfg.ReadinessDir),
 		ConfigErrors:     configErrors, // typed-nil when metrics disabled; Inc is nil-safe
+		PerTargetMetrics: cfg.PerTargetMetrics,
 	}
 	if err := lbController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to setup controller")
@@ -280,6 +282,15 @@ func registerLBMetrics(
 		}
 	} else {
 		setupLog.Info("nftables manager does not expose read methods; skipping nftables metrics collector")
+	}
+
+	if pbReader := lbController.PacketByteReader(); pbReader != nil {
+		pbCollector := lbmetrics.NewPacketByteCollector(pbReader, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)
+		if err := ctrlmetrics.Registry.Register(pbCollector); err != nil {
+			return fmt.Errorf("register packet/byte collector: %w", err)
+		}
+	} else {
+		setupLog.Info("nftables manager does not expose packet/byte reads; skipping packet/byte metrics collector")
 	}
 
 	routeCollector := lbmetrics.NewRouteCollector(nfqlbInstance, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)

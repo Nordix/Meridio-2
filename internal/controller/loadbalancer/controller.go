@@ -66,9 +66,12 @@ type Controller struct {
 	NftManagerFactory func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error)
 
 	// ConfigErrors counts failed data-plane config operations by reason. Nil-safe: when metrics
-	// are disabled, leave it as a typed-nil *loadbalancer.ConfigErrors (Inc no-ops on a nil
-	// receiver) — do NOT assign an untyped nil, which would make the interface non-nil.
+	// ConfigErrors ... (see above)
 	ConfigErrors configErrorRecorder
+
+	// PerTargetMetrics enables per-target packet counters (opt-in; --enable-per-target-metrics).
+	// When false, only per-DG packet/byte counting is installed.
+	PerTargetMetrics bool
 
 	mu          sync.Mutex
 	instances   map[string]nfqlbInstance                         // key: DistributionGroup name
@@ -83,6 +86,13 @@ type nftablesManager interface {
 	Setup() error
 	SetVIPs(cidrs []string) error
 	Cleanup() error
+	// Counter-rule management for per-DG (and opt-in per-target) packet/byte accounting.
+	ReconcileDGCounters(dg nftablesmanager.DGCounters, perTarget bool) error
+	RemoveDGCounters(dg string, base, count int) error
+	// SetDGRange / ClearDGRange register the DG name <-> fwmark range mapping used to label
+	// per-DG counter reads.
+	SetDGRange(dg string, base, count int)
+	ClearDGRange(dg string)
 }
 
 // configErrorRecorder records failed data-plane config operations by reason (see
@@ -99,6 +109,16 @@ type configErrorRecorder interface {
 // collector. Must be called after SetupWithManager has initialized the shared manager.
 func (c *Controller) NftablesReader() lbmetrics.NftablesReader {
 	if r, ok := c.nftManager.(lbmetrics.NftablesReader); ok {
+		return r
+	}
+	return nil
+}
+
+// PacketByteReader exposes the shared nftables manager as the per-DG packet/byte metrics read
+// source, if the concrete manager supports it. Returns nil when absent/unsupported — run.go then
+// skips the packet/byte collector. Must be called after SetupWithManager.
+func (c *Controller) PacketByteReader() lbmetrics.PacketByteReader {
+	if r, ok := c.nftManager.(lbmetrics.PacketByteReader); ok {
 		return r
 	}
 	return nil
@@ -226,8 +246,15 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	// mean nothing ever calls DeleteInstance again for this DG (reconcileNFQLBInstance
 	// only acts when the DG is absent from c.instances, and a deleted DG never
 	// reappears to re-trigger creation).
-	if _, exists := c.instances[distGroupName]; exists {
+	if instance, exists := c.instances[distGroupName]; exists {
 		logr.Info("Deleting NFQLB service", "distGroup", distGroupName)
+		// Remove this DG's packet/byte counter rules + range mapping (shared table, so this is
+		// per-DG cleanup, not a table teardown). Done before DeleteInstance frees the offset.
+		base, count := instance.FwmarkRange()
+		if err := c.nftManager.RemoveDGCounters(distGroupName, base, count); err != nil {
+			logr.Error(err, "Failed to remove packet/byte counter rules", "distGroup", distGroupName)
+		}
+		c.nftManager.ClearDGRange(distGroupName)
 		if err := c.NFQLB.DeleteInstance(ctx, distGroupName); err != nil {
 			logr.Error(err, "Failed to delete NFQLB service, will retry", "distGroup", distGroupName)
 			errs = append(errs, fmt.Errorf("failed to delete NFQLB service for %q: %w", distGroupName, err))
