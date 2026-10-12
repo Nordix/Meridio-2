@@ -60,7 +60,18 @@ var (
 	_ lbmetrics.StatsReader    = (*nfqlb.NFQueueLoadBalancer)(nil)
 	_ lbmetrics.RouteReader    = (*nfqlb.NFQueueLoadBalancer)(nil)
 	_ lbmetrics.NftablesReader = (*nftablesmanager.Manager)(nil)
+	// The packet/byte read is parameterized by the DG<->range mapping the controller owns; the
+	// controller wraps it in an arg-less lbmetrics.PacketByteReader adapter (snapshotting the
+	// mapping under its lock). Assert the manager still provides the parameterized read.
+	_ packetByteCounter = (*nftablesmanager.Manager)(nil)
 )
+
+// packetByteCounter is the parameterized packet/byte read the controller's adapter delegates to.
+// Used only for the compile-time assertion above (the controller has its own copy of this contract).
+type packetByteCounter interface {
+	PacketByteCounts(map[string]nftablesmanager.DGRange) (
+		map[string]nftablesmanager.Counts, map[nftablesmanager.DGTarget]nftablesmanager.Counts, error)
+}
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -225,6 +236,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
 		Readiness:        readiness.NewManager(cfg.ReadinessDir),
 		ConfigErrors:     configErrors, // typed-nil when metrics disabled; Inc is nil-safe
+		PerTargetMetrics: cfg.PerTargetMetrics,
 	}
 	if err := lbController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to setup controller")
@@ -300,6 +312,15 @@ func registerLBMetrics(
 		}
 	} else {
 		setupLog.Info("nftables manager does not expose read methods; skipping nftables metrics collector")
+	}
+
+	if pbReader := lbController.PacketByteReader(); pbReader != nil {
+		pbCollector := lbmetrics.NewPacketByteCollector(pbReader, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)
+		if err := ctrlmetrics.Registry.Register(pbCollector); err != nil {
+			return fmt.Errorf("register packet/byte collector: %w", err)
+		}
+	} else {
+		setupLog.Info("nftables manager does not expose packet/byte reads; skipping packet/byte metrics collector")
 	}
 
 	routeCollector := lbmetrics.NewRouteCollector(nfqlbInstance, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)

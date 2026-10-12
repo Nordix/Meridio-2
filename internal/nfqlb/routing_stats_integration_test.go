@@ -19,7 +19,10 @@ limitations under the License.
 package nfqlb
 
 import (
+	"errors"
+	"os"
 	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +32,8 @@ import (
 )
 
 // enterTestNetns moves the current OS thread into a fresh network namespace for isolated
-// policy-rule testing, restoring the original on cleanup. Requires CAP_NET_ADMIN.
+// policy-rule testing, restoring the original on cleanup. Requires CAP_NET_ADMIN; skips the test
+// (rather than failing) when the environment lacks it, so an unprivileged run reports SKIP.
 func enterTestNetns(t *testing.T) {
 	t.Helper()
 	runtime.LockOSThread()
@@ -40,7 +44,12 @@ func enterTestNetns(t *testing.T) {
 	t.Cleanup(func() { _ = netns.Set(orig); _ = orig.Close() })
 
 	ns, err := netns.New() // also switches the current thread into ns
-	require.NoError(t, err)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EPERM) {
+			t.Skipf("skipping: creating a network namespace requires CAP_NET_ADMIN (%v)", err)
+		}
+		require.NoError(t, err)
+	}
 	t.Cleanup(func() { _ = ns.Close() })
 }
 

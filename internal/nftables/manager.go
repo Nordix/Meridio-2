@@ -28,12 +28,13 @@ import (
 )
 
 const (
-	preroutingChainName     = "prerouting"
-	outputChainName         = "output"
-	pmtudChainName          = "snat-local"
-	dropAccountingChainName = "drop-accounting"
-	ipv4VIPSetName          = "ipv4-vips"
-	ipv6VIPSetName          = "ipv6-vips"
+	preroutingChainName       = "prerouting"
+	outputChainName           = "output"
+	pmtudChainName            = "snat-local"
+	dropAccountingChainName   = "drop-accounting"
+	targetAccountingChainName = "target-accounting"
+	ipv4VIPSetName            = "ipv4-vips"
+	ipv6VIPSetName            = "ipv6-vips"
 )
 
 // Manager manages nftables rules for VIP traffic.
@@ -48,6 +49,7 @@ type Manager struct {
 	outputChain     *nftables.Chain
 	pmtudChain      *nftables.Chain
 	dropChain       *nftables.Chain
+	targetChain     *nftables.Chain
 	ipv4Set         *nftables.Set
 	ipv6Set         *nftables.Set
 	ipv4PreRule     *nftables.Rule
@@ -84,6 +86,9 @@ func (m *Manager) Setup() error {
 		return err
 	}
 	if err := m.createDropAccountingChain(); err != nil {
+		return err
+	}
+	if err := m.createTargetAccountingChain(); err != nil {
 		return err
 	}
 	if err := m.createOutputChain(); err != nil {

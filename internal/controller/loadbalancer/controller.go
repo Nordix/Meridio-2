@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -65,16 +66,22 @@ type Controller struct {
 	Readiness         *readiness.Manager
 	NftManagerFactory func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error)
 
-	// ConfigErrors counts failed data-plane config operations by reason. Nil-safe: when metrics
-	// are disabled, leave it as a typed-nil *loadbalancer.ConfigErrors (Inc no-ops on a nil
-	// receiver) — do NOT assign an untyped nil, which would make the interface non-nil.
+	// ConfigErrors counts failed data-plane config operations by reason. Nil-safe: a typed-nil
+	// *loadbalancer.ConfigErrors is a valid value whose Inc no-ops (see its doc). Assign only a
+	// typed-nil when metrics are disabled, NEVER an untyped nil — an untyped nil would make this
+	// interface field itself non-nil and panic on Inc. run.go sets it accordingly.
 	ConfigErrors configErrorRecorder
+
+	// PerTargetMetrics enables per-target packet counters (opt-in; --enable-per-target-metrics).
+	// When false, only per-DG packet/byte counting is installed.
+	PerTargetMetrics bool
 
 	mu          sync.Mutex
 	instances   map[string]nfqlbInstance                         // key: DistributionGroup name
 	nftManager  nftablesManager                                  // Shared nftables manager for all DGs
 	targets     map[string]map[int]struct{}                      // key: DistributionGroup name -> active identifiers
 	flows       map[string]map[string]*meridio2v1alpha1.L34Route // key: DistributionGroup name -> L34Route name
+	dgRanges    map[string]nftablesmanager.DGRange               // key: DistributionGroup name -> fwmark range (for per-DG counter labeling)
 	currentVIPs []string                                         // Currently configured VIPs (to avoid redundant updates)
 }
 
@@ -83,6 +90,13 @@ type nftablesManager interface {
 	Setup() error
 	SetVIPs(cidrs []string) error
 	Cleanup() error
+	// Counter-rule management for per-DG (and opt-in per-target) packet/byte accounting.
+	ReconcileDGCounters(dg nftablesmanager.DGCounters, perTarget bool) error
+	RemoveDGCounters(dg string, base, count int) error
+	// PacketByteCounts reads per-DG (and, in per-target mode, per-target) forwarded totals from
+	// the target-accounting chain. The DG<->fwmark-range mapping is passed in by the caller (the
+	// controller owns it under c.mu); the Manager keeps no mutable range state of its own.
+	PacketByteCounts(ranges map[string]nftablesmanager.DGRange) (perDG map[string]nftablesmanager.Counts, perTarget map[nftablesmanager.DGTarget]nftablesmanager.Counts, err error)
 }
 
 // configErrorRecorder records failed data-plane config operations by reason (see
@@ -102,6 +116,42 @@ func (c *Controller) NftablesReader() lbmetrics.NftablesReader {
 		return r
 	}
 	return nil
+}
+
+// PacketByteReader exposes the per-DG packet/byte metrics read as a scrape-time source. It
+// returns an adapter (not the raw manager) that, on each read, snapshots the controller's
+// DG<->fwmark-range mapping under c.mu and passes it to the manager's PacketByteCounts. This is
+// what keeps the range mapping race-free: the controller mutates it under c.mu in the reconcile
+// path, and the scrape reads a locked snapshot — the Manager itself holds no range state.
+// Returns nil when the manager does not support the read (e.g. a test fake); run.go then skips the
+// packet/byte collector. Must be called after SetupWithManager.
+func (c *Controller) PacketByteReader() lbmetrics.PacketByteReader {
+	if _, ok := c.nftManager.(packetByteCounter); !ok {
+		return nil
+	}
+	return &packetByteReadAdapter{c: c}
+}
+
+// packetByteCounter is the manager-side read the adapter delegates to (parameterized by the
+// range mapping the controller owns).
+type packetByteCounter interface {
+	PacketByteCounts(ranges map[string]nftablesmanager.DGRange) (map[string]nftablesmanager.Counts, map[nftablesmanager.DGTarget]nftablesmanager.Counts, error)
+}
+
+// packetByteReadAdapter binds the controller's locked range snapshot to the manager's
+// parameterized read, satisfying lbmetrics.PacketByteReader (arg-less).
+type packetByteReadAdapter struct{ c *Controller }
+
+func (a *packetByteReadAdapter) PacketByteCounts() (map[string]nftablesmanager.Counts, map[nftablesmanager.DGTarget]nftablesmanager.Counts, error) {
+	// Snapshot the range mapping under c.mu so the concurrent reconcile writes cannot race the
+	// read (a concurrent map read+write would crash the process).
+	a.c.mu.Lock()
+	ranges := make(map[string]nftablesmanager.DGRange, len(a.c.dgRanges))
+	maps.Copy(ranges, a.c.dgRanges)
+	counter := a.c.nftManager.(packetByteCounter)
+	a.c.mu.Unlock()
+
+	return counter.PacketByteCounts(ranges)
 }
 
 const (
@@ -226,8 +276,15 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	// mean nothing ever calls DeleteInstance again for this DG (reconcileNFQLBInstance
 	// only acts when the DG is absent from c.instances, and a deleted DG never
 	// reappears to re-trigger creation).
-	if _, exists := c.instances[distGroupName]; exists {
+	if instance, exists := c.instances[distGroupName]; exists {
 		logr.Info("Deleting NFQLB service", "distGroup", distGroupName)
+		// Remove this DG's packet/byte counter rules + range mapping (shared table, so this is
+		// per-DG cleanup, not a table teardown). Done before DeleteInstance frees the offset.
+		base, count := instance.FwmarkRange()
+		if err := c.nftManager.RemoveDGCounters(distGroupName, base, count); err != nil {
+			logr.Error(err, "Failed to remove packet/byte counter rules", "distGroup", distGroupName)
+		}
+		delete(c.dgRanges, distGroupName) // under c.mu; drop this DG's range from the metric read
 		if err := c.NFQLB.DeleteInstance(ctx, distGroupName); err != nil {
 			logr.Error(err, "Failed to delete NFQLB service, will retry", "distGroup", distGroupName)
 			errs = append(errs, fmt.Errorf("failed to delete NFQLB service for %q: %w", distGroupName, err))

@@ -19,7 +19,10 @@ limitations under the License.
 package nftables
 
 import (
+	"errors"
+	"os"
 	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/google/nftables"
@@ -29,7 +32,8 @@ import (
 )
 
 // newTestConn creates an nftables.Conn in a new network namespace for isolated testing.
-// Requires CAP_NET_ADMIN.
+// Requires CAP_NET_ADMIN; skips the test (rather than failing) when the environment lacks it,
+// so `make test-integration` run without privileges reports SKIP instead of a spurious FAIL.
 func newTestConn(t *testing.T) *nftables.Conn {
 	t.Helper()
 	runtime.LockOSThread()
@@ -40,7 +44,12 @@ func newTestConn(t *testing.T) *nftables.Conn {
 	t.Cleanup(func() { _ = netns.Set(orig); _ = orig.Close() })
 
 	ns, err := netns.New()
-	require.NoError(t, err)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EPERM) {
+			t.Skipf("skipping: creating a network namespace requires CAP_NET_ADMIN (%v)", err)
+		}
+		require.NoError(t, err)
+	}
 	t.Cleanup(func() { _ = ns.Close() })
 
 	return &nftables.Conn{NetNS: int(ns)}

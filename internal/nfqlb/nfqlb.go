@@ -565,6 +565,15 @@ func (s *Instance) AddTarget(ctx context.Context, ips []string, identifier int) 
 	return err
 }
 
+// FwmarkRange returns the instance's fwmark range: base is the fwmark of identifier 0
+// (= the instance offset) and count is maxTargets, so the range is [base, base+count) and
+// the fwmark for identifier i is base+i. Read-only; used by the LB metrics layer to install
+// per-DG / per-target nftables counter rules without the nftables code needing the
+// (unexported) offset.
+func (s *Instance) FwmarkRange() (base, count int) {
+	return s.offset, s.maxTargets
+}
+
 // doCreatePolicyRoute uses the injected function or falls back to the package-level one.
 func (s *Instance) doCreatePolicyRoute(fwmark int, ip string) error {
 	if s.routeCreate != nil {

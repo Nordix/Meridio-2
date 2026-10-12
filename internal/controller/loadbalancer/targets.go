@@ -28,6 +28,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
+	nftablesmanager "github.com/nordix/meridio-2/internal/nftables"
 )
 
 // reconcileTargets synchronizes NFQLB targets from LoadBalancerEndpointSlices.
@@ -152,6 +153,32 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		if err := c.Readiness.Remove(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to remove readiness file", "distGroup", distGroup.Name)
 		}
+	}
+
+	// Reconcile the nftables packet/byte counter rules for this DG's fwmark range. Per-DG range
+	// counting (metrics 1/2) is always installed; per-target counters only when opted in. The
+	// range (base/count) comes from the nfqlb instance; it is stable across target churn, so this
+	// is cheap on the default path. A failure here is logged but NOT joined into errFinal:
+	// counter rules are observability, not data path, so a persistent failure must not drive a
+	// requeue loop for the DG. The next reconcile (triggered by any target/slice change) retries.
+	base, count := service.FwmarkRange()
+	targetIDs := map[int]struct{}{}
+	if c.PerTargetMetrics {
+		for id := range newTargets {
+			targetIDs[id] = struct{}{}
+		}
+	}
+	// Record this DG's fwmark range for the per-DG metric read. Held under c.mu (reconcileTargets
+	// runs under it); the scrape path reads a locked snapshot via PacketByteReader.
+	if c.dgRanges == nil {
+		c.dgRanges = make(map[string]nftablesmanager.DGRange)
+	}
+	c.dgRanges[distGroup.Name] = nftablesmanager.DGRange{Base: base, Count: count}
+	if err := c.nftManager.ReconcileDGCounters(
+		nftablesmanager.DGCounters{DG: distGroup.Name, FwmarkBase: base, MaxTargets: count, Targets: targetIDs},
+		c.PerTargetMetrics,
+	); err != nil {
+		logr.Error(err, "Failed to reconcile packet/byte counter rules", "distGroup", distGroup.Name)
 	}
 
 	// Commit c.targets: identifiers from newTargets ∪ failed-delete IDs.

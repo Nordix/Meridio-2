@@ -26,13 +26,14 @@ type errorRecorder interface {
 
 // Collector label values for CollectorErrors (which lazy collector hit a read error).
 const (
-	CollectorNftables = "nftables"
-	CollectorRoute    = "route"
-	CollectorNfqlb    = "nfqlb"
+	CollectorNftables   = "nftables"
+	CollectorRoute      = "route"
+	CollectorNfqlb      = "nfqlb"
+	CollectorPacketByte = "packet_byte"
 )
 
 // collectors lists the valid collector label values, used to pre-initialize series to 0.
-var collectors = []string{CollectorNftables, CollectorRoute, CollectorNfqlb}
+var collectors = []string{CollectorNftables, CollectorRoute, CollectorNfqlb, CollectorPacketByte}
 
 // CollectorErrors is a push-style counter of scrape-time read failures in the LB's lazy
 // collectors (<prefix>_lb_collector_errors_total, labels: gateway, collector).
