@@ -30,10 +30,10 @@ limitations under the License.
 // retained to zero-seed or unregister, and absence is the truthful "no such session" signal rather
 // than a forged zero.
 //
-// Collection is decoupled from the router's BIRD management: the collector is given only the
-// control socket path, not the bird.Bird value the controller reconfigures through. So a scrape
-// never takes that value's lifecycle mutex, and cannot be blocked by (or block) an in-flight
-// reconfiguration.
+// Collection is decoupled from the router's BIRD management: the collector holds its own
+// bird.Client, which is stateless (a socket path and a command runner), rather than the bird.Bird
+// value the controller reconfigures through. A scrape therefore never touches that value or the
+// mutex serializing its reconfiguration.
 package router
 
 import (
@@ -70,7 +70,7 @@ const (
 //   - <prefix>_bgp_session_up (labels: gateway, gateway_router)
 //   - <prefix>_bgp_routes_imported (labels: gateway, gateway_router)
 //   - <prefix>_bgp_prefixes_announced (labels: gateway, gateway_router)
-//   - <prefix>_bgp_session_last_established_timestamp_seconds (labels: gateway, gateway_router)
+//   - <prefix>_bgp_session_uptime_seconds (labels: gateway, gateway_router)
 //   - <prefix>_bfd_session_up (labels: gateway, neighbor, interface)
 //   - <prefix>_router_metrics_collect_success (labels: gateway, source)
 //
@@ -97,21 +97,22 @@ const (
 // identity is 1:1 with the scrape target and is supplied by the scraper (instance/pod). The
 // gateway label is kept because it is semantically meaningful and not auto-injected.
 type RouterCollector struct {
-	socketPath     string
+	client         *bird.Client
 	collectTimeout time.Duration
 	gatewayName    string
 
-	bgpSessionUp       *prometheus.Desc
-	bgpRoutesImported  *prometheus.Desc
-	bgpPrefixesAnn     *prometheus.Desc
-	bgpLastEstablished *prometheus.Desc
-	bfdSessionUp       *prometheus.Desc
-	collectSuccess     *prometheus.Desc
+	bgpSessionUp      *prometheus.Desc
+	bgpRoutesImported *prometheus.Desc
+	bgpPrefixesAnn    *prometheus.Desc
+	bgpSessionUptime  *prometheus.Desc
+	bfdSessionUp      *prometheus.Desc
+	collectSuccess    *prometheus.Desc
 }
 
 // NewRouterCollector creates a RouterCollector. prefix must already be validated (see
-// internal/common/metrics.ValidatePrefix). socketPath is the BIRD control socket the collector
-// queries; collectTimeout bounds the total time a single scrape spends on those queries, and
+// internal/common/metrics.ValidatePrefix). client queries the BIRD control socket; give the
+// collector its own rather than sharing the router's, so it does not depend on how BIRD management
+// is constructed. collectTimeout bounds the total time a single scrape spends on those queries, and
 // should stay below Prometheus's scrape_timeout. gatewayName is the single Gateway this router
 // serves, used as the `gateway` label value on every series.
 //
@@ -119,11 +120,11 @@ type RouterCollector struct {
 // CRD: a GatewayRouter describes the external router this side peers with (its address and remote
 // ASN), so routes are imported from it and prefixes announced to it.
 func NewRouterCollector(
-	socketPath string, collectTimeout time.Duration, gatewayName, prefix string,
+	client *bird.Client, collectTimeout time.Duration, gatewayName, prefix string,
 ) *RouterCollector {
 	bgpLabels := []string{"gateway", "gateway_router"}
 	return &RouterCollector{
-		socketPath:     socketPath,
+		client:         client,
 		collectTimeout: collectTimeout,
 		gatewayName:    gatewayName,
 		bgpSessionUp: prometheus.NewDesc(
@@ -141,10 +142,11 @@ func NewRouterCollector(
 			"Number of prefixes announced to the given GatewayRouter, as reported by BIRD.",
 			bgpLabels, nil,
 		),
-		bgpLastEstablished: prometheus.NewDesc(
-			prefix+"_bgp_session_last_established_timestamp_seconds",
-			"Unix timestamp of the last state change of the BGP session to the given GatewayRouter, "+
-				"as reported by BIRD.",
+		bgpSessionUptime: prometheus.NewDesc(
+			prefix+"_bgp_session_uptime_seconds",
+			"Seconds the BGP session to the given GatewayRouter has been established, 0 while it is not. "+
+				"A value lower than the time since the previous scrape means the session reset in between, "+
+				"which makes flapping detectable even when it never appears down in a scrape.",
 			bgpLabels, nil,
 		),
 		bfdSessionUp: prometheus.NewDesc(
@@ -169,7 +171,7 @@ func (c *RouterCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.bgpSessionUp
 	ch <- c.bgpRoutesImported
 	ch <- c.bgpPrefixesAnn
-	ch <- c.bgpLastEstablished
+	ch <- c.bgpSessionUptime
 	ch <- c.bfdSessionUp
 	ch <- c.collectSuccess
 }
@@ -197,13 +199,13 @@ func (c *RouterCollector) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.collectTimeout)
 	defer cancel()
 
-	protocols, protocolsErr := bird.GetProtocolStatuses(ctx, c.socketPath)
+	protocols, protocolsErr := c.client.GetProtocolStatuses(ctx)
 	if protocolsErr == nil {
 		c.collectBGP(ch, protocols)
 	}
 	c.reportCollectOutcome(ch, sourceBGPSessions, protocolsErr)
 
-	sessions, sessionsErr := bird.GetBfdSessions(ctx, c.socketPath)
+	sessions, sessionsErr := c.client.GetBfdSessions(ctx)
 	if sessionsErr == nil {
 		c.collectBFD(ch, sessions)
 	}
@@ -224,18 +226,21 @@ func (c *RouterCollector) reportCollectOutcome(ch chan<- prometheus.Metric, sour
 }
 
 // collectBGP emits the bgp_* series for every BGP protocol in protocols. Non-BGP protocols are
-// skipped entirely, and the optional per-protocol values (route counts, established timestamp) are
-// emitted only when BIRD reported them.
+// skipped entirely. The route counts are emitted only when BIRD reported them, and the uptime only
+// when it can be determined (see sessionUptime).
 func (c *RouterCollector) collectBGP(ch chan<- prometheus.Metric, protocols []bird.ProtocolStatus) {
+	now := time.Now().Unix()
+
 	for i := range protocols {
 		p := &protocols[i]
 		if p.Proto != "BGP" {
 			continue
 		}
 		gatewayRouter := strings.TrimPrefix(p.Name, protocolNamePrefix)
+		established := p.IsEstablished()
 
 		ch <- prometheus.MustNewConstMetric(
-			c.bgpSessionUp, prometheus.GaugeValue, boolToFloat(p.IsEstablished()), c.gatewayName, gatewayRouter)
+			c.bgpSessionUp, prometheus.GaugeValue, boolToFloat(established), c.gatewayName, gatewayRouter)
 
 		if p.RoutesImported != nil {
 			ch <- prometheus.MustNewConstMetric(
@@ -245,11 +250,35 @@ func (c *RouterCollector) collectBGP(ch chan<- prometheus.Metric, protocols []bi
 			ch <- prometheus.MustNewConstMetric(
 				c.bgpPrefixesAnn, prometheus.GaugeValue, float64(*p.RoutesExported), c.gatewayName, gatewayRouter)
 		}
-		if p.EstablishedUnix != nil {
+		if uptime, ok := sessionUptime(p, established, now); ok {
 			ch <- prometheus.MustNewConstMetric(
-				c.bgpLastEstablished, prometheus.GaugeValue, float64(*p.EstablishedUnix), c.gatewayName, gatewayRouter)
+				c.bgpSessionUptime, prometheus.GaugeValue, uptime, c.gatewayName, gatewayRouter)
 		}
 	}
+}
+
+// sessionUptime derives how long a BGP session has been established from BIRD's Since field,
+// reporting 0 whenever the session is not established.
+//
+// The gate on established is what makes the value an uptime at all: BIRD reports Since for the
+// protocol's current state, whatever that state is, so for a session that is down it is the time it
+// went down. Subtracting that would yield a growing "downtime" under an uptime name.
+//
+// Returns ok=false when the duration cannot be determined — an established session whose Since was
+// not parseable, i.e. bird.conf is missing `timeformat protocol "%s"`. The series is then omitted
+// rather than reported as 0, which would be indistinguishable from a session that just reset.
+//
+// now is passed in so every protocol in one scrape shares a single reading, and comes from the same
+// host clock that produced Since (BIRD runs in this container), so the subtraction carries no
+// cross-host skew.
+func sessionUptime(p *bird.ProtocolStatus, established bool, now int64) (float64, bool) {
+	if !established {
+		return 0, true
+	}
+	if p.LastStateChangeUnix == nil {
+		return 0, false
+	}
+	return max(float64(now-*p.LastStateChangeUnix), 0), true
 }
 
 // collectBFD emits bfd_session_up per BFD session, keyed by neighbor IP and interface — the

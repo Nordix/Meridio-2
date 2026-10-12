@@ -190,8 +190,12 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	// BIRD only when a scrape calls Collect — so registering before BIRD is up is safe: early
 	// scrapes simply report the collection as failed via its collect-success gauge.
 	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		// Its own bird.Client rather than reaching into birdInstance: a Client is stateless (socket
+		// path plus command runner, no lock or lifecycle state), so the collector is independent of
+		// BIRD management by construction and a second one costs nothing. birdInstance need not
+		// expose its client.
 		collector := routermetrics.NewRouterCollector(
-			cfg.BirdSocket, cfg.MetricsCollectTimeout, cfg.GatewayName, cfg.MetricsPrefix,
+			bird.NewClient(cfg.BirdSocket), cfg.MetricsCollectTimeout, cfg.GatewayName, cfg.MetricsPrefix,
 		)
 		if err := ctrlmetrics.Registry.Register(collector); err != nil {
 			return fmt.Errorf("register RouterCollector: %w", err)

@@ -18,8 +18,6 @@ package bird
 
 import (
 	"context"
-	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -54,7 +52,7 @@ func (p ProtocolStatus) IsEstablished() bool {
 
 // ProtocolStatus represents the status of a BIRD protocol.
 //
-// RoutesImported, RoutesExported, and EstablishedUnix are populated only for
+// RoutesImported, RoutesExported, and LastStateChangeUnix are populated only for
 // BGP protocols (Proto == "BGP"), parsed from the detail block of `show
 // protocols all` output. They are left nil for all other protocol types
 // (e.g. Static) — nil means "not applicable", not "zero". See
@@ -70,10 +68,16 @@ type ProtocolStatus struct {
 	RoutesImported *int
 	// RoutesExported is the protocol's exported route count, BGP only.
 	RoutesExported *int
-	// EstablishedUnix is the protocol's `Since` timestamp as Unix epoch
-	// seconds, BGP only. Requires `timeformat protocol "%s";` in bird.conf —
-	// see docs/design/router-metrics-source-of-truth.md.
-	EstablishedUnix *int64
+	// LastStateChangeUnix is the protocol's `Since` field as Unix epoch seconds,
+	// BGP only. Requires `timeformat protocol "%s";` in bird.conf — see
+	// docs/design/router-metrics-source-of-truth.md.
+	//
+	// BIRD reports Since for whatever state the protocol is currently in, not
+	// only for Established, so this is the time of the last state change. It is
+	// the session's start time only when the session is in fact established;
+	// while a session is down it is when it went down. Callers deriving an
+	// uptime from it must gate on IsEstablished.
+	LastStateChangeUnix *int64
 }
 
 // MonitorStatus represents the overall monitoring status
@@ -125,35 +129,19 @@ func (b *Bird) checkStatus(ctx context.Context) MonitorStatus {
 		return status
 	}
 
-	protocols, err := GetProtocolStatuses(ctx, b.SocketPath)
+	protocols, err := b.client.GetProtocolStatuses(ctx)
 	if err != nil {
 		return status
 	}
 	status.Protocols = protocols
 
-	bfdSessions, err := GetBfdSessions(ctx, b.SocketPath)
+	bfdSessions, err := b.client.GetBfdSessions(ctx)
 	if err != nil {
 		return status
 	}
 	status.BfdSessions = bfdSessions
 
 	return status
-}
-
-// GetProtocolStatuses runs `birdc show protocols all "NBR-*"` against the BIRD
-// instance listening on socketPath and parses the result into ProtocolStatus
-// values. Exported, independent of any Bird instance's lifecycle (mutex/running
-// state), so it can be reused by callers that have no relationship to the
-// monitor's control loop (e.g. an independent metrics collector) and must only
-// honor ctx's deadline.
-func GetProtocolStatuses(ctx context.Context, socketPath string) ([]ProtocolStatus, error) {
-	cmd := exec.CommandContext(ctx, "birdc", "-s", socketPath, "show", "protocols", "all", `"NBR-*"`)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.V(1).Info("birdc command failed", "cmd", cmd.String(), "error", err, "output", strings.TrimSpace(string(out)))
-		return nil, fmt.Errorf("%s: %w: %s", cmd.String(), err, strings.TrimSpace(string(out)))
-	}
-	return parseShowProtocolsOutput(string(out)), nil
 }
 
 // parseShowProtocolsOutput parses birdc protocol output
@@ -185,9 +173,9 @@ func parseShowProtocolsOutput(output string) []ProtocolStatus {
 		if protocol.Proto == "BGP" {
 			// Since (field 4) is a Unix epoch only when bird.conf set
 			// `timeformat protocol "%s";`; otherwise it's BIRD's default
-			// human-readable form and is left unparsed (EstablishedUnix nil).
+			// human-readable form and is left unparsed (LastStateChangeUnix nil).
 			if epoch, err := strconv.ParseInt(fields[4], 10, 64); err == nil {
-				protocol.EstablishedUnix = &epoch
+				protocol.LastStateChangeUnix = &epoch
 			}
 			// Consume this protocol's detail block in the same pass; i advances
 			// to the last consumed line so the outer loop resumes at the block end.
@@ -287,19 +275,6 @@ type BfdSession struct {
 // IsUp returns true if the BFD session state is "Up".
 func (b BfdSession) IsUp() bool {
 	return b.State == "Up"
-}
-
-// GetBfdSessions runs `birdc show bfd sessions` against the BIRD instance listening
-// on socketPath and parses the result into BfdSession values. Same independence
-// rationale as GetProtocolStatuses.
-func GetBfdSessions(ctx context.Context, socketPath string) ([]BfdSession, error) {
-	cmd := exec.CommandContext(ctx, "birdc", "-s", socketPath, "show", "bfd", "sessions")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.V(1).Info("birdc command failed", "cmd", cmd.String(), "error", err, "output", strings.TrimSpace(string(out)))
-		return nil, fmt.Errorf("%s: %w: %s", cmd.String(), err, strings.TrimSpace(string(out)))
-	}
-	return parseShowBfdSessionsOutput(string(out)), nil
 }
 
 // parseShowBfdSessionsOutput parses the output of `birdc show bfd sessions`.
