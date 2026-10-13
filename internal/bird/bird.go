@@ -50,6 +50,11 @@ type Config struct {
 	RulePriority   int
 	LogParams      BirdLogParams
 	KernelScanTime int
+
+	// ConfigErrors counts failed netlink operations in the VIP routing path by reason.
+	// Optional: leaving it unset disables the counting (the routing path treats a nil recorder
+	// as a no-op), so callers with metrics disabled can simply omit it.
+	ConfigErrors ConfigErrorRecorder
 }
 
 type Bird struct {
@@ -151,7 +156,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	// Install policy routes first to minimize misrouting window.
 	// Blackhole fallback ensures VIP traffic is dropped rather than
 	// leaked before BGP routes are available.
-	if err := setPolicyRoutes(b.nl, vips, b.TableID, b.RulePriority); err != nil {
+	if err := setPolicyRoutes(b.nl, vips, b.TableID, b.RulePriority, b.ConfigErrors); err != nil {
 		return err
 	}
 

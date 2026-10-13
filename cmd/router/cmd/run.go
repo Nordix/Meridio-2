@@ -157,6 +157,14 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		return err
 	}
 
+	// Construct the push-style config-error counter before the BIRD instance so it can be
+	// injected. When metrics are disabled it stays a typed-nil *ConfigErrors and the routing
+	// path's increments are no-ops via its nil-safe Inc. Registered alongside the collector below.
+	var configErrors *routermetrics.ConfigErrors
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		configErrors = routermetrics.NewConfigErrors(cfg.MetricsPrefix, cfg.GatewayName)
+	}
+
 	birdInstance, err := bird.New(bird.Config{
 		LogParams:      cfg.BirdLogs,
 		KernelScanTime: cfg.BirdKernelScanTime,
@@ -164,6 +172,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		ConfigFile:     cfg.BirdConfig,
 		TableID:        cfg.TableID,
 		RulePriority:   cfg.RulePriority,
+		ConfigErrors:   configErrors, // nil when metrics disabled; Inc is nil-safe
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create BIRD instance")
@@ -188,6 +197,9 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	// BIRD only when a scrape calls Collect — so registering before BIRD is up is safe: early
 	// scrapes simply report the collection as failed via its collect-success gauge.
 	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := ctrlmetrics.Registry.Register(configErrors.Collector()); err != nil {
+			return fmt.Errorf("register router ConfigErrors: %w", err)
+		}
 		// Its own bird.Client rather than reaching into birdInstance: a Client is stateless (socket
 		// path plus command runner, no lock or lifecycle state), so the collector is independent of
 		// BIRD management by construction and a second one costs nothing. birdInstance need not
