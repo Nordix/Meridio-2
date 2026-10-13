@@ -20,6 +20,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"k8s.io/utils/ptr"
 )
 
 func TestParseProtocolOutput(t *testing.T) {
@@ -203,6 +205,226 @@ NBR-gw-m1-router-v4 BGP        ---        up     14:14:42.576  Established`,
 	}
 }
 
+// TestParseProtocolDetail covers the BGP detail-block parsing: route-count
+// summing across channels, the Since epoch parse, and that non-BGP/non-numeric
+// cases leave the optional fields nil.
+func TestParseProtocolDetail(t *testing.T) {
+	tests := []struct {
+		name            string
+		output          string
+		wantImported    *int
+		wantExported    *int
+		wantEstablished *int64
+	}{
+		{
+			// Live BIRD 3.2.3 capture: one active ipv4 channel plus a disabled
+			// ipv6 channel (Input/Output filter REJECT, Routes: 0,0). Summing
+			// yields the active channel's counts. Since is the default
+			// human-readable format, so LastStateChangeUnix stays nil.
+			name: "dual channel, active ipv4 + disabled ipv6",
+			output: `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+NBR-gw-a1-router-v4 BGP        ---        up     08:25:11.859  Established
+  BGP state:          Established
+  Channel ipv4
+    Input filter:   gateway_routes
+    Output filter:  announced_routes
+    Routes:         1 imported, 1 exported, 1 preferred
+  Channel ipv6
+    Input filter:   REJECT
+    Output filter:  REJECT
+    Routes:         0 imported, 0 exported, 0 preferred`,
+			wantImported:    ptr.To(1),
+			wantExported:    ptr.To(1),
+			wantEstablished: nil,
+		},
+		{
+			// With `timeformat protocol "%s";` the Since column is a Unix epoch.
+			name: "numeric Since parsed as epoch",
+			output: `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+NBR-gw1    BGP        ---        up     1759518307  Established
+  Channel ipv4
+    Input filter:   gateway_routes
+    Output filter:  announced_routes
+    Routes:         3 imported, 2 exported, 3 preferred`,
+			wantImported:    ptr.To(3),
+			wantExported:    ptr.To(2),
+			wantEstablished: ptr.To(int64(1759518307)),
+		},
+		{
+			// A BGP summary line with no detail block (e.g. session not up):
+			// no Routes: line, so route counts stay nil.
+			name: "no detail block leaves route counts nil",
+			output: `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+NBR-gw1    BGP        ---        start  1759518307  Connect`,
+			wantImported:    nil,
+			wantExported:    nil,
+			wantEstablished: ptr.To(int64(1759518307)),
+		},
+		{
+			// Synthetic: a Static protocol block carrying a Routes: line (real
+			// Static blocks for our routers don't). Detail parsing is gated on
+			// Proto=="BGP", so the route fields and epoch must stay nil here
+			// even though a Routes: line and a numeric Since are present.
+			name: "static protocol detail is not parsed",
+			output: `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+NBR-static1 Static     ---        up     1759518307
+  Channel ipv4
+    Routes:         7 imported, 7 exported, 7 preferred`,
+			wantImported:    nil,
+			wantExported:    nil,
+			wantEstablished: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseShowProtocolsOutput(tt.output)
+			if len(result) != 1 {
+				t.Fatalf("expected 1 protocol, got %d", len(result))
+			}
+			p := result[0]
+			assertIntPtr(t, "RoutesImported", p.RoutesImported, tt.wantImported)
+			assertIntPtr(t, "RoutesExported", p.RoutesExported, tt.wantExported)
+			assertInt64Ptr(t, "LastStateChangeUnix", p.LastStateChangeUnix, tt.wantEstablished)
+		})
+	}
+}
+
+// TestParseProtocolDetail_BlockBoundaries verifies that a BGP protocol's detail
+// block is consumed up to the correct boundary and parsing resumes at the right
+// line — route counts are attributed to the right protocol and no protocol
+// after a detail block is swallowed or re-parsed. Covers the three block
+// terminators: a following top-level entry, a blank-line separator, and EOF.
+func TestParseProtocolDetail_BlockBoundaries(t *testing.T) {
+	t.Run("single NBR among other protocols", func(t *testing.T) {
+		// BIRD 3.2.3 `show protocols all` (no name filter): the NBR-gw BGP block
+		// (two channels) is surrounded by VIP4/device/kernel/bfd blocks, each
+		// with their own Channel/Routes lines. Only the NBR- BGP protocol must
+		// be returned, with the active channel's counts — proving foreign blocks
+		// are skipped and parsing resumes correctly after the BGP detail block.
+		output := `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+VIP4       Static     master4    up     06:34:36.268
+  Channel ipv4
+    Routes:         1 imported, 0 exported, 1 preferred
+
+NBR-gw-a1-router-v4 BGP        ---        up     08:25:11.859  Established
+  BGP state:          Established
+  Channel ipv4
+    Input filter:   gateway_routes
+    Output filter:  announced_routes
+    Routes:         1 imported, 1 exported, 1 preferred
+  Channel ipv6
+    Input filter:   REJECT
+    Output filter:  REJECT
+    Routes:         0 imported, 0 exported, 0 preferred
+
+device1    Device     ---        up     06:34:36.059
+
+kernel1    Kernel     master4    up     06:34:36.059
+  Channel ipv4
+    Routes:         0 imported, 1 exported, 0 preferred
+
+bfd1       BFD        ---        up     06:34:36.059`
+
+		result := parseShowProtocolsOutput(output)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 NBR protocol, got %d: %+v", len(result), result)
+		}
+		if result[0].Name != "NBR-gw-a1-router-v4" {
+			t.Fatalf("Name = %s, want NBR-gw-a1-router-v4", result[0].Name)
+		}
+		assertIntPtr(t, "RoutesImported", result[0].RoutesImported, ptr.To(1))
+		assertIntPtr(t, "RoutesExported", result[0].RoutesExported, ptr.To(1))
+	})
+
+	t.Run("two adjacent BGP blocks, counts not bleeding across", func(t *testing.T) {
+		// Blank-line separated BGP blocks: each protocol's counts must be its
+		// own, proving the first block ends before the second's summary line.
+		output := `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+NBR-gw1    BGP        ---        up     1759518307  Established
+  Channel ipv4
+    Routes:         2 imported, 3 exported, 2 preferred
+
+NBR-gw2    BGP        ---        up     1759518400  Established
+  Channel ipv4
+    Routes:         5 imported, 7 exported, 5 preferred`
+
+		result := parseShowProtocolsOutput(output)
+		if len(result) != 2 {
+			t.Fatalf("expected 2 protocols, got %d", len(result))
+		}
+		assertIntPtr(t, "gw1 RoutesImported", result[0].RoutesImported, ptr.To(2))
+		assertIntPtr(t, "gw1 RoutesExported", result[0].RoutesExported, ptr.To(3))
+		assertIntPtr(t, "gw2 RoutesImported", result[1].RoutesImported, ptr.To(5))
+		assertIntPtr(t, "gw2 RoutesExported", result[1].RoutesExported, ptr.To(7))
+	})
+
+	t.Run("adjacent summary lines with no detail blocks", func(t *testing.T) {
+		// Two summary lines with no detail blocks and no blank line between
+		// them: the first protocol's block must end at the second summary line,
+		// so both protocols are returned.
+		output := `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+NBR-gw1    BGP        ---        start  1759518307  Connect
+NBR-gw2    BGP        ---        up     1759518400  Established`
+
+		result := parseShowProtocolsOutput(output)
+		if len(result) != 2 {
+			t.Fatalf("expected 2 protocols, got %d", len(result))
+		}
+		if result[0].Name != "NBR-gw1" || result[1].Name != "NBR-gw2" {
+			t.Fatalf("names = [%s, %s], want [NBR-gw1, NBR-gw2]", result[0].Name, result[1].Name)
+		}
+	})
+
+	t.Run("BGP detail block at EOF", func(t *testing.T) {
+		// The detail block runs to EOF with no trailing blank line: counts must
+		// still be parsed.
+		output := `BIRD 3.2.3 ready.
+Name       Proto      Table      State  Since         Info
+NBR-gw1    BGP        ---        up     1759518307  Established
+  Channel ipv4
+    Routes:         9 imported, 4 exported, 9 preferred`
+
+		result := parseShowProtocolsOutput(output)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 protocol, got %d", len(result))
+		}
+		assertIntPtr(t, "RoutesImported", result[0].RoutesImported, ptr.To(9))
+		assertIntPtr(t, "RoutesExported", result[0].RoutesExported, ptr.To(4))
+	})
+}
+
+func assertIntPtr(t *testing.T, field string, got, want *int) {
+	t.Helper()
+	switch {
+	case want == nil && got != nil:
+		t.Errorf("%s = %d, want nil", field, *got)
+	case want != nil && got == nil:
+		t.Errorf("%s = nil, want %d", field, *want)
+	case want != nil && got != nil && *got != *want:
+		t.Errorf("%s = %d, want %d", field, *got, *want)
+	}
+}
+
+func assertInt64Ptr(t *testing.T, field string, got, want *int64) {
+	t.Helper()
+	switch {
+	case want == nil && got != nil:
+		t.Errorf("%s = %d, want nil", field, *got)
+	case want != nil && got == nil:
+		t.Errorf("%s = nil, want %d", field, *want)
+	case want != nil && got != nil && *got != *want:
+		t.Errorf("%s = %d, want %d", field, *got, *want)
+	}
+}
+
 func TestParseAndFormatStatus(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -305,6 +527,41 @@ NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Establish
 		if upCount != step.expectedCount {
 			t.Errorf("Step %d: upCount = %d, want %d", i, upCount, step.expectedCount)
 		}
+	}
+}
+
+// TestGetProtocolStatuses_InvalidSocket verifies that a birdc failure (e.g. no
+// BIRD instance listening on the socket) is surfaced as an error rather than
+// silently swallowed, since GetProtocolStatuses is called by callers (e.g.
+// an independent metrics collector) that need to distinguish "fetch failed"
+// from "no protocols configured".
+func TestGetProtocolStatuses_InvalidSocket(t *testing.T) {
+	_, err := NewClient("/nonexistent/bird.ctl").GetProtocolStatuses(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nonexistent socket, got nil")
+	}
+}
+
+// TestGetBfdSessions_InvalidSocket mirrors TestGetProtocolStatuses_InvalidSocket
+// for the BFD sessions query.
+func TestGetBfdSessions_InvalidSocket(t *testing.T) {
+	_, err := NewClient("/nonexistent/bird.ctl").GetBfdSessions(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nonexistent socket, got nil")
+	}
+}
+
+// TestGetProtocolStatuses_ContextCanceled verifies that a canceled context is
+// honored (the exec is not even attempted to run to completion), confirming
+// callers can bound these calls with a timeout independent of any Bird
+// instance's own lifecycle.
+func TestGetProtocolStatuses_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := NewClient("/nonexistent/bird.ctl").GetProtocolStatuses(ctx)
+	if err == nil {
+		t.Fatal("expected error for canceled context, got nil")
 	}
 }
 

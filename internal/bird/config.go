@@ -95,12 +95,37 @@ var tmplFuncs = template.FuncMap{
 		}
 		return defaultRouteIPv4
 	},
+	// bgpTemplateName selects the per-family BGP template so a protocol only
+	// declares the channel it actually uses. BIRD advertises one multiprotocol
+	// AFI/SAFI capability per configured channel (see BIRD user guide, "Channel
+	// configuration"), so a template declaring both ipv4{} and ipv6{} would
+	// advertise both capabilities to the peer even for a single-family session.
+	"bgpTemplateName": func(ipFamily string) string {
+		if ipFamily == ipFamilyIPv6 {
+			return "BGP_TEMPLATE_V6"
+		}
+		return "BGP_TEMPLATE_V4"
+	},
 }
 
+// birdConfigTmpl renders the full bird.conf.
+//
+// Note the `timeformat protocol "%s"` directive: it makes 'show protocols' report protocol times as
+// Unix epoch seconds, which the metrics collector subtracts from the current time to derive
+// bgp_session_uptime_seconds. BIRD's default for protocol times is 'iso short ms', a shorthand for
+// "%T" 72000 "%F" — a time of day for the last 20 hours and a bare date beyond that — so the
+// representation changes with age and loses either the date or the time, which cannot be parsed
+// reliably into a timestamp. Only protocol times are overridden; route, base and log formats keep
+// their defaults. The trade-off is that 'birdc show protocols' is less human-readable (epoch
+// instead of clock time). See docs/design/router-metrics-source-of-truth.md.
+//
 //nolint:lll
 var birdConfigTmpl = template.Must(template.New("bird.conf").Funcs(tmplFuncs).Parse(`{{- range .LogParams}}
 {{.FmtParams}}
 {{- end}}
+
+# Unix epoch seconds, for machine-readable 'show protocols' timestamps.
+timeformat protocol "%s";
 
 protocol device {}
 
@@ -124,8 +149,8 @@ filter announced_routes {
 	else reject;
 }
 
-template bgp BGP_TEMPLATE {
-	debug {events, states};
+template bgp BGP_TEMPLATE_V4 {
+	debug {events, states, interfaces};
 	direct;
 	bfd off;
 	graceful restart off;
@@ -135,6 +160,14 @@ template bgp BGP_TEMPLATE {
 		export none;
 		next hop self;
 	};
+}
+
+template bgp BGP_TEMPLATE_V6 {
+	debug {events, states, interfaces};
+	direct;
+	bfd off;
+	graceful restart off;
+	setkey off;
 	ipv6 {
 		import none;
 		export none;
@@ -192,7 +225,7 @@ protocol static VIP6 {
 {{- end}}
 {{- range .BGPRouters}}
 
-protocol bgp 'NBR-{{.Name}}' from BGP_TEMPLATE {
+protocol bgp 'NBR-{{.Name}}' from {{bgpTemplateName .IPFamily}} {
 	interface "{{.Interface}}";
 	local port {{.LocalPort}} as {{.LocalASN}};
 	neighbor {{.Address}} port {{.RemotePort}} as {{.RemoteASN}};
