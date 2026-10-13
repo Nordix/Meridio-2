@@ -202,12 +202,12 @@ var _ = Describe("Traffic Exclusion", Label("ipv4"), Serial, Ordered, func() {
 			g.Expect(out).To(Equal("True"), "target Deployment %s should be Available", targetApp)
 		}).WithTimeout(120 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
-		By("waiting for the DistributionGroup to be Ready")
+		By("waiting for the DistributionGroup to be Available")
 		Eventually(func(g Gomega) {
 			out, err := utils.Run(exec.Command("kubectl", "get", "distg", dgName, "-n", namespace,
-				"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}"))
+				"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}"))
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(Equal("True"), "%s should be Ready", dgName)
+			g.Expect(out).To(Equal("True"), "%s should be Available", dgName)
 		}).WithTimeout(120 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
 		// Always restore full readiness so later specs see a healthy suite,

@@ -73,12 +73,12 @@ var _ = Describe("Any Port Conversion", Label("ipv4"), Serial, Ordered, func() {
 		Eventually(func() error { return e2eutils.Ping(vip) }).
 			WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
-		By("waiting for the DistributionGroup to be Ready")
+		By("waiting for the DistributionGroup to be Available")
 		Eventually(func(g Gomega) {
 			out, err := utils.Run(exec.Command("kubectl", "get", "distg", dgName, "-n", namespace,
-				"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}"))
+				"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}"))
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(Equal("True"), "%s should be Ready", dgName)
+			g.Expect(out).To(Equal("True"), "%s should be Available", dgName)
 		}).WithTimeout(120 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
 		// Always restore the baseline destinationPorts so later specs see the

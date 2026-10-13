@@ -222,7 +222,7 @@ failures more consistently than retrying the test itself.
 
 `test-openshift-crc` runs the `OpenShift CRC` Ginkgo suite (`--focus="OpenShift CRC"`), covering:
 - Gateway Accepted/Programmed, status.addresses (dual-stack VIPs), LB Pods deployed
-- DistributionGroup Ready, target Pods Running, ENC Ready, LB connectivity readiness gates
+- DistributionGroup Available, target Pods Running, ENC Ready, LB connectivity readiness gates
 - ICMP reachability on both VIPs
 - TCP and UDP load balancing across both target pods, for both IPv4 and IPv6
 

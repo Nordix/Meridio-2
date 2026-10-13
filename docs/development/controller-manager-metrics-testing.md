@@ -13,7 +13,7 @@ The controller-manager exposes these custom metrics (all prefixed by
 | --- | --- | --- |
 | `<prefix>_gateway_count` | (none) | Number of Gateways with `Accepted=True` managed by this controller. |
 | `<prefix>_gateway_programmed` | `gateway`, `namespace` | `Programmed` status condition (0/1) per Gateway destined for this controller by its GatewayClass (`spec.gatewayClassName` → `GatewayClass.spec.controllerName`), independent of `Accepted`. |
-| `<prefix>_distributiongroup_ready` | `dg`, `namespace` | DistributionGroup `Ready` status condition (0/1). DG-wide, no Gateway dimension. |
+| `<prefix>_distributiongroup_available` | `dg`, `namespace` | DistributionGroup `Available` status condition (0/1). DG-wide, no Gateway dimension. |
 | `<prefix>_distributiongroup_endpoints` | `gateway`, `gateway_namespace`, `dg`, `namespace` | Current endpoint count for the DG under a given Gateway. |
 | `<prefix>_distributiongroup_max_endpoints` | `gateway`, `gateway_namespace`, `dg`, `namespace` | Upper bound on endpoint count per the DG's distribution strategy (Maglev capacity; `+Inf` for strategies without a bounded capacity). |
 
@@ -202,14 +202,14 @@ EOF
 After this, expect `gateway_count 1`, `gateway_programmed{gateway="sllb-sample",...} 1`,
 and both DGs' `endpoints`/`max_endpoints` series now labeled with
 `gateway="sllb-sample", gateway_namespace="default"` (the referenced-and-accepted
-Gateway branch of the union), with `endpoints 0` and `ready 0` until targets
+Gateway branch of the union), with `endpoints 0` and `available 0` until targets
 exist.
 
 > Creating an accepted Gateway triggers LB Deployment creation from the template.
 > On a bare cluster its Pods will not run (missing image/NADs) — this is harmless
 > for metrics testing.
 
-### 2. Target Pods to populate `endpoints` and `ready`
+### 2. Target Pods to populate `endpoints` and `available`
 
 The DistributionGroup reconciler discovers endpoints by reading each matching
 Pod's `k8s.v1.cni.cncf.io/network-status` annotation and CIDR-matching the
@@ -267,7 +267,7 @@ Once the Pods are `Running`, expect (for each DG sharing the selector):
 
 ```
 meridio_2_distributiongroup_endpoints{dg="distributiongroup-sample",gateway="sllb-sample",gateway_namespace="default",namespace="default"} 2
-meridio_2_distributiongroup_ready{dg="distributiongroup-sample",namespace="default"} 1
+meridio_2_distributiongroup_available{dg="distributiongroup-sample",namespace="default"} 1
 ```
 
 Watch it live:
@@ -287,7 +287,7 @@ Observable with the setup above (no data plane needed):
   becomes `1` once the reconciler sets `Programmed=True`. Note `Programmed` is set
   by the Gateway reconciler based on observing the LB Deployment, not on its Pods
   actually running — so it can read `1` locally even though no data plane exists.
-- `distributiongroup_ready`, `distributiongroup_endpoints`, and per-Gateway
+- `distributiongroup_available`, `distributiongroup_endpoints`, and per-Gateway
   attribution, via fake-annotation target Pods.
 - `distributiongroup_max_endpoints` per-DG capacity from `spec.maglev.maxEndpoints`.
 - Both forms of the `gateway`/`gateway_namespace` label on the DG's `endpoints`

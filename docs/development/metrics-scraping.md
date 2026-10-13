@@ -141,7 +141,7 @@ It exposes these custom metrics (all pull-based from the informer cache):
   controller.
 - `meridio_2_gateway_programmed{gateway,namespace}` — `Programmed` condition (0/1)
   per Gateway destined for this controller by its GatewayClass.
-- `meridio_2_distributiongroup_ready{dg,namespace}` — DG `Ready` condition (0/1).
+- `meridio_2_distributiongroup_available{dg,namespace}` — DG `Available` condition (0/1).
 - `meridio_2_distributiongroup_endpoints{gateway,gateway_namespace,dg,namespace}` —
   current endpoint count per DG per Gateway.
 - `meridio_2_distributiongroup_max_endpoints{gateway,gateway_namespace,dg,namespace}`
@@ -221,7 +221,7 @@ authorized to GET `/metrics` (see Troubleshooting on 401/403).
 Verify via the [shared setup](#verify-a-scrape-prometheus-port-9090) (port-forward
 `9090`, check `/targets` is UP, query). Expected series match the deployed topology
 (for the `separate-appnetwork` suite: `gateway_count 2`; `gateway_programmed` = 1 for
-each of `gw-a1`/`gw-a2`; `distributiongroup_ready`, `distributiongroup_endpoints`, and
+each of `gw-a1`/`gw-a2`; `distributiongroup_available`, `distributiongroup_endpoints`, and
 `distributiongroup_max_endpoints` for each DG).
 
 > **Label note:** the collectors emit a `namespace` label, but the scrape target

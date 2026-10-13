@@ -23,11 +23,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestBuildReadyCondition_WithEndpoints(t *testing.T) {
-	cond := buildReadyCondition(true, 5, "")
+func TestBuildAvailableCondition_WithEndpoints(t *testing.T) {
+	cond := buildAvailableCondition(true, 5, "")
 
-	if cond.Type != conditionTypeReady {
-		t.Errorf("Expected type %q, got %q", conditionTypeReady, cond.Type)
+	if cond.Type != conditionTypeAvailable {
+		t.Errorf("Expected type %q, got %q", conditionTypeAvailable, cond.Type)
 	}
 	if cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected status True, got %v", cond.Status)
@@ -40,8 +40,8 @@ func TestBuildReadyCondition_WithEndpoints(t *testing.T) {
 	}
 }
 
-func TestBuildReadyCondition_NoEndpoints(t *testing.T) {
-	cond := buildReadyCondition(false, 3, "")
+func TestBuildAvailableCondition_NoEndpoints(t *testing.T) {
+	cond := buildAvailableCondition(false, 3, "")
 
 	if cond.Status != metav1.ConditionFalse {
 		t.Errorf("Expected status False, got %v", cond.Status)
@@ -54,9 +54,9 @@ func TestBuildReadyCondition_NoEndpoints(t *testing.T) {
 	}
 }
 
-func TestBuildReadyCondition_NoEndpointsWithCustomMessage(t *testing.T) {
+func TestBuildAvailableCondition_NoEndpointsWithCustomMessage(t *testing.T) {
 	customMsg := "Custom reason for no endpoints"
-	cond := buildReadyCondition(false, 3, customMsg)
+	cond := buildAvailableCondition(false, 3, customMsg)
 
 	if cond.Status != metav1.ConditionFalse {
 		t.Errorf("Expected status False, got %v", cond.Status)
@@ -69,11 +69,11 @@ func TestBuildReadyCondition_NoEndpointsWithCustomMessage(t *testing.T) {
 	}
 }
 
-func TestBuildReadyCondition_MultipleGateways(t *testing.T) {
-	cond := buildReadyCondition(false, 3, messageMultipleGateways)
+func TestBuildAvailableCondition_MultipleGateways(t *testing.T) {
+	cond := buildAvailableCondition(false, 3, messageMultipleGateways)
 
-	if cond.Type != conditionTypeReady {
-		t.Errorf("Expected type %q, got %q", conditionTypeReady, cond.Type)
+	if cond.Type != conditionTypeAvailable {
+		t.Errorf("Expected type %q, got %q", conditionTypeAvailable, cond.Type)
 	}
 	if cond.Status != metav1.ConditionFalse {
 		t.Errorf("Expected status False, got %v", cond.Status)
