@@ -428,6 +428,29 @@ test-bgp: ## Run BGP VIP advertisement tests.
 undeploy-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
 
 ################################################################################
+##@ Suite: non-default-bgp
+################################################################################
+
+# Verifies the LB router accepts non-default/specific BGP routes (not just the
+# default route) and installs them into the kernel breakout table. Reuses the
+# ipv4-simple topology; the simulated DCGW (vpn-gateway) announces specific
+# blackhole prefixes from hack/vpn-gateway/bird-filler-net.conf alongside the
+# default route (see hack/vpn-gateway/bird-gw.conf).
+
+.PHONY: non-default-bgp
+non-default-bgp: deploy-non-default-bgp test-non-default-bgp ## Deploy and test non-default BGP routes suite.
+
+.PHONY: deploy-non-default-bgp
+deploy-non-default-bgp: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+
+.PHONY: test-non-default-bgp
+test-non-default-bgp: ## Run non-default BGP route acceptance tests.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Non-Default BGP Routes" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-non-default-bgp
+undeploy-non-default-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+
+################################################################################
 ##@ Suite: traffic-exclusion
 ################################################################################
 
