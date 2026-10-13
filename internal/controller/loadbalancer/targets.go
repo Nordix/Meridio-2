@@ -86,9 +86,12 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	newTargets := make(map[int][]string)
 	for _, lbeps := range ownedSlices {
 		for _, endpoint := range lbeps.Spec.Endpoints {
-			if !endpoint.Ready {
-				continue
-			}
+			// TODO: Make this configurable. Default keeps NotReady endpoints in
+			// the table; withdrawing recomputes the Maglev ring and redistributes
+			// connections across all other endpoints.
+			// if !endpoint.Ready {
+			// 	continue
+			// }
 			if endpoint.Identifier == nil {
 				logr.V(1).Info("Endpoint missing identifier", "target", endpoint.Target.Name, "addresses", endpoint.Addresses)
 				continue

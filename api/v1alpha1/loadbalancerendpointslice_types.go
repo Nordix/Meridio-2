@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -80,10 +81,30 @@ type LoadBalancerEndpoint struct {
 	// +optional
 	Identifier *int32 `json:"identifier,omitempty"`
 
-	// ready indicates whether this endpoint is ready to receive traffic.
-	// The DG controller mirrors Pod readiness; the LB controller decides
-	// activation policy based on this field.
-	Ready bool `json:"ready"`
+	// conditions describes the current state of this endpoint, using the same
+	// semantics as the native EndpointSlice. Notably, a terminating endpoint may
+	// still be serving — a distinction a single readiness boolean cannot express.
+	// The DistributionGroup controller derives these from the backing Pod; the
+	// LoadBalancer controller decides activation policy from them.
+	//
+	// Conditions apply to the endpoint as a whole, including both entries of a
+	// dual-stack endpoint: one endpoint occupies a single distribution slot and
+	// its readiness originates from the Pod, which is ready or not irrespective
+	// of IP family.
+	//
+	// Current LoadBalancer policy: an endpoint is kept as a distribution target
+	// for as long as it is present in this slice, regardless of these conditions.
+	// Withdrawing a target recomputes the distribution (e.g. the Maglev ring) and
+	// redistributes connections across all remaining endpoints, so a readiness
+	// flap — which may be caused by something unrelated to the service endpoint,
+	// such as an auxiliary container restarting — is not sufficient reason to
+	// disturb every other endpoint. An endpoint is withdrawn only when it leaves
+	// this slice, i.e. when its Pod is gone or no longer matches.
+	//
+	// Note: publishNotReadyAddresses, referenced by the inherited field
+	// documentation below, is a core Service field with no equivalent here.
+	// +optional
+	Conditions discoveryv1.EndpointConditions `json:"conditions,omitzero"`
 }
 
 // EndpointTarget identifies the Pod backing an endpoint.

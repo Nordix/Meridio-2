@@ -606,7 +606,15 @@ func TestReconcile_PodNotReady_EndpointNotReady(t *testing.T) {
 	slices := tcListSlices(t, c)
 	require.Len(t, slices, 1)
 	require.Len(t, slices[0].Spec.Endpoints, 1)
-	assert.False(t, slices[0].Spec.Endpoints[0].Ready)
+	// Not ready and not terminating: ready=false, serving=false, terminating=false.
+	// The endpoint is still produced — readiness no longer withdraws it.
+	conds := slices[0].Spec.Endpoints[0].Conditions
+	require.NotNil(t, conds.Ready)
+	require.NotNil(t, conds.Serving)
+	require.NotNil(t, conds.Terminating)
+	assert.False(t, *conds.Ready)
+	assert.False(t, *conds.Serving)
+	assert.False(t, *conds.Terminating)
 }
 
 func TestReconcile_RouteReferencesWrongGateway_NoEndpoints(t *testing.T) {

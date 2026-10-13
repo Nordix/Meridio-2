@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -494,13 +495,13 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 				{
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(1)),
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 			})
 
@@ -529,7 +530,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: nil, // no identifier
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 			})
 
@@ -544,13 +545,18 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(mockInstance.targets).To(BeEmpty())
 		})
 
-		It("should skip non-ready endpoints", func() {
+		It("should keep NotReady endpoints as targets (readiness does not withdraw)", func() {
 			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
 				{
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      false, // not ready
+					// Draining: terminating but its probe still passes, so it is
+					// NotReady yet still Serving. Previously withdrawn the instant
+					// termination began; now kept so the endpoint stays in the
+					// Maglev table and can finish its in-flight connections without
+					// disturbing the other endpoints' distribution.
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(false), Serving: ptr.To(true), Terminating: ptr.To(true)},
 				},
 			})
 
@@ -560,9 +566,10 @@ var _ = Describe("LoadBalancer Controller", func() {
 			err := controller.reconcileTargets(ctx, distGroup)
 			Expect(err).ToNot(HaveOccurred())
 
-			// No targets should be activated
+			// The NotReady (but Serving) endpoint must still be programmed.
 			mockInstance := mockNfqlb.instances[distGroup.Name]
-			Expect(mockInstance.targets).To(BeEmpty())
+			Expect(mockInstance.targets).To(HaveKey(0))
+			Expect(mockInstance.targets[0]).To(Equal([]string{"10.0.0.1"}))
 		})
 
 		It("should deactivate removed targets with correct index", func() {
@@ -594,7 +601,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 						{IP: "2001:db8:100::10", Family: meridio2v1alpha1.IPv6},
 					},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 			})
 
@@ -617,7 +624,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 			})
 
@@ -627,7 +634,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(1)),
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
 				s.Name = "other-gw-eps"
@@ -655,7 +662,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
 				s.Name = "slice-a"
@@ -666,7 +673,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.99", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 				},
 			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
 				s.Name = "slice-b"
@@ -711,7 +718,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 				Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 				Identifier: ptr.To(int32(0)),
-				Ready:      true,
+				Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 			}})
 
 			l34route := &meridio2v1alpha1.L34Route{
@@ -788,7 +795,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 				Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 				Identifier: ptr.To(int32(0)),
-				Ready:      true,
+				Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true), Serving: ptr.To(true), Terminating: ptr.To(false)},
 			}})
 
 			l34route1 := &meridio2v1alpha1.L34Route{

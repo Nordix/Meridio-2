@@ -26,7 +26,7 @@ import (
 
 const testIP = "192.168.100.10"
 
-func TestIsPodReady_Ready(t *testing.T) {
+func TestEndpointConditions_Ready(t *testing.T) {
 	pod := &corev1.Pod{
 		Status: corev1.PodStatus{
 			Conditions: []corev1.PodCondition{
@@ -34,12 +34,14 @@ func TestIsPodReady_Ready(t *testing.T) {
 			},
 		},
 	}
-	if !isPodReady(pod) {
-		t.Error("Expected Pod to be ready")
+	c := endpointConditions(pod)
+	if !*c.Ready || !*c.Serving || *c.Terminating {
+		t.Errorf("Expected ready+serving, not terminating; got ready=%v serving=%v terminating=%v",
+			*c.Ready, *c.Serving, *c.Terminating)
 	}
 }
 
-func TestIsPodReady_NotReady(t *testing.T) {
+func TestEndpointConditions_NotReady(t *testing.T) {
 	pod := &corev1.Pod{
 		Status: corev1.PodStatus{
 			Conditions: []corev1.PodCondition{
@@ -47,36 +49,67 @@ func TestIsPodReady_NotReady(t *testing.T) {
 			},
 		},
 	}
-	if isPodReady(pod) {
-		t.Error("Expected Pod to not be ready")
+	c := endpointConditions(pod)
+	if *c.Ready || *c.Serving || *c.Terminating {
+		t.Errorf("Expected all false; got ready=%v serving=%v terminating=%v",
+			*c.Ready, *c.Serving, *c.Terminating)
 	}
 }
 
-func TestIsPodReady_NoCondition(t *testing.T) {
+func TestEndpointConditions_NoCondition(t *testing.T) {
 	pod := &corev1.Pod{
-		Status: corev1.PodStatus{
-			Conditions: []corev1.PodCondition{},
-		},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{}},
 	}
-	if isPodReady(pod) {
-		t.Error("Expected Pod without Ready condition to not be ready")
+	c := endpointConditions(pod)
+	if *c.Ready || *c.Serving || *c.Terminating {
+		t.Errorf("Expected all false for Pod without Ready condition; got ready=%v serving=%v terminating=%v",
+			*c.Ready, *c.Serving, *c.Terminating)
 	}
 }
 
-func TestIsPodReady_BeingDeleted(t *testing.T) {
+// TestEndpointConditions_TerminatingButServing is the case a single Ready bool
+// could not express: a Pod marked for deletion whose readiness probe still
+// passes. It must report serving=true and terminating=true with ready=false, so
+// the data path can keep draining it rather than withdrawing it at termination
+// start.
+func TestEndpointConditions_TerminatingButServing(t *testing.T) {
 	now := metav1.Now()
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			DeletionTimestamp: &now,
-		},
+		ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
 		Status: corev1.PodStatus{
 			Conditions: []corev1.PodCondition{
 				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
 			},
 		},
 	}
-	if isPodReady(pod) {
-		t.Error("Expected Pod being deleted to not be ready")
+	c := endpointConditions(pod)
+	if *c.Ready {
+		t.Error("terminating endpoint must not be ready")
+	}
+	if !*c.Serving {
+		t.Error("terminating endpoint whose probe passes must still be serving")
+	}
+	if !*c.Terminating {
+		t.Error("endpoint with a deletion timestamp must be terminating")
+	}
+}
+
+func TestEndpointConditions_TerminatingAndNotServing(t *testing.T) {
+	now := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+			},
+		},
+	}
+	c := endpointConditions(pod)
+	if *c.Ready || *c.Serving {
+		t.Errorf("Expected not ready, not serving; got ready=%v serving=%v", *c.Ready, *c.Serving)
+	}
+	if !*c.Terminating {
+		t.Error("endpoint with a deletion timestamp must be terminating")
 	}
 }
 

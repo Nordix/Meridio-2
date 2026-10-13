@@ -129,7 +129,7 @@ LoadBalancerEndpointSlice (owned by DistributionGroup)
 ├── spec.endpoints[].target → Pod (name + UID)
 ├── spec.endpoints[].addresses[] → IP + family
 ├── spec.endpoints[].identifier → Maglev slot index
-└── spec.endpoints[].ready → target readiness
+└── spec.endpoints[].conditions → endpoint ready/serving/terminating (not consulted for activation; see "Readiness and distribution")
 
 NFQLB Instance (in-memory, per DistributionGroup)
 ├── shared memory: /dev/shm/<instance-name>
@@ -332,6 +332,50 @@ DG-3 (maxTargets=32):  offset=5132, fwmarks 5132–5163
 If DG-2 is deleted: offset range 5032–5131 becomes available
 New DG-4 (maxTargets=50): offset=5032, fwmarks 5032–5081 (reuses freed space)
 ```
+
+## Readiness and distribution
+
+An endpoint is kept as an NFQLB target for as long as it is present in a
+`LoadBalancerEndpointSlice`. The controller does **not** consult the endpoint's
+`conditions` (ready / serving / terminating) when deciding what to program — a
+NotReady or terminating endpoint stays in the distribution. An endpoint is
+withdrawn only when it leaves the slice: its Pod is deleted and terminated, or it
+no longer matches the DistributionGroup selector.
+
+**Why readiness does not withdraw a target.** Withdrawing a target makes nfqlb
+recompute the Maglev ring, which redistributes established connections across
+*every remaining* endpoint. Readiness is a poor trigger for that cost:
+
+- It is an aggregate over all of a Pod's containers, so it can drop for reasons
+  unrelated to the served endpoint — e.g. an auxiliary/sidecar container
+  restarting while the service endpoint never failed.
+- A terminating Pod reports NotReady immediately. Withdrawing on NotReady
+  therefore removed a draining endpoint at termination *start*, cutting its
+  graceful-close window and risking broken in-flight connections.
+
+So a readiness flap on one endpoint should not disturb the distribution of all
+the others. The default is to keep the endpoint in the table and let it drain or
+recover in place; a genuine removal (Pod gone) is the only event that recomputes
+the ring, and there recomputation is correct because the backend is actually
+unreachable.
+
+This also matches Meridio-1, which ignores Pod readiness for distribution
+altogether.
+
+**Conditions are still published and consumed where it is safe.** The
+DistributionGroup controller derives all three conditions
+([distributiongroup.md](distributiongroup.md#endpoint-conditions)) and the LB
+reads VIP/readiness signaling from target *activation* success, not from endpoint
+readiness. The `serving`/`terminating` conditions are carried in the contract but
+not yet acted on here.
+
+> **Note / roadmap.** This keep-in-table behaviour is currently a fixed global
+> default (see the `TODO` in `internal/controller/loadbalancer/targets.go`). Two
+> follow-ups are planned: making the policy selectable — ideally per
+> DistributionGroup — so some groups can withdraw on NotReady while others keep;
+> and consuming `serving`/`terminating` to implement a real drain window (keep
+> established flows, stop new ones). Until then, withdraw-on-NotReady is not
+> available.
 
 ## Target Management
 

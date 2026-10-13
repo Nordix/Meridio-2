@@ -39,17 +39,18 @@ import (
 // BGP VIP advertisement lifecycle, verified from the simulated DCGW (VPN
 // gateway) side. Covers:
 //   - VIP advertised to the DCGW over BGP with LB Pod next-hops (ECMP)
-//   - VIP withdrawn when the app is scaled to 0 replicas
+//   - VIP withdrawn when the app is scaled to 0 replicas (pods gone)
 //   - VIP re-advertised when replicas are restored
-//   - VIP withdrawn when all backing pods become NotReady (readiness probe fails
-//     on the running pods — no rollout)
-//   - VIP re-advertised when pods become Ready again
+//   - VIP stays advertised when all backing pods become NotReady (readiness
+//     probe fails on the running pods — no rollout), because readiness no longer
+//     withdraws targets
+//   - VIP still advertised after pods become Ready again
 //
-// The LB writes a per-DG readiness file (lb-ready-<dg>) only while at least one
-// target endpoint is Ready; the router sidecar gates BGP VIP advertisement on
-// that file. So removing all ready targets (via replicas=0 or an all-pods-
-// NotReady state) withdraws the VIP from the DCGW, and restoring readiness
-// re-advertises it.
+// The LB writes a per-DG readiness file (lb-ready-<dg>) while it has at least one
+// programmed target, and the router sidecar gates BGP VIP advertisement on that
+// file. Under the keep-in-table default the LB keeps NotReady endpoints as
+// targets, so an all-pods-NotReady state does NOT remove lb-ready and the VIP
+// stays up — only the pods actually going away (replicas=0) withdraws it.
 //
 // Pinned to the ipv4-simple topology (reused, not deployed here — same topology
 // used by the Low MTU and Resiliency suites). These specs are disruptive and
@@ -156,12 +157,14 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 			Should(Succeed())
 	})
 
-	It("withdraws VIP from DCGW when all backing pods become NotReady", func() {
-		// Flip the running pods to NotReady in place by removing the readiness
-		// file the probe checks (see targets.yaml). This simulates the app's
-		// readiness probe starting to fail at runtime — no rollout, same pods.
-		// All endpoints go Ready=false, so the LB removes the lb-ready file and
-		// the router withdraws the VIP.
+	It("keeps the VIP advertised when all backing pods become NotReady", func() {
+		// Readiness no longer withdraws targets: the LB keeps NotReady endpoints
+		// in the Maglev table (keep-in-table default), so the per-DG lb-ready
+		// file persists and the router keeps advertising the VIP. Flip the running
+		// pods to NotReady in place by removing the readiness file the probe
+		// checks (see targets.yaml) — no rollout, same pods — and assert the route
+		// stays up. The VIP is withdrawn only when the pods actually go away
+		// (covered by the replicas=0 spec above).
 		By("removing /tmp/ready on all target pods to fail their readiness probe")
 		Expect(bgpExecAllTargets(clientset, namespace, targetLabel, "rm", "-f", "/tmp/ready")).To(Succeed())
 
@@ -169,17 +172,19 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 		Eventually(func() int {
 			return bgpCountReadyTargets(clientset, namespace, targetLabel)
 		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeZero())
+		// Confirm they are still Running (NotReady, not terminated), so this is a
+		// pure readiness transition rather than a deletion.
+		Expect(bgpCountRunningTargets(clientset, namespace, targetLabel)).To(Equal(targetReplicas))
 
-		By("verifying the VIP is withdrawn from the DCGW")
-		Eventually(func(g Gomega) {
+		By("verifying the VIP remains advertised to the DCGW despite all pods being NotReady")
+		Consistently(func(g Gomega) {
 			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
 			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
-			g.Expect(ok).To(BeFalse(), "%s should be withdrawn when all pods are NotReady", prefix)
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
+			g.Expect(ok).To(BeTrue(), "%s should stay advertised while NotReady pods remain in the table", prefix)
+		}).WithTimeout(30 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
 	})
 
-	It("re-advertises VIP to DCGW when pods become Ready again", func() {
+	It("still has the VIP advertised after pods become Ready again", func() {
 		By("re-creating /tmp/ready on all target pods to pass their readiness probe")
 		Expect(bgpExecAllTargets(clientset, namespace, targetLabel, "touch", "/tmp/ready")).To(Succeed())
 
@@ -188,20 +193,20 @@ var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, fu
 			return bgpCountReadyTargets(clientset, namespace, targetLabel)
 		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
 
-		By("verifying the VIP is re-advertised to the DCGW")
+		By("verifying the VIP is still advertised to the DCGW")
 		Eventually(func(g Gomega) {
 			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
 			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
-			g.Expect(ok).To(BeTrue(), "%s should be re-advertised once pods are Ready", prefix)
+			g.Expect(ok).To(BeTrue(), "%s should remain advertised once pods are Ready again", prefix)
 		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
 			Should(Succeed())
 
-		By("verifying ECMP next-hops are present again on the DCGW")
+		By("verifying ECMP next-hops are present on the DCGW")
 		Eventually(func(g Gomega) {
 			nextHops, err := e2eutils.VPNGatewayRouteNextHops(prefix)
 			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW next-hops for %s failed", prefix)
 			g.Expect(len(nextHops)).To(BeNumerically(">=", 1),
-				"expected at least one ECMP next-hop for %s after recovery", prefix)
+				"expected at least one ECMP next-hop for %s", prefix)
 		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
 			Should(Succeed())
 	})

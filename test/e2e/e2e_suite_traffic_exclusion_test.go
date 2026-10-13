@@ -62,7 +62,17 @@ import (
 // unconditionally restores readiness and the baseline replica count, so it
 // neither depends on nor perturbs the other specs. Serial ensures it does not
 // run concurrently with the low-MTU traffic specs.
-var _ = Describe("Traffic Exclusion", Label("ipv4"), Serial, Ordered, func() {
+// SKIPPED (Pending): this suite asserts the old withdraw-on-NotReady behaviour,
+// which is no longer the default. The LoadBalancer now keeps NotReady endpoints
+// in the Maglev table (see the "Traffic Inclusion" suite), so these exclusion
+// assertions would fail. It is retained, not deleted, because withdraw-on-NotReady
+// is slated to return as an opt-in per-DistributionGroup policy; re-enable (and
+// update the endpoint checkpoint to read spec.endpoints[].conditions) once that
+// policy exists and can be selected for this suite.
+//
+// PDescribe marks every spec below Pending, so the suite compiles and is listed
+// but does not run.
+var _ = PDescribe("Traffic Exclusion", Label("ipv4"), Serial, Ordered, func() {
 	const (
 		namespace = "e2e-ipv4-simple"
 		targetApp = "target-m"

@@ -59,7 +59,7 @@ LoadBalancerEndpointSlice (owned by DistributionGroup via ownerReference)
 ├── spec.endpoints[].target → Pod (name + UID)
 ├── spec.endpoints[].addresses[] → IP + family (dual-stack: up to 2 entries)
 ├── spec.endpoints[].identifier → Maglev slot index (optional)
-└── spec.endpoints[].ready → Pod readiness state
+└── spec.endpoints[].conditions → endpoint ready/serving/terminating (discovery/v1 semantics)
 ```
 
 **Ownership model:**
@@ -77,7 +77,8 @@ LoadBalancerEndpointSlice (owned by DistributionGroup via ownerReference)
 - Apply `spec.selector` label matching
 - Filter to `Running` phase only (excludes Pending/Succeeded/Failed)
 - Early exit if no Pods → delete all owned slices
-- Note: Pod Readiness is checked later when creating endpoints
+- Note: Pod conditions are derived later when creating endpoints (a NotReady or
+  terminating Pod still produces an endpoint; see "Endpoint conditions" below)
 
 ### 3. Discover Referenced Gateways
 **Direct references:**
@@ -167,7 +168,7 @@ The LoadBalancer controller uses **dynamic ID offsets per DistributionGroup** to
 
 ### 9. Build LoadBalancerEndpointSlices
 **Per Gateway:**
-- Build endpoint entries: Pod target (name + UID), addresses (dual-stack), identifier (Maglev), ready state (based on Pod readiness)
+- Build endpoint entries: Pod target (name + UID), addresses (dual-stack), identifier (Maglev), and conditions (ready/serving/terminating) derived from the Pod
 - Preserve existing slice structure (endpoints stay in their original slice when possible)
 - Fill remaining capacity in existing slices with new endpoints
 - Compact: move endpoints from later slices into earlier slices with free capacity to avoid fragmentation after scale-in
@@ -204,11 +205,35 @@ retain all their endpoints — the controller never truncates or splits an overs
 gradually shrink as Pods scale down naturally. This avoids unnecessary endpoint churn on a
 configuration change.
 
-**Pod readiness logic:**
-- Checks `PodReady` condition (all containers ready + readiness probes pass)
-- Returns false if Pod is being deleted (`DeletionTimestamp != nil`)
-- Matches Kubernetes core EndpointSlice controller behavior
-- Ensures traffic only goes to fully ready Pods
+**Endpoint conditions:**
+Each endpoint carries `conditions` with the same shape and meaning as the native
+EndpointSlice (`discovery/v1.EndpointConditions`), derived from the backing Pod:
+
+| Condition     | Derivation                                            |
+|---------------|-------------------------------------------------------|
+| `terminating` | Pod has a `DeletionTimestamp`                         |
+| `serving`     | Pod's `PodReady` condition is `True`, regardless of termination |
+| `ready`       | `serving && !terminating`                             |
+
+Keeping `serving` separate from `ready` lets the data path represent a
+*terminating but still serving* endpoint — a draining Pod that should finish its
+in-flight connections. A single readiness boolean could not express this: it went
+false the instant a Pod was marked for deletion, so a terminating Pod disappeared
+at termination start, before it could complete a graceful close handshake.
+
+Pod *phase* is not a condition. `listMatchingPods` admits only `Running` Pods, so
+a Pending, Succeeded or Failed Pod produces no endpoint at all — absence, not a
+condition, is how those states reach consumers. A NotReady or terminating
+(still-Running) Pod *does* get an endpoint; only its conditions reflect the state.
+
+**Readiness does not withdraw endpoints (distribution impact):**
+Producing an endpoint with `ready=false` does **not** remove it from the data
+path. The LoadBalancer controller keeps every endpoint present in a slice as an
+NFQLB target regardless of its conditions — see
+[loadbalancer.md](loadbalancer.md#readiness-and-distribution). The DG controller's
+job is to report the state faithfully; the activation policy lives in the
+consumer.
+
 
 ### 10. Reconcile LoadBalancerEndpointSlices
 - Create new slices (with ownerReference set)

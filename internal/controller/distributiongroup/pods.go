@@ -24,21 +24,51 @@ import (
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// isPodReady returns true if the Pod is ready to serve traffic
-// Matches Kubernetes EndpointSlice controller behavior:
-// - Checks PodReady condition (not just Phase)
-// - Returns false if Pod is being deleted
-func isPodReady(pod *corev1.Pod) bool {
-	// Pods being deleted should not receive traffic
-	if pod.DeletionTimestamp != nil {
-		return false
-	}
+// endpointConditions derives an endpoint's conditions from its backing Pod,
+// mirroring how the Kubernetes EndpointSlice controller projects Pod state:
+//
+//   - terminating: the Pod has a deletion timestamp
+//   - serving:     the Pod's Ready condition is True, regardless of termination
+//   - ready:       serving and not terminating
+//
+// Keeping serving separate from ready is what lets a draining endpoint be
+// represented as still able to serve. Collapsing both into a single boolean made
+// a terminating Pod indistinguishable from an unhealthy one, so it left the data
+// path the instant termination began — before the application could complete a
+// graceful close handshake.
+//
+// Pod phase is deliberately not represented here: listMatchingPods only admits
+// Running Pods, so a Pending, Succeeded or Failed Pod has no endpoint at all.
+// Absence, rather than a condition, is how those states reach consumers.
+func endpointConditions(pod *corev1.Pod) discoveryv1.EndpointConditions {
+	serving := isPodReadyConditionTrue(pod)
+	terminating := pod.DeletionTimestamp != nil
+	ready := serving && !terminating
 
-	// Check PodReady condition (all containers ready + readiness probes pass)
+	return discoveryv1.EndpointConditions{
+		Ready:       &ready,
+		Serving:     &serving,
+		Terminating: &terminating,
+	}
+}
+
+// isPodReadyConditionTrue reports whether the Pod's Ready condition is True.
+// A missing or Unknown condition counts as not ready.
+//
+// Unlike the endpoint-level conditions above, this ignores termination: a
+// terminating Pod whose readiness probe still passes is Pod-ready. Mirrors
+// k8s.io/kubernetes/pkg/api/v1/pod.IsPodReady, which cannot be imported here
+// because k8s.io/kubernetes is not a dependency.
+//
+// Note this is the aggregate Pod condition, so any container dragging it down —
+// including one unrelated to the served endpoint, such as a restarting
+// auxiliary container — makes the endpoint not serving.
+func isPodReadyConditionTrue(pod *corev1.Pod) bool {
 	for _, condition := range pod.Status.Conditions {
 		if condition.Type == corev1.PodReady {
 			return condition.Status == corev1.ConditionTrue

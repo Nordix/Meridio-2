@@ -25,8 +25,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -86,7 +88,11 @@ func dcNewOwnedSlice(
 		endpoints[i] = meridio2v1alpha1.LoadBalancerEndpoint{
 			Target:    meridio2v1alpha1.EndpointTarget{Name: podName, UID: podName},
 			Addresses: []meridio2v1alpha1.EndpointAddress{{IP: fmt.Sprintf("10.0.0.%d", i+1), Family: meridio2v1alpha1.IPv4}},
-			Ready:     true,
+			Conditions: discoveryv1.EndpointConditions{
+				Ready:       ptr.To(true),
+				Serving:     ptr.To(true),
+				Terminating: ptr.To(false),
+			},
 		}
 	}
 	slice := &meridio2v1alpha1.LoadBalancerEndpointSlice{
