@@ -30,6 +30,25 @@ const (
 	testRulePriority = 100
 )
 
+// recorderMock implements ConfigErrorRecorder, tallying increments per reason so tests can assert
+// that a failed netlink op is counted under the right label.
+type recorderMock struct {
+	counts map[string]int
+}
+
+func newRecorderMock() *recorderMock {
+	return &recorderMock{counts: make(map[string]int)}
+}
+
+// Inc is nil-receiver safe, mirroring router.ConfigErrors.Inc, so a typed-nil recorderMock models
+// production's "metrics disabled" recorder faithfully.
+func (r *recorderMock) Inc(reason string) {
+	if r == nil {
+		return
+	}
+	r.counts[reason]++
+}
+
 // netlinkMock implements abstractNetlink for testing.
 type netlinkMock struct {
 	rules           []netlink.Rule
@@ -117,7 +136,7 @@ func TestSetupBlackholeRoutes(t *testing.T) {
 	m := &netlinkMock{}
 	blackholeTableID := testTableID + 1
 
-	err := setupBlackholeRoutes(m, blackholeTableID)
+	err := setupBlackholeRoutes(m, blackholeTableID, nil)
 	assert.NoError(t, err)
 
 	routes := m.blackholeRoutes()
@@ -129,7 +148,7 @@ func TestSetupBlackholeRoutes(t *testing.T) {
 func TestSetupBlackholeRoutes_RouteReplaceFails(t *testing.T) {
 	m := &netlinkMock{routeReplaceErr: fmt.Errorf("EPERM")}
 
-	err := setupBlackholeRoutes(m, testTableID+1)
+	err := setupBlackholeRoutes(m, testTableID+1, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "EPERM")
 }
@@ -139,7 +158,7 @@ func TestSetupBlackholeRoutes_RouteReplaceFails(t *testing.T) {
 func TestSetPolicyRoutes_EmptyVIPs(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	assert.Empty(t, m.rulesForTable(testTableID))
@@ -151,7 +170,7 @@ func TestSetPolicyRoutes_EmptyVIPs(t *testing.T) {
 func TestSetPolicyRoutes_AddNewVIPs(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	bgpRules := m.rulesForTable(testTableID)
@@ -168,10 +187,10 @@ func TestSetPolicyRoutes_Idempotent(t *testing.T) {
 	m := &netlinkMock{}
 	vips := []string{"20.0.0.1/32"}
 
-	err := setPolicyRoutes(m, vips, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, vips, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
-	err = setPolicyRoutes(m, vips, testTableID, testRulePriority)
+	err = setPolicyRoutes(m, vips, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	// Should still have exactly 1 rule per table, not duplicated
@@ -182,12 +201,12 @@ func TestSetPolicyRoutes_Idempotent(t *testing.T) {
 func TestSetPolicyRoutes_RemoveStaleVIPs(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 	assert.Len(t, m.rulesForTable(testTableID), 2)
 
 	// Remove one VIP
-	err = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
+	err = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	bgpRules := m.rulesForTable(testTableID)
@@ -202,11 +221,11 @@ func TestSetPolicyRoutes_RemoveStaleVIPs(t *testing.T) {
 func TestSetPolicyRoutes_MixedAddRemove(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	// Remove .2, keep .1, add .3
-	err = setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.3/32"}, testTableID, testRulePriority)
+	err = setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.3/32"}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	bgpRules := m.rulesForTable(testTableID)
@@ -224,7 +243,7 @@ func TestSetPolicyRoutes_MixedAddRemove(t *testing.T) {
 func TestSetPolicyRoutes_DualStack(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "2001:db8::1/128"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "2001:db8::1/128"}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	bgpRules := m.rulesForTable(testTableID)
@@ -241,7 +260,7 @@ func TestSetPolicyRoutes_DualStack(t *testing.T) {
 func TestSetPolicyRoutes_InvalidCIDR(t *testing.T) {
 	m := &netlinkMock{}
 
-	err := setPolicyRoutes(m, []string{"not-a-cidr"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"not-a-cidr"}, testTableID, testRulePriority, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse VIP CIDR")
 }
@@ -249,7 +268,7 @@ func TestSetPolicyRoutes_InvalidCIDR(t *testing.T) {
 func TestSetPolicyRoutes_RuleListFails(t *testing.T) {
 	m := &netlinkMock{ruleListErr: fmt.Errorf("ENOMEM")}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list")
 }
@@ -257,7 +276,7 @@ func TestSetPolicyRoutes_RuleListFails(t *testing.T) {
 func TestSetPolicyRoutes_RuleAddFails_BestEffort(t *testing.T) {
 	m := &netlinkMock{ruleAddErr: fmt.Errorf("EPERM")}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority, nil)
 	assert.Error(t, err)
 	// Both BGP and blackhole adds fail, but all are attempted (best-effort)
 	assert.Contains(t, err.Error(), "EPERM")
@@ -267,12 +286,12 @@ func TestSetPolicyRoutes_RuleDelFails_BestEffort(t *testing.T) {
 	m := &netlinkMock{}
 
 	// Add two VIPs
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority, nil)
 	assert.NoError(t, err)
 
 	// Inject delete error, then remove one VIP
 	m.ruleDelErr = fmt.Errorf("EBUSY")
-	err = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
+	err = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "EBUSY")
 }
@@ -280,8 +299,82 @@ func TestSetPolicyRoutes_RuleDelFails_BestEffort(t *testing.T) {
 func TestSetPolicyRoutes_RouteReplaceFails(t *testing.T) {
 	m := &netlinkMock{routeReplaceErr: fmt.Errorf("EPERM")}
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, nil)
 	assert.Error(t, err)
 	// Fails at blackhole setup, before rule processing
 	assert.Empty(t, m.rulesForTable(testTableID))
+}
+
+// --- config-error metric recording ---
+
+// Each failed netlink op must be counted individually, not once per Configure pass: the routing
+// path is best-effort (errors.Join), so several ops can fail in a single call and the counter is
+// what distinguishes one flaky op from a wholesale failure.
+func TestSetPolicyRoutes_RecordsRuleFailures(t *testing.T) {
+	m := &netlinkMock{ruleAddErr: fmt.Errorf("EPERM")}
+	rec := newRecorderMock()
+
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority, rec)
+	assert.Error(t, err)
+
+	// Two VIPs, each needing a BGP rule and a blackhole rule, so four RuleAdd attempts all fail.
+	assert.Equal(t, 4, rec.counts[ReasonRule], "every failed RuleAdd should be counted")
+	assert.Zero(t, rec.counts[ReasonRoute], "no route op failed")
+}
+
+func TestSetPolicyRoutes_RecordsRuleDelFailures(t *testing.T) {
+	m := &netlinkMock{}
+	rec := newRecorderMock()
+
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32", "20.0.0.2/32"}, testTableID, testRulePriority, rec)
+	assert.NoError(t, err)
+	assert.Zero(t, rec.counts[ReasonRule], "nothing failed on the initial add")
+
+	// Dropping one VIP deletes its BGP and blackhole rules; both deletes fail.
+	m.ruleDelErr = fmt.Errorf("EBUSY")
+	err = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, rec)
+	assert.Error(t, err)
+	assert.Equal(t, 2, rec.counts[ReasonRule], "every failed RuleDel should be counted")
+}
+
+func TestSetupBlackholeRoutes_RecordsRouteFailures(t *testing.T) {
+	m := &netlinkMock{routeReplaceErr: fmt.Errorf("EPERM")}
+	rec := newRecorderMock()
+
+	err := setupBlackholeRoutes(m, testTableID+1, rec)
+	assert.Error(t, err)
+
+	// One blackhole route per family, both attempted despite the first failing.
+	assert.Equal(t, 2, rec.counts[ReasonRoute], "both IPv4 and IPv6 failures should be counted")
+	assert.Zero(t, rec.counts[ReasonRule], "no rule op was reached")
+}
+
+func TestSetPolicyRoutes_RecordsNothingOnSuccess(t *testing.T) {
+	m := &netlinkMock{}
+	rec := newRecorderMock()
+
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, rec)
+	assert.NoError(t, err)
+	assert.Empty(t, rec.counts, "a clean pass must not record any config error")
+}
+
+// Both nil forms of the recorder must be tolerated while netlink ops are failing, since
+// Config.ConfigErrors is optional: an unset field is a bare-nil interface, which has no receiver
+// to dispatch Inc on and would panic without the recordConfigError guard. A typed-nil pointer is
+// the other form, and it is not == nil once boxed in an interface, so it slips past that guard and
+// relies on the implementation's own receiver check, as router.ConfigErrors.Inc has.
+func TestSetPolicyRoutes_NilRecorderDoesNotPanic(t *testing.T) {
+	for name, rec := range map[string]ConfigErrorRecorder{
+		"bare-nil interface (Config.ConfigErrors unset)": nil,
+		"typed-nil recorder":                             (*recorderMock)(nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := &netlinkMock{ruleAddErr: fmt.Errorf("EPERM"), routeReplaceErr: fmt.Errorf("EPERM")}
+			assert.NotPanics(t, func() {
+				// Errors are expected; the point is that recording them must not panic.
+				_ = setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, rec)
+				_ = setupBlackholeRoutes(m, testTableID+1, rec)
+			})
+		})
+	}
 }
