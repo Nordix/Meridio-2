@@ -139,6 +139,12 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 	setupLog := ctrl.Log.WithName("setup")
 	setupLog.Info("starting controller-manager", "config", cfg)
 
+	// Validate everything that does not require talking to the API server first,
+	// so a bad configuration is reported before any cluster contact.
+	if err := validate(cfg); err != nil {
+		return fmt.Errorf("config validation: %w", err)
+	}
+
 	// Build the tuned REST config once: the prerequisite checks and the manager
 	// must talk to the API server with the same client settings.
 	restCfg, err := cfg.RESTConfig()
@@ -146,8 +152,8 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 		return err
 	}
 
-	if err := validate(cfg, restCfg); err != nil {
-		return fmt.Errorf("config validation: %w", err)
+	if err := checkClusterPrerequisites(restCfg); err != nil {
+		return err
 	}
 
 	if err := waitForCerts(cfg); err != nil {
@@ -192,8 +198,9 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 	return nil
 }
 
-// validate checks configuration preconditions.
-func validate(cfg *config.ManagerConfig, restCfg *rest.Config) error {
+// validate checks configuration preconditions that do not require API server
+// access.
+func validate(cfg *config.ManagerConfig) error {
 	if err := validateConfig(cfg); err != nil {
 		return err
 	}
@@ -202,15 +209,21 @@ func validate(cfg *config.ManagerConfig, restCfg *rest.Config) error {
 		return err
 	}
 
+	if err := prerequisites.CheckFile(cfg.TemplatePath, gateway.LBDeploymentTemplateFile); err != nil {
+		return fmt.Errorf("LB deployment template not found: %w", err)
+	}
+
+	return nil
+}
+
+// checkClusterPrerequisites verifies preconditions that require API server
+// access, using the same tuned client settings as the manager.
+func checkClusterPrerequisites(restCfg *rest.Config) error {
 	if err := prerequisites.CheckGatewayAPI(restCfg); err != nil {
 		return fmt.Errorf("gateway API CRDs not found: %w\n\n"+
 			"Install for example with:\n"+
 			"  kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml",
 			err)
-	}
-
-	if err := prerequisites.CheckFile(cfg.TemplatePath, gateway.LBDeploymentTemplateFile); err != nil {
-		return fmt.Errorf("LB deployment template not found: %w", err)
 	}
 
 	return nil

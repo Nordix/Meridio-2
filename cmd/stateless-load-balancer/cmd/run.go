@@ -113,7 +113,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	}
 
 	if err := cfg.ValidateKubeAPI(); err != nil {
-		return err
+		return fmt.Errorf("kube API tuning: %w", err)
 	}
 
 	// Initialize NFQLB
