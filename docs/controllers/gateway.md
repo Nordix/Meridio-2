@@ -557,15 +557,29 @@ spec:
 - Default: `stateless-load-balancer`
 - Injected by Kustomize replacement (handles namePrefix)
 
-**`--lb-cache-sync-timeout`**:
-- Informer cache sync timeout propagated to the rendered LB Deployments as
-  `MERIDIO_CACHE_SYNC_TIMEOUT` on the `loadbalancer` container
-- Default: `0` — the LB deployment template is left untouched
-- A value already set in the template takes precedence, so manual template edits
-  remain a valid override
-- Changing it rolls the LB Pods, since it modifies the Pod template
-- Does not affect the controller-manager's own cache; see
+**`--cache-sync-timeout`**:
+- Time limit for the initial informer cache sync of each controller registered with
+  the manager
+- Default: `2m`; `0` falls back to the controller-runtime default (also 2m)
+- Raise for large deployments where listing and deserializing all watched objects
+  does not finish within the deadline; see
   [Scale Tuning](../operations/scale-tuning.md)
+- Applies to the controller-manager's own cache only — the LB Pods are tuned
+  separately, via `MERIDIO_CACHE_SYNC_TIMEOUT` in the LB deployment template
+
+**`--kube-api-qps`**:
+- Sustained client-side request rate towards the API server
+- Default: `-1` — client-side rate limiting disabled, relying on server-side
+  [API Priority and Fairness](https://kubernetes.io/docs/concepts/cluster-administration/flow-control/)
+- Values `<= 0` disable rate limiting; `0` is normalized to `-1` so it cannot
+  silently become client-go's `DefaultQPS` of 5
+- Set a positive value only to deliberately throttle this client. Raising it does
+  not speed up a slow cache sync, since there is no client-side throttle to lift
+
+**`--kube-api-burst`**:
+- Client-side burst allowance towards the API server
+- Default: `30`
+- Only effective when `--kube-api-qps > 0`
 
 **`--cert-wait-timeout`**:
 - Duration to wait for certificate files before starting

@@ -227,9 +227,6 @@ func validateConfig(cfg *config.ManagerConfig) error {
 	if err := cfg.ValidateKubeAPI(); err != nil {
 		return fmt.Errorf("kube API tuning: %w", err)
 	}
-	if cfg.LBCacheSyncTimeout < 0 {
-		return fmt.Errorf("lb-cache-sync-timeout cannot be negative (got %s)", cfg.LBCacheSyncTimeout)
-	}
 	return nil
 }
 
@@ -342,7 +339,6 @@ func setupManager(cfg *config.ManagerConfig, restCfg *rest.Config) (ctrl.Manager
 
 	setupLog.Info("Kubernetes API client tuning",
 		"cacheSyncTimeout", cfg.CacheSyncTimeout,
-		"lbCacheSyncTimeout", cfg.LBCacheSyncTimeout,
 		"clientRateLimiting", cfg.RateLimitingEnabled(),
 		"qps", restCfg.QPS, "burst", restCfg.Burst)
 
@@ -387,7 +383,6 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 		Namespace:          cfg.Namespace,
 		TemplatePath:       cfg.TemplatePath,
 		LBServiceAccount:   cfg.LBServiceAccount,
-		LBCacheSyncTimeout: cfg.LBCacheSyncTimeout,
 		PodCacheLabelKey:   podCacheLabelKey,
 		PodCacheLabelValue: podCacheLabelValue,
 	}).SetupWithManager(mgr); err != nil {

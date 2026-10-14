@@ -21,7 +21,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -508,105 +507,6 @@ func TestInjectGatewayEnvVars(t *testing.T) {
 	assert.Equal(t, "my-gateway", deployment.Spec.Template.Spec.Containers[0].Env[0].Value)
 	assert.Equal(t, "keep-me", deployment.Spec.Template.Spec.Containers[0].Env[1].Value)
 	assert.Equal(t, "my-gateway", deployment.Spec.Template.Spec.Containers[1].Env[0].Value)
-}
-
-func TestInjectLBCacheSyncTimeout(t *testing.T) {
-	// newDeployment returns the two-container shape of the LB template.
-	newDeployment := func(lbEnv ...corev1.EnvVar) *appsv1.Deployment {
-		return &appsv1.Deployment{
-			Spec: appsv1.DeploymentSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{Name: "loadbalancer", Env: lbEnv},
-							{Name: "router", Env: []corev1.EnvVar{{Name: "MERIDIO_GATEWAY_NAME"}}},
-						},
-					},
-				},
-			},
-		}
-	}
-
-	envValue := func(c corev1.Container, name string) (string, bool) {
-		for _, e := range c.Env {
-			if e.Name == name {
-				return e.Value, true
-			}
-		}
-		return "", false
-	}
-
-	t.Run("ZeroLeavesTemplateUntouched", func(t *testing.T) {
-		deployment := newDeployment(corev1.EnvVar{Name: "MERIDIO_GATEWAY_NAME"})
-		before := deployment.DeepCopy()
-
-		injectLBCacheSyncTimeout(deployment, 0)
-
-		assert.Equal(t, before, deployment, "a zero timeout must not modify the Deployment")
-	})
-
-	t.Run("NegativeLeavesTemplateUntouched", func(t *testing.T) {
-		deployment := newDeployment(corev1.EnvVar{Name: "MERIDIO_GATEWAY_NAME"})
-		before := deployment.DeepCopy()
-
-		injectLBCacheSyncTimeout(deployment, -time.Minute)
-
-		assert.Equal(t, before, deployment)
-	})
-
-	t.Run("AppendsToLoadBalancerContainer", func(t *testing.T) {
-		deployment := newDeployment(corev1.EnvVar{Name: "MERIDIO_GATEWAY_NAME", Value: "gw"})
-
-		injectLBCacheSyncTimeout(deployment, 5*time.Minute)
-
-		value, ok := envValue(deployment.Spec.Template.Spec.Containers[0], "MERIDIO_CACHE_SYNC_TIMEOUT")
-		assert.True(t, ok, "expected the env var on the loadbalancer container")
-		assert.Equal(t, "5m0s", value)
-
-		// Existing env vars are preserved and the router is left alone.
-		gwName, ok := envValue(deployment.Spec.Template.Spec.Containers[0], "MERIDIO_GATEWAY_NAME")
-		assert.True(t, ok)
-		assert.Equal(t, "gw", gwName)
-		_, ok = envValue(deployment.Spec.Template.Spec.Containers[1], "MERIDIO_CACHE_SYNC_TIMEOUT")
-		assert.False(t, ok, "router must not receive the LB cache sync timeout")
-	})
-
-	t.Run("TemplateValueWins", func(t *testing.T) {
-		deployment := newDeployment(corev1.EnvVar{Name: "MERIDIO_CACHE_SYNC_TIMEOUT", Value: "9m"})
-
-		injectLBCacheSyncTimeout(deployment, 5*time.Minute)
-
-		assert.Len(t, deployment.Spec.Template.Spec.Containers[0].Env, 1,
-			"must not append a second MERIDIO_CACHE_SYNC_TIMEOUT")
-		value, _ := envValue(deployment.Spec.Template.Spec.Containers[0], "MERIDIO_CACHE_SYNC_TIMEOUT")
-		assert.Equal(t, "9m", value, "an explicit template value must not be overwritten")
-	})
-
-	t.Run("Idempotent", func(t *testing.T) {
-		deployment := newDeployment()
-
-		injectLBCacheSyncTimeout(deployment, 5*time.Minute)
-		first := deployment.DeepCopy()
-		injectLBCacheSyncTimeout(deployment, 5*time.Minute)
-
-		assert.Equal(t, first, deployment, "repeated reconciles must not drift the Pod template")
-	})
-
-	t.Run("NoLoadBalancerContainer", func(t *testing.T) {
-		deployment := &appsv1.Deployment{
-			Spec: appsv1.DeploymentSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{{Name: "router"}},
-					},
-				},
-			},
-		}
-
-		injectLBCacheSyncTimeout(deployment, 5*time.Minute)
-
-		assert.Empty(t, deployment.Spec.Template.Spec.Containers[0].Env)
-	})
 }
 
 func TestApplyNetworkAttachments(t *testing.T) {

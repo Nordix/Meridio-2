@@ -38,13 +38,8 @@ const (
 	// LBDeploymentTemplateFile is the filename for the LB Deployment template
 	LBDeploymentTemplateFile = "lb-deployment.yaml"
 
-	// Container names in the LB Deployment template
-	containerLoadBalancer = "loadbalancer"
-	containerRouter       = "router"
-
-	// envCacheSyncTimeout is the LB's informer cache sync timeout setting,
-	// propagated from the manager's --lb-cache-sync-timeout flag
-	envCacheSyncTimeout = "MERIDIO_CACHE_SYNC_TIMEOUT"
+	// containerRouter is the router container's name in the LB Deployment template
+	containerRouter = "router"
 
 	// Labels
 	labelManagedBy = "app.kubernetes.io/managed-by"

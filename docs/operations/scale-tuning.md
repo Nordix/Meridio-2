@@ -51,7 +51,6 @@ Precedence: flags > environment variables > defaults.
 | Flag | Env Var | Default | Description |
 |---|---|---|---|
 | `--cache-sync-timeout` | `MERIDIO_CACHE_SYNC_TIMEOUT` | `2m` | Time limit for each controller's initial informer cache sync. `0` falls back to the controller-runtime default (2m). |
-| `--lb-cache-sync-timeout` | `MERIDIO_LB_CACHE_SYNC_TIMEOUT` | `0` (template unchanged) | **Controller-manager only.** Cache sync timeout propagated to the rendered LB Deployments as `MERIDIO_CACHE_SYNC_TIMEOUT`. Does not affect the manager's own cache. |
 | `--kube-api-qps` | `MERIDIO_KUBE_API_QPS` | `-1` (disabled) | Sustained client-side request rate towards the API server. Values `<= 0` disable client-side rate limiting. |
 | `--kube-api-burst` | `MERIDIO_KUBE_API_BURST` | `30` | Client-side burst allowance. Only effective when `--kube-api-qps > 0`. |
 
@@ -92,7 +91,16 @@ Suggested starting points, to be validated against your own measurements:
 |---|---|---|---|
 | < 1000 | `2m` (default) | 500m | 512Mi |
 | 1000–3000 | `5m` | 1 | 1Gi |
-| > 3000 | `10m` | 2 | 2Gi |
+| > 3000 | `9m` | 2 | 2Gi |
+
+> **Keep the timeout below 10m.** Neither the LB deployment template nor the
+> controller-manager manifest sets `progressDeadlineSeconds`, so the Kubernetes default
+> of 600s applies. A cache sync timeout at or above that leaves room for a Pod to still
+> be legitimately syncing when its Deployment has already been marked
+> `ProgressDeadlineExceeded` — which GitOps tooling typically reports as a failed
+> rollout. Gateway status is unaffected (`Programmed` does not read Deployment
+> conditions). If you genuinely need a longer timeout, raise
+> `progressDeadlineSeconds` on the affected Deployment to match.
 
 Scope the controller-manager with `--namespace` whenever possible: with an empty value it
 caches every namespace, which multiplies both sync time and memory. Consider
@@ -102,36 +110,33 @@ of the cache.
 Both binaries log the effective settings at startup:
 
 ```
-INFO  setup  Kubernetes API client tuning  {"cacheSyncTimeout": "5m0s", "lbCacheSyncTimeout": "5m0s", "clientRateLimiting": false, "qps": -1, "burst": 30}
+INFO  setup  Kubernetes API client tuning  {"cacheSyncTimeout": "5m0s", "clientRateLimiting": false, "qps": -1, "burst": 30}
 ```
 
 ## Applying the settings
 
 **Controller-manager** — add the flag to the manager container's `args`, or the env var to
-its `env`, in your deployment overlay. Set `--lb-cache-sync-timeout` at the same time so the
-LB Pods are tuned along with the manager:
+its `env`, in your deployment overlay:
 
 ```yaml
 args:
   - run
   - --cache-sync-timeout=5m
-  - --lb-cache-sync-timeout=5m
 ```
 
 **Stateless-load-balancer** — LB Pods are not launched directly; the controller-manager
 renders them from the LB deployment template (`--template-path`, default `/templates`).
-`--lb-cache-sync-timeout` above is the normal way to tune them: the gateway controller
-injects `MERIDIO_CACHE_SYNC_TIMEOUT` into the `loadbalancer` container of every LB
-Deployment it manages. The LB Pods roll when the value changes.
-
-To override a single value or to set something the flag does not cover, edit the
-`loadbalancer` container's `env` in the template ConfigMap directly — a value present in
-the template always wins over the flag:
+Tune them by setting `MERIDIO_CACHE_SYNC_TIMEOUT` on the `loadbalancer` container's `env`
+in the template ConfigMap. The LB Pods roll when the value changes, since it alters the
+Pod template:
 
 ```yaml
 - name: MERIDIO_CACHE_SYNC_TIMEOUT
   value: "5m"
 ```
+
+The manager's `--cache-sync-timeout` does **not** propagate to the LB Pods — raise both
+together, or the LB Pods silently stay at the 2m default.
 
 Note that template edits propagate lazily: nothing watches the ConfigMap, so the change
 takes effect only after the kubelet refreshes the mounted volume (up to ~1 minute) and the

@@ -64,10 +64,6 @@ type ManagerConfig struct {
 	// Kubernetes API client / informer cache tuning
 	KubeAPIConfig
 
-	// LBCacheSyncTimeout is propagated to the rendered LB Deployment as
-	// MERIDIO_CACHE_SYNC_TIMEOUT. Zero leaves the LB template untouched.
-	LBCacheSyncTimeout time.Duration
-
 	// Templates
 	TemplatePath string
 
@@ -134,11 +130,6 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Path to template directory containing deployment templates.")
 	fs.StringVar(&c.LBServiceAccount, "lb-service-account", "stateless-load-balancer",
 		"ServiceAccount name for LB Deployment pods.")
-	fs.DurationVar(&c.LBCacheSyncTimeout, "lb-cache-sync-timeout", 0,
-		"Cache sync timeout to propagate to the rendered LB Deployments as MERIDIO_CACHE_SYNC_TIMEOUT. "+
-			"Raise alongside --cache-sync-timeout for large deployments, since LB Pods cache all L34Routes "+
-			"in the Gateway's namespace. 0 (the default) leaves the LB deployment template untouched; a value "+
-			"already set in the template always takes precedence.")
 	fs.IntVar(&c.WebhookPort, "webhook-port", 9443,
 		"The port the webhook server binds to.")
 	fs.DurationVar(&c.CertWaitTimeout, "cert-wait-timeout", 10*time.Second,
@@ -183,7 +174,6 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "pod-cache-label", "MERIDIO_POD_CACHE_LABEL", &c.PodCacheLabel)
 	bindString(fs, "template-path", "MERIDIO_TEMPLATE_PATH", &c.TemplatePath)
 	bindString(fs, "lb-service-account", "MERIDIO_LB_SERVICE_ACCOUNT", &c.LBServiceAccount)
-	bindDuration(fs, "lb-cache-sync-timeout", "MERIDIO_LB_CACHE_SYNC_TIMEOUT", &c.LBCacheSyncTimeout)
 	bindInt(fs, "webhook-port", "MERIDIO_WEBHOOK_PORT", &c.WebhookPort)
 	bindDuration(fs, "cert-wait-timeout", "MERIDIO_CERT_WAIT_TIMEOUT", &c.CertWaitTimeout)
 	bindString(fs, "webhook-cert-path", "MERIDIO_WEBHOOK_CERT_PATH", &c.WebhookCertPath)

@@ -66,11 +66,10 @@ spec:
           - --controller-name=meridio-2.nordix.org/gateway-controller
           - --health-probe-bind-address=:8081
           # Scale tuning (optional). Raise for large deployments where the initial
-          # informer cache sync exceeds the default 2m deadline. The second flag
-          # propagates the timeout to the rendered LB Deployments.
+          # informer cache sync exceeds the default 2m deadline. Tune the LB Pods
+          # separately via the LB deployment template.
           # See docs/operations/scale-tuning.md
           # - --cache-sync-timeout=5m
-          # - --lb-cache-sync-timeout=5m
         image: controller-manager:latest
         imagePullPolicy: IfNotPresent
         name: manager

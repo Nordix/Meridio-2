@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -41,12 +40,11 @@ type GatewayReconciler struct {
 	client.Client
 	Scheme             *runtime.Scheme
 	ControllerName     string
-	Namespace          string        // Namespace to watch (empty = all namespaces)
-	TemplatePath       string        // Path to template directory (defaults to /templates)
-	LBServiceAccount   string        // ServiceAccount name for LB Deployment pods
-	LBCacheSyncTimeout time.Duration // Cache sync timeout propagated to LB Pods (0 = leave template as-is)
-	PodCacheLabelKey   string        // Optional label key for Pod cache filtering (added to LB Pod template)
-	PodCacheLabelValue string        // Corresponding label value
+	Namespace          string // Namespace to watch (empty = all namespaces)
+	TemplatePath       string // Path to template directory (defaults to /templates)
+	LBServiceAccount   string // ServiceAccount name for LB Deployment pods
+	PodCacheLabelKey   string // Optional label key for Pod cache filtering (added to LB Pod template)
+	PodCacheLabelValue string // Corresponding label value
 }
 
 // RBAC: See config/rbac/manager-role.yaml and manager-clusterrole.yaml for required permissions.
