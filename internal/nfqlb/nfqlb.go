@@ -321,8 +321,20 @@ func (nfqlb *NFQueueLoadBalancer) AddInstance(ctx context.Context,
 }
 
 // DeleteInstance deletes a nfqlb instance and all related configuration (targets and flows).
+// Cleanup order is: targets/routes, then flows, then the shm segment unlink last.
+// The instance is removed from nfqlb.instances (releasing its fwmark offset for reuse)
+// only after every step succeeds. If any step fails, the instance remains tracked (so
+// its offset cannot be handed to a different DG while stale routes for it may still
+// exist) and the caller is expected to retry DeleteInstance on the next reconcile.
+//
+// The ordering is load-bearing, not cosmetic: `nfqlb deactivate` has to mmap the shm
+// segment, so unlinking it first makes every deactivate call fail with
+// "FAILED mapSharedData". deleteTargetNoLock returns early on that error, before its
+// policy-route cleanup, which leaked an ip rule and routing table per target on every
+// deletion of a DistributionGroup that had active targets.
 func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name string) error {
 	nfqlb.mu.Lock()
+	defer nfqlb.mu.Unlock()
 
 	nfqlbInstance, exists := nfqlb.instances[name]
 	if !exists {
@@ -331,15 +343,35 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: delete instance", "instance", name)
 
-	delete(nfqlb.instances, name)
-
-	// Safe to release nfqlb.mu before locking instance.mu: the instance was
-	// already removed from the map above, so heal() (which iterates
-	// nfqlb.instances under nfqlb.mu) will no longer see it.
-	nfqlb.mu.Unlock()
-
 	nfqlbInstance.mu.Lock()
 	defer nfqlbInstance.mu.Unlock()
+
+	var errs []error
+
+	for targetIdentifier := range nfqlbInstance.targets {
+		if err := nfqlbInstance.deleteTargetNoLock(ctx, targetIdentifier); err != nil {
+			errs = append(errs, fmt.Errorf("delete target %d: %w", targetIdentifier, err))
+		}
+	}
+
+	flows, err := nfqlb.flowList(ctx)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("list flows: %w", err))
+	} else {
+		for _, flow := range flows {
+			if flow.ServerName == name {
+				if err := nfqlbInstance.DeleteFlow(ctx, flow); err != nil {
+					errs = append(errs, fmt.Errorf("delete flow %s: %w", flow.GetName(), err))
+				}
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		// Targets/flows are not fully cleaned up: keep the instance (and its
+		// offset) reserved rather than unlinking shm and losing track of it.
+		return fmt.Errorf("failed cleaning up nfqlb instance %q, shm not deleted: %w", name, errors.Join(errs...))
+	}
 
 	// unlink the shared mem file
 	//nolint:gosec
@@ -355,31 +387,13 @@ func (nfqlb *NFQueueLoadBalancer) DeleteInstance(ctx context.Context, name strin
 		return fmt.Errorf("failed deleting nfqlb instance ; %w; %s", err, stdoutStderr)
 	}
 
-	var errs []error
-
-	for targetIdentifier := range nfqlbInstance.targets {
-		if err := nfqlbInstance.deleteTargetNoLock(ctx, targetIdentifier); err != nil {
-			errs = append(errs, fmt.Errorf("delete target %d: %w", targetIdentifier, err))
-		}
-	}
-
-	flows, err := nfqlb.flowList(ctx)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("list flows: %w", err))
-		return errors.Join(errs...)
-	}
-
-	for _, flow := range flows {
-		if flow.ServerName == name {
-			if err := nfqlbInstance.DeleteFlow(ctx, flow); err != nil {
-				errs = append(errs, fmt.Errorf("delete flow %s: %w", flow.GetName(), err))
-			}
-		}
-	}
+	// Only release the offset for reuse once targets, flows, and the shm
+	// segment are all confirmed gone.
+	delete(nfqlb.instances, name)
 
 	ctrl.LoggerFrom(ctx).Info("nfqlb: instance deleted", "instance", name)
 
-	return errors.Join(errs...)
+	return nil
 }
 
 // AddFlow adds/updates a Flow selecting the associated nfqlb instance.
