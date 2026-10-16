@@ -196,6 +196,27 @@ Blackhole routes (`0.0.0.0/0` and `::/0`) in table 4097 prevent traffic leaking 
 
 Rules are reconciled idempotently: stale rules removed, missing rules added. Errors are accumulated best-effort (partial progress over rollback); the next reconcile retries any failed operations.
 
+### Non-Default BGP Routes
+
+Accepting only default routes (`0.0.0.0/0`, `::/0`) from the external site router is considered a security concern: operators often want to attract external breakout traffic only via specific, non-default prefixes rather than a single catch-all default route (`0.0.0.0/0` / `::/0`). The router controller supports this — the external peer may announce specific, non-default prefixes (with or without a default route), and they are accepted and installed for breakout just like the default.
+
+This is handled by the `gateway_routes` filter in the generated `bird.conf` ([`internal/bird/config.go`](../../internal/bird/config.go)), which is applied both as the BGP neighbor's import filter and as the kernel protocol's export filter:
+
+```
+filter gateway_routes {
+    if ( net ~ [ 0.0.0.0/0 ] ) then accept;
+    if ( net ~ [ 0::/0 ] ) then accept;
+    if source = RTS_BGP then accept;   // accepts any BGP-learned prefix
+    else reject;
+}
+```
+
+The `if source = RTS_BGP then accept;` clause admits **any** BGP-learned prefix, not just the defaults. Because the same filter is the kernel export filter, accepted non-default prefixes are installed into the BIRD-managed kernel table (`--table-id`, default `4096`) and used for external breakout exactly like the default route. This filter is logically identical to Meridio v1's `cluster_breakout` filter (same four clauses, same order), so Meridio-2 has code parity with the fixed v1 behaviour.
+
+No GatewayRouter configuration is required to enable this — acceptance of non-default prefixes is governed entirely by what the peer announces. There is no admission-time control over which specific prefixes a peer may announce; as with VIP scaling, the number of accepted prefixes is ultimately bounded by BIRD/kernel resources.
+
+**End-to-end verification**: the e2e `non-default-bgp` suite (`test/e2e/e2e_suite_non_default_bgp_test.go`) confirms this on a running setup. It reuses the `ipv4-simple` topology; the simulated DCGW (`hack/vpn-gateway/bird-gw.conf`, which includes `bird-filler-net.conf`) announces specific blackhole prefixes alongside the default route, and the test asserts that a representative non-default prefix is both accepted into BIRD as a BGP-learned route and installed into kernel table `4096` on the LB router container. Run it with `make -C test/e2e non-default-bgp`.
+
 ### BGP Authentication (TCP-AO)
 
 The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support.
