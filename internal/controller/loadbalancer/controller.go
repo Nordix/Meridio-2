@@ -32,6 +32,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/readiness"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 	nftablesmanager "github.com/nordix/meridio-2/internal/nftables"
 )
 
@@ -64,6 +65,14 @@ type Controller struct {
 	Readiness         *readiness.Manager
 	NftManagerFactory func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error)
 
+	// ConfigErrors counts failed data-plane config operations by reason. Nil-safe: when metrics
+	// ConfigErrors ... (see above)
+	ConfigErrors configErrorRecorder
+
+	// PerTargetMetrics enables per-target packet counters (opt-in; --enable-per-target-metrics).
+	// When false, only per-DG packet/byte counting is installed.
+	PerTargetMetrics bool
+
 	mu          sync.Mutex
 	instances   map[string]nfqlbInstance                         // key: DistributionGroup name
 	nftManager  nftablesManager                                  // Shared nftables manager for all DGs
@@ -77,6 +86,42 @@ type nftablesManager interface {
 	Setup() error
 	SetVIPs(cidrs []string) error
 	Cleanup() error
+	// Counter-rule management for per-DG (and opt-in per-target) packet/byte accounting.
+	ReconcileDGCounters(dg nftablesmanager.DGCounters, perTarget bool) error
+	RemoveDGCounters(dg string, base, count int) error
+	// SetDGRange / ClearDGRange register the DG name <-> fwmark range mapping used to label
+	// per-DG counter reads.
+	SetDGRange(dg string, base, count int)
+	ClearDGRange(dg string)
+}
+
+// configErrorRecorder records failed data-plane config operations by reason (see
+// internal/metrics/loadbalancer.ConfigErrors). *loadbalancer.ConfigErrors satisfies it; a fake is
+// used in tests. A typed-nil value is a valid no-op (Inc no-ops on a nil receiver), so the
+// reconcile path calls it unconditionally while construction stays gated on metrics being enabled.
+type configErrorRecorder interface {
+	Inc(reason string)
+}
+
+// NftablesReader exposes the shared nftables manager as a metrics read source, if the concrete
+// manager supports the read methods (it does; the test fake may not). Returns nil when the manager
+// is absent or does not implement the reader — in which case run.go skips registering the nftables
+// collector. Must be called after SetupWithManager has initialized the shared manager.
+func (c *Controller) NftablesReader() lbmetrics.NftablesReader {
+	if r, ok := c.nftManager.(lbmetrics.NftablesReader); ok {
+		return r
+	}
+	return nil
+}
+
+// PacketByteReader exposes the shared nftables manager as the per-DG packet/byte metrics read
+// source, if the concrete manager supports it. Returns nil when absent/unsupported — run.go then
+// skips the packet/byte collector. Must be called after SetupWithManager.
+func (c *Controller) PacketByteReader() lbmetrics.PacketByteReader {
+	if r, ok := c.nftManager.(lbmetrics.PacketByteReader); ok {
+		return r
+	}
+	return nil
 }
 
 const (
@@ -201,8 +246,15 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	// mean nothing ever calls DeleteInstance again for this DG (reconcileNFQLBInstance
 	// only acts when the DG is absent from c.instances, and a deleted DG never
 	// reappears to re-trigger creation).
-	if _, exists := c.instances[distGroupName]; exists {
+	if instance, exists := c.instances[distGroupName]; exists {
 		logr.Info("Deleting NFQLB service", "distGroup", distGroupName)
+		// Remove this DG's packet/byte counter rules + range mapping (shared table, so this is
+		// per-DG cleanup, not a table teardown). Done before DeleteInstance frees the offset.
+		base, count := instance.FwmarkRange()
+		if err := c.nftManager.RemoveDGCounters(distGroupName, base, count); err != nil {
+			logr.Error(err, "Failed to remove packet/byte counter rules", "distGroup", distGroupName)
+		}
+		c.nftManager.ClearDGRange(distGroupName)
 		if err := c.NFQLB.DeleteInstance(ctx, distGroupName); err != nil {
 			logr.Error(err, "Failed to delete NFQLB service, will retry", "distGroup", distGroupName)
 			errs = append(errs, fmt.Errorf("failed to delete NFQLB service for %q: %w", distGroupName, err))

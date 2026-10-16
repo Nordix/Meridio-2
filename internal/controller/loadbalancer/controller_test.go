@@ -33,6 +33,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/readiness"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
@@ -108,9 +109,11 @@ func newMockNFQLB() *mockNFQLB {
 
 func (m *mockNFQLB) AddInstance(_ context.Context, name string, _ ...nfqlb.InstanceOption) (nfqlbInstance, error) {
 	inst := &mockNFQLBInstance{
-		name:    name,
-		flows:   make(map[string]nfqlb.Flow),
-		targets: make(map[int][]string),
+		name:        name,
+		flows:       make(map[string]nfqlb.Flow),
+		targets:     make(map[int][]string),
+		fwmarkBase:  nfqlb.DefaultFwmarkBase + 2, // mirrors startingOffset (fwmarkBase+2)
+		fwmarkCount: 32,
 	}
 	m.instances[name] = inst
 	return inst, nil
@@ -130,10 +133,15 @@ func (m *mockNFQLB) DropFwmarks() (nolb, notargets int) {
 
 // mockNFQLBInstance mocks a single NFQLB instance (per DistributionGroup).
 type mockNFQLBInstance struct {
-	name    string
-	flows   map[string]nfqlb.Flow
-	targets map[int][]string
+	name         string
+	flows        map[string]nfqlb.Flow
+	targets      map[int][]string
+	addTargetErr error // when set, AddTarget returns this error
+	fwmarkBase   int   // FwmarkRange base (0 unless set)
+	fwmarkCount  int   // FwmarkRange count (0 unless set)
 }
+
+func (m *mockNFQLBInstance) FwmarkRange() (int, int) { return m.fwmarkBase, m.fwmarkCount }
 
 func (m *mockNFQLBInstance) AddFlow(_ context.Context, flow nfqlb.Flow) error {
 	if m.flows == nil {
@@ -149,12 +157,26 @@ func (m *mockNFQLBInstance) DeleteFlow(_ context.Context, flow nfqlb.Flow) error
 }
 
 func (m *mockNFQLBInstance) AddTarget(_ context.Context, ips []string, identifier int) error {
+	if m.addTargetErr != nil {
+		return m.addTargetErr
+	}
 	if m.targets == nil {
 		m.targets = make(map[int][]string)
 	}
 	m.targets[identifier] = ips
 	return nil
 }
+
+// fakeConfigErrors is a configErrorRecorder test double that records Inc calls per reason.
+type fakeConfigErrors struct {
+	counts map[string]int
+}
+
+func newFakeConfigErrors() *fakeConfigErrors {
+	return &fakeConfigErrors{counts: make(map[string]int)}
+}
+
+func (f *fakeConfigErrors) Inc(reason string) { f.counts[reason]++ }
 
 func (m *mockNFQLBInstance) DeleteTarget(_ context.Context, identifier int) error {
 	delete(m.targets, identifier)
@@ -466,10 +488,20 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(controller.reconcileNFQLBInstance(ctx, dg2)).To(Succeed())
 			Expect(controller.reconcileNFQLBInstance(ctx, dg3)).To(Succeed())
 
+			// Seed dg-2's range mapping (normally done by reconcileTargets) so the cleanup's
+			// ClearDGRange is meaningfully exercised.
+			controller.nftManager.SetDGRange("dg-2", nfqlb.DefaultFwmarkBase+2, 32)
+
 			// Delete dg-2
 			_, err := controller.cleanupDistributionGroup(ctx, "dg-2")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(controller.instances).ToNot(HaveKey("dg-2"))
+
+			// Cleanup also removes dg-2's packet/byte counter rules + range mapping.
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+			Expect(mockNft.removedDGs).To(ContainElement("dg-2"))
+			Expect(mockNft.dgRanges).ToNot(HaveKey("dg-2"))
 
 			// Create new DG - should succeed (offset reuse is internal to nfqlb)
 			dg4 := &meridio2v1alpha1.DistributionGroup{
@@ -565,6 +597,139 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(mockInstance.targets[0]).To(Equal([]string{"10.0.0.1"}))
 			Expect(mockInstance.targets).To(HaveKey(1)) // fwmark = 1 + offset (internal to nfqlb)
 			Expect(mockInstance.targets[1]).To(Equal([]string{"10.0.0.2"}))
+		})
+
+		It("should increment route_config on AddTarget failure", func() {
+			ce := newFakeConfigErrors()
+			controller.ConfigErrors = ce
+
+			// Force the (mock) nfqlb AddTarget to fail for this DG's instance.
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			mockInstance.addTargetErr = errors.New("activate failed")
+
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			})
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			err := controller.reconcileTargets(ctx, distGroup)
+			Expect(err).To(HaveOccurred())
+
+			// route_config counted (and not vip_config).
+			Expect(ce.counts[lbmetrics.ReasonRouteConfig]).To(Equal(1))
+			Expect(ce.counts[lbmetrics.ReasonVIPConfig]).To(Equal(0))
+		})
+
+		It("does not panic when ConfigErrors is a typed-nil (metrics disabled)", func() {
+			// Mirror production's metrics-disabled wiring: a typed-nil *lbmetrics.ConfigErrors in
+			// the interface field. Inc must no-op (not panic) on the nil receiver.
+			controller.ConfigErrors = (*lbmetrics.ConfigErrors)(nil)
+
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			mockInstance.addTargetErr = errors.New("activate failed")
+
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			})
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			Expect(func() { _ = controller.reconcileTargets(ctx, distGroup) }).NotTo(Panic())
+		})
+
+		It("reconciles per-DG packet/byte counter rules for the DG's fwmark range", func() {
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			})
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			Expect(controller.reconcileTargets(ctx, distGroup)).To(Succeed())
+
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+			// Range mapping registered for the per-DG read.
+			Expect(mockNft.dgRanges).To(HaveKeyWithValue(distGroup.Name, [2]int{nfqlb.DefaultFwmarkBase + 2, 32}))
+			// Counter rules reconciled with the DG's base/count; per-target OFF by default.
+			dg, reconciled := mockNft.reconciledDGs[distGroup.Name]
+			Expect(reconciled).To(BeTrue())
+			Expect(dg.FwmarkBase).To(Equal(nfqlb.DefaultFwmarkBase + 2))
+			Expect(dg.MaxTargets).To(Equal(32))
+			Expect(mockNft.reconcilePerTgt).To(BeFalse())
+			Expect(dg.Targets).To(BeEmpty()) // no per-target labels when opt-in is off
+		})
+
+		It("does not fail reconcileTargets when counter-rule reconcile fails (observability, no requeue)", func() {
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+			})
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+			mockNft.reconcileErr = errors.New("nftables counter reconcile failed")
+
+			// A counter-rule failure must be logged and swallowed — reconcileTargets succeeds so the
+			// DG is not requeued on an observability-only error.
+			Expect(controller.reconcileTargets(ctx, distGroup)).To(Succeed())
+
+			// The counter reconcile was still attempted (we reached it and swallowed the error),
+			// and the range mapping was registered — proving the failure path was exercised, not
+			// skipped.
+			Expect(mockNft.reconciledDGs).To(HaveKey(distGroup.Name))
+			Expect(mockNft.dgRanges).To(HaveKey(distGroup.Name))
+		})
+
+		It("populates per-target labels when PerTargetMetrics is enabled", func() {
+			controller.PerTargetMetrics = true
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Ready:      true,
+				},
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(3)),
+					Ready:      true,
+				},
+			})
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			Expect(controller.reconcileTargets(ctx, distGroup)).To(Succeed())
+
+			mockNft, ok := controller.nftManager.(*mockNftablesManager)
+			Expect(ok).To(BeTrue())
+			Expect(mockNft.reconcilePerTgt).To(BeTrue())
+			dg := mockNft.reconciledDGs[distGroup.Name]
+			Expect(dg.Targets).To(HaveLen(2))
+			Expect(dg.Targets).To(HaveKeyWithValue(0, "0"))
+			Expect(dg.Targets).To(HaveKeyWithValue(3, "3"))
 		})
 
 		It("should skip endpoints without Identifier field", func() {
@@ -1148,6 +1313,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(ok).To(BeTrue())
 			mockNft.setVIPsErr = errors.New("nftables SetVIPs failed")
 
+			ce := newFakeConfigErrors()
+			controller.ConfigErrors = ce
+
 			fakeClient = newFakeClient(scheme, distGroup, l34route, gateway)
 			controller.Client = fakeClient
 
@@ -1156,6 +1324,10 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// The SetVIPs failure is surfaced (joined) for requeue.
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("nftables SetVIPs failed"))
+
+			// The vip_config error counter was incremented (and not route_config).
+			Expect(ce.counts[lbmetrics.ReasonVIPConfig]).To(Equal(1))
+			Expect(ce.counts[lbmetrics.ReasonRouteConfig]).To(Equal(0))
 
 			// Flow tracking is NOT lost: the successfully programmed flow is retained.
 			Expect(controller.flows[distGroup.Name]).To(HaveKey("test-route"))

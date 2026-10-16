@@ -21,13 +21,25 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
+	nftablesmanager "github.com/nordix/meridio-2/internal/nftables"
 )
+
+// targetLabel is the per-target metric label value for a target identifier. Per the metrics
+// design the identity is the Maglev identifier (an opaque integer) — stable across the target's
+// lifetime and the join key to `nfqlb show` / the fwmark / the ip rule. Resolving it to a Pod
+// name is left to documentation (it needs controller EndpointSlice state and would couple the
+// metrics read to it).
+func targetLabel(identifier int) string {
+	return strconv.Itoa(identifier)
+}
 
 // reconcileTargets synchronizes NFQLB targets from LoadBalancerEndpointSlices.
 func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
@@ -133,6 +145,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		slices.Sort(ips)
 		if err := service.AddTarget(ctx, ips, identifier); err != nil {
 			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
+			c.ConfigErrors.Inc(lbmetrics.ReasonRouteConfig)
 			errFinal = errors.Join(errFinal, err)
 		} else {
 			anyTargetReady = true
@@ -150,6 +163,27 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		if err := c.Readiness.Remove(distGroup.Name); err != nil {
 			logr.Error(err, "Failed to remove readiness file", "distGroup", distGroup.Name)
 		}
+	}
+
+	// Reconcile the nftables packet/byte counter rules for this DG's fwmark range. Per-DG range
+	// counting (metrics 1/2) is always installed; per-target counters only when opted in. The
+	// range (base/count) comes from the nfqlb instance; it is stable across target churn, so this
+	// is cheap on the default path. A failure here is logged but NOT joined into errFinal:
+	// counter rules are observability, not data path, so a persistent failure must not drive a
+	// requeue loop for the DG. The next reconcile (triggered by any target/slice change) retries.
+	base, count := service.FwmarkRange()
+	targetLabels := map[int]string{}
+	if c.PerTargetMetrics {
+		for id := range newTargets {
+			targetLabels[id] = targetLabel(id)
+		}
+	}
+	c.nftManager.SetDGRange(distGroup.Name, base, count)
+	if err := c.nftManager.ReconcileDGCounters(
+		nftablesmanager.DGCounters{DG: distGroup.Name, FwmarkBase: base, MaxTargets: count, Targets: targetLabels},
+		c.PerTargetMetrics,
+	); err != nil {
+		logr.Error(err, "Failed to reconcile packet/byte counter rules", "distGroup", distGroup.Name)
 	}
 
 	// Commit c.targets: identifiers from newTargets ∪ failed-delete IDs.
