@@ -569,6 +569,9 @@ spec:
 
 **`--kube-api-qps`**:
 - Sustained client-side request rate towards the API server
+- Passed through to client-go's
+  [`rest.Config.QPS`](https://pkg.go.dev/k8s.io/client-go/rest#Config), which defines
+  its exact meaning
 - Default: `-1` — client-side rate limiting disabled, relying on server-side
   [API Priority and Fairness](https://kubernetes.io/docs/concepts/cluster-administration/flow-control/)
 - Values `<= 0` disable rate limiting; `0` is normalized to `-1` so it cannot
@@ -578,6 +581,8 @@ spec:
 
 **`--kube-api-burst`**:
 - Client-side burst allowance towards the API server
+- Passed through to client-go's
+  [`rest.Config.Burst`](https://pkg.go.dev/k8s.io/client-go/rest#Config)
 - Default: `30`
 - Only effective when `--kube-api-qps > 0`
 

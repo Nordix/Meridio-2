@@ -39,40 +39,53 @@ Secret in the Gateway's namespace — see
 [BGP Authentication (TCP-AO)](../controllers/router.md#bgp-authentication-tcp-ao).
 In a namespace that also holds unrelated Secrets (Helm release data, image pull
 credentials, service account tokens) this can dominate the router's cache and its sync
-time. The router currently exposes no tuning flags; if its sync becomes a problem, the
-practical mitigations are to deploy Gateways into a dedicated namespace or to reduce the
-Secret count there.
+time. The router currently exposes no tuning flags.
 
 ## Configuration
 
 Available on the **controller-manager** and the **stateless-load-balancer**.
 Precedence: flags > environment variables > defaults.
 
+### Cache sync timeout
+
+This is the setting that addresses the startup failure described above.
+
 | Flag | Env Var | Default | Description |
 |---|---|---|---|
 | `--cache-sync-timeout` | `MERIDIO_CACHE_SYNC_TIMEOUT` | `2m` | Time limit for each controller's initial informer cache sync. `0` falls back to the controller-runtime default (2m). |
+
+It applies manager-wide: the value becomes the default for every controller registered
+with the manager, so no per-controller configuration is needed.
+
+### Client-side rate limiting
+
+These two options are **not** a remedy for a slow cache sync. They are exposed so that
+you can deliberately throttle Meridio-2's traffic towards the API server, for example on
+a shared or otherwise sensitive control plane.
+
+| Flag | Env Var | Default | Description |
+|---|---|---|---|
 | `--kube-api-qps` | `MERIDIO_KUBE_API_QPS` | `-1` (disabled) | Sustained client-side request rate towards the API server. Values `<= 0` disable client-side rate limiting. |
 | `--kube-api-burst` | `MERIDIO_KUBE_API_BURST` | `30` | Client-side burst allowance. Only effective when `--kube-api-qps > 0`. |
 
-The timeout applies manager-wide: it is set as the default for every controller
-registered with the manager, so no per-controller configuration is needed.
+Both are passed straight through to the Kubernetes Go client, setting
+[`rest.Config.QPS` and `rest.Config.Burst`](https://pkg.go.dev/k8s.io/client-go/rest#Config).
+client-go defines their exact meaning; Meridio-2 adds no behaviour of its own beyond the
+normalization noted below.
 
-### A note on QPS and burst
+Client-side rate limiting is off by default: controller-runtime's `GetConfig()` sets
+`QPS = -1`, and client-go only builds a token-bucket limiter when QPS is positive.
+Protection is left to server-side
+[API Priority and Fairness](https://kubernetes.io/docs/concepts/cluster-administration/flow-control/).
 
-Client-side rate limiting is **disabled by default and was never active** in Meridio-2.
-controller-runtime's `GetConfig()` sets `QPS = -1`, and client-go only constructs a
-token-bucket limiter when QPS is positive. Server-side
-[API Priority and Fairness](https://kubernetes.io/docs/concepts/cluster-administration/flow-control/)
-handles protection instead.
+Two consequences are worth knowing:
 
-Consequently, **raising QPS cannot speed up a slow cache sync** — there is no client-side
-throttle to lift. These flags exist to deliberately *throttle* Meridio-2's API traffic,
-for example on a shared or sensitive API server. Leave them at their defaults unless you
-have that specific need.
-
-Setting `--kube-api-qps=0` is treated as "disabled" rather than passed through, because
-client-go interprets a zero QPS as "use `DefaultQPS` (5)", which would silently throttle
-the client to 5 requests per second.
+- **Raising QPS cannot speed up a slow cache sync.** With the default there is no
+  client-side throttle to lift, so a sync that misses its deadline is bound by object
+  count, available CPU or API server latency — never by this limiter.
+- **`--kube-api-qps=0` is normalized to `-1`.** client-go reads a zero QPS as "use
+  `DefaultQPS`" (5), which would otherwise silently throttle the client to 5 requests
+  per second.
 
 ## Tuning guidance
 
