@@ -339,3 +339,77 @@ func indexOf(calls []string, want string) int {
 	}
 	return -1
 }
+
+// maxTargets sizes the contiguous fwmark range an instance occupies, and is
+// passed straight through to `nfqlb init --N=`. It had no validation at any
+// layer — not in WithMaxTargets, not in newNFQLBInstanceConfig, not in
+// AddInstance — so two unrelated failures collapsed into the same
+// errIdentifierOffset ("fwmark range exhausted"):
+//
+//   - an unsatisfiable request, larger than any single instance can ever hold
+//   - genuine capacity exhaustion, where a validly-sized instance cannot be
+//     placed because existing instances filled the range
+//
+// Same error text, different causes, different fixes. These specs pin the
+// distinction so a "Failed to reconcile NFQLB instance" loop is diagnosable
+// from the logs alone.
+var _ = Describe("AddInstance maxTargets validation", func() {
+	var lb *NFQueueLoadBalancer
+
+	BeforeEach(func() {
+		var err error
+		lb, err = New(WithNFQLBPath("/bin/true"))
+		Expect(err).ToNot(HaveOccurred())
+		lb.running.Store(true)
+	})
+
+	It("rejects a maxTargets value that can never fit, distinguishably from range exhaustion", func() {
+		ctx := context.Background()
+
+		// Budget for one instance: MaxOffset(100000) - startingOffset(5002).
+		available := MaxOffset - lb.startingOffset()
+
+		_, err := lb.AddInstance(ctx, "dg-too-big", WithMaxTargets(available+1))
+		Expect(err).To(HaveOccurred())
+		Expect(err).ToNot(MatchError(errIdentifierOffset),
+			"an unsatisfiable maxTargets must not be reported as generic offset "+
+				"exhaustion — that error also fires for real capacity exhaustion "+
+				"across many DistributionGroups and would be misdiagnosed")
+		Expect(err.Error()).To(ContainSubstring("cannot fit"))
+		Expect(err.Error()).To(ContainSubstring("dg-too-big"),
+			"the error should name the offending instance for log diagnosis")
+
+		// The largest value that does fit must still be accepted, so the bound
+		// is off-by-one correct rather than merely conservative.
+		_, err = lb.AddInstance(ctx, "dg-at-limit", WithMaxTargets(available))
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("rejects a non-positive maxTargets", func() {
+		ctx := context.Background()
+
+		// Previously accepted outright, which left every later AddTarget failing
+		// its `identifier >= s.maxTargets` range check instead of failing here.
+		for _, bad := range []int{0, -1} {
+			_, err := lb.AddInstance(ctx, "dg-bad", WithMaxTargets(bad))
+			Expect(err).To(HaveOccurred(), "maxTargets=%d must be rejected", bad)
+			Expect(err.Error()).To(ContainSubstring("must be >= 1"))
+		}
+	})
+
+	It("still reports genuine fwmark range exhaustion as errIdentifierOffset", func() {
+		ctx := context.Background()
+
+		available := MaxOffset - lb.startingOffset()
+
+		// Each instance is individually valid, but together they exceed the
+		// range — this must remain errIdentifierOffset, not a validation error.
+		_, err := lb.AddInstance(ctx, "dg-fills-range", WithMaxTargets(available))
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = lb.AddInstance(ctx, "dg-no-room-left", WithMaxTargets(1))
+		Expect(err).To(MatchError(errIdentifierOffset),
+			"a validly-sized instance that cannot be placed is capacity "+
+				"exhaustion, not an invalid request")
+	})
+})
