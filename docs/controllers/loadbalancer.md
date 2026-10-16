@@ -717,6 +717,9 @@ The `stateless-load-balancer` binary accepts the following flags:
 | `--metrics-cert-name` | `MERIDIO_METRICS_CERT_NAME` | `tls.crt` | Filename of the metrics server certificate |
 | `--metrics-cert-key` | `MERIDIO_METRICS_CERT_KEY` | `tls.key` | Filename of the metrics server private key |
 | `--enable-http2` | `MERIDIO_ENABLE_HTTP2` | `false` | Enable HTTP/2 for metrics and webhook servers |
+| `--cache-sync-timeout` | `MERIDIO_CACHE_SYNC_TIMEOUT` | `2m` | Time limit for the initial informer cache sync. Raise for large deployments — see [Scale Tuning](../operations/scale-tuning.md). `0` falls back to the controller-runtime default (2m). |
+| `--kube-api-qps` | `MERIDIO_KUBE_API_QPS` | `-1` (disabled) | Sustained client-side request rate towards the API server. Passed through to client-go's [`rest.Config.QPS`](https://pkg.go.dev/k8s.io/client-go/rest#Config). Values `<= 0` disable client-side rate limiting, relying on server-side API Priority and Fairness. Not a remedy for a slow cache sync — see [Scale Tuning](../operations/scale-tuning.md). |
+| `--kube-api-burst` | `MERIDIO_KUBE_API_BURST` | `30` | Client-side burst allowance, passed through to client-go's [`rest.Config.Burst`](https://pkg.go.dev/k8s.io/client-go/rest#Config). Only effective when `--kube-api-qps > 0`. |
 
 ### NFQLB Internal Defaults
 

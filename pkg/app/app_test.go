@@ -17,6 +17,7 @@ limitations under the License.
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,21 @@ func TestValidate_MetricsPrefixValid(t *testing.T) {
 	err := validateConfig(cfg)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidate_KubeAPITuningInvalid(t *testing.T) {
+	cfg := &config.ManagerConfig{
+		MetricsPrefix: metrics.DefaultPrefix,
+	}
+	cfg.KubeAPIBurst = -1
+
+	err := validateConfig(cfg)
+	if err == nil {
+		t.Fatal("expected kube API tuning error, got nil")
+	}
+	if !strings.Contains(err.Error(), "kube API tuning") {
+		t.Errorf("error should be wrapped with its config area, got: %v", err)
 	}
 }
 

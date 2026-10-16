@@ -29,6 +29,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -111,6 +112,10 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return fmt.Errorf("gateway-name and gateway-namespace are required")
 	}
 
+	if err := cfg.ValidateKubeAPI(); err != nil {
+		return fmt.Errorf("kube API tuning: %w", err)
+	}
+
 	// Initialize NFQLB
 	nfqlbInstance, err := nfqlb.New(nfqlb.WithQueue(cfg.NFQueue), nfqlb.WithFwmarkBase(cfg.FwmarkBase))
 	if err != nil {
@@ -152,7 +157,17 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	}
 
 	// Create manager
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restCfg, err := cfg.RESTConfig()
+	if err != nil {
+		setupLog.Error(err, "failed to load Kubernetes client configuration")
+		return err
+	}
+	setupLog.Info("Kubernetes API client tuning",
+		"cacheSyncTimeout", cfg.CacheSyncTimeout,
+		"clientRateLimiting", cfg.RateLimitingEnabled(),
+		"qps", restCfg.QPS, "burst", restCfg.Burst)
+
+	mgr, err := ctrl.NewManager(restCfg, ctrl.Options{
 		Scheme:         scheme,
 		LeaderElection: false,
 		Cache: cache.Options{
@@ -163,6 +178,11 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
 		PprofBindAddress:       httpsec.ResolvePprofBindAddress(cfg.PprofBindAddress, setupLog),
+		// The LB caches all L34Routes in the Gateway's namespace; the initial
+		// sync can exceed the controller-runtime default at scale.
+		Controller: ctrlconfig.Controller{
+			CacheSyncTimeout: cfg.CacheSyncTimeout,
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create manager")

@@ -38,6 +38,9 @@ const (
 	// LBDeploymentTemplateFile is the filename for the LB Deployment template
 	LBDeploymentTemplateFile = "lb-deployment.yaml"
 
+	// containerRouter is the router container's name in the LB Deployment template
+	containerRouter = "router"
+
 	// Labels
 	labelManagedBy = "app.kubernetes.io/managed-by"
 	managedByValue = "gateway-controller.meridio-2.nordix.org"

@@ -61,6 +61,9 @@ type ManagerConfig struct {
 	// Filtering
 	PodCacheLabel string
 
+	// Kubernetes API client / informer cache tuning
+	KubeAPIConfig
+
 	// Templates
 	TemplatePath string
 
@@ -143,6 +146,7 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"The name of the metrics server certificate file.")
 	fs.StringVar(&c.MetricsCertKey, "metrics-cert-key", "tls.key",
 		"The name of the metrics server key file.")
+	c.AddKubeAPIFlags(fs)
 }
 
 // BindEnv binds environment variables to configuration fields
@@ -178,4 +182,5 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
+	c.BindKubeAPIEnv(fs)
 }

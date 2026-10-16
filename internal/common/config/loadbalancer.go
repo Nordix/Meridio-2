@@ -41,6 +41,9 @@ type LoadBalancerConfig struct {
 	MetricsCertName  string
 	MetricsCertKey   string
 	EnableHTTP2      bool
+
+	// Kubernetes API client / informer cache tuning
+	KubeAPIConfig
 }
 
 // AddFlags adds configuration flags to the provided FlagSet
@@ -78,6 +81,7 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&c.MetricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	fs.BoolVar(&c.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	c.AddKubeAPIFlags(fs)
 }
 
 // BindEnv binds environment variables to configuration fields
@@ -98,4 +102,5 @@ func (c *LoadBalancerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
 	bindBool(fs, "enable-http2", "MERIDIO_ENABLE_HTTP2", &c.EnableHTTP2)
+	c.BindKubeAPIEnv(fs)
 }

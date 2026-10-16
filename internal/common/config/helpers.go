@@ -69,3 +69,15 @@ func bindDuration(fs *pflag.FlagSet, flagName, envName string, target *time.Dura
 		}
 	}
 }
+
+// bindFloat32 binds an environment variable to a float32 configuration field
+// Only applies if the corresponding flag was not explicitly set
+func bindFloat32(fs *pflag.FlagSet, flagName, envName string, target *float32) {
+	if !fs.Changed(flagName) {
+		if val := os.Getenv(envName); val != "" {
+			if parsed, err := strconv.ParseFloat(val, 32); err == nil {
+				*target = float32(parsed)
+			}
+		}
+	}
+}
