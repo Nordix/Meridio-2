@@ -22,7 +22,7 @@ Install cluster dependencies and deploy test suites:
 
 ```bash
 make -C test/e2e cluster
-make -C test/e2e deploy-common-appnetwork
+make -C test/e2e deploy-shared-appnetwork
 ```
 
 ## Note: inotify limits
