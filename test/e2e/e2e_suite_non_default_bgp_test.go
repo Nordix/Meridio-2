@@ -28,6 +28,8 @@ import (
 	"github.com/nordix/meridio-2/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	e2eutils "github.com/nordix/meridio-2/test/e2e/utils"
 )
 
 // Non-Default BGP Routes suite.
@@ -49,8 +51,8 @@ import (
 // installed into the BIRD-managed kernel table (default 4096).
 //
 // This suite confirms that end-to-end on a running setup. It reuses the
-// ipv4-simple topology (Gateway gw-m1 on VLAN 700, ASN 64518). The simulated
-// DCGW (vpn-gateway) is wired to announce a set of specific blackhole prefixes
+// ipv4-simple topology (Gateway gw-m1). The simulated DCGW (vpn-gateway) is
+// wired to announce a set of specific blackhole prefixes
 // from hack/vpn-gateway/bird-filler-net.conf alongside the default route (see
 // hack/vpn-gateway/bird-gw.conf). The test asserts, on the LB router container,
 // that one representative non-default prefix is:
@@ -85,24 +87,6 @@ func nonDefaultLBPod() (string, error) {
 	cmd := exec.Command("kubectl", "get", "pods", "-n", nonDefaultNamespace,
 		"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", nonDefaultGateway),
 		"-o", "jsonpath={.items[0].metadata.name}")
-	return utils.Run(cmd)
-}
-
-// routerBirdcShowRoute runs `birdc show route for <prefix> all` inside the LB
-// router container and returns its output.
-func routerBirdcShowRoute(podName, prefix string) (string, error) {
-	cmd := exec.Command("kubectl", "exec", "-n", nonDefaultNamespace, podName,
-		"-c", nonDefaultRouterContainer, "--",
-		"birdc", "-s", nonDefaultBirdSocket, "show", "route", "for", prefix, "all")
-	return utils.Run(cmd)
-}
-
-// routerKernelTableRoute runs `ip route show table <table> <prefix>` inside the
-// LB router container and returns its output.
-func routerKernelTableRoute(podName, prefix string) (string, error) {
-	cmd := exec.Command("kubectl", "exec", "-n", nonDefaultNamespace, podName,
-		"-c", nonDefaultRouterContainer, "--",
-		"ip", "route", "show", "table", nonDefaultKernelTable, prefix)
 	return utils.Run(cmd)
 }
 
@@ -149,7 +133,7 @@ var _ = Describe("Non-Default BGP Routes", Label("ipv4", "non-default-bgp"), Ord
 	Context("non-default route acceptance", func() {
 		It("should accept the non-default prefix into BIRD as a BGP-learned route", func() {
 			Eventually(func(g Gomega) {
-				out, err := routerBirdcShowRoute(pod, nonDefaultPrefix)
+				out, err := e2eutils.RouterBirdcShowRoute(nonDefaultNamespace, pod, nonDefaultPrefix)
 				g.Expect(err).NotTo(HaveOccurred())
 				// `show route for` returns the longest match; require the exact
 				// prefix to be present (not a fallback to 0.0.0.0/0) AND learned
@@ -163,7 +147,7 @@ var _ = Describe("Non-Default BGP Routes", Label("ipv4", "non-default-bgp"), Ord
 
 		It("should install the non-default prefix into the kernel breakout table", func() {
 			Eventually(func(g Gomega) {
-				out, err := routerKernelTableRoute(pod, nonDefaultPrefix)
+				out, err := e2eutils.RouterKernelTableRoute(nonDefaultNamespace, pod, nonDefaultKernelTable, nonDefaultPrefix)
 				g.Expect(err).NotTo(HaveOccurred())
 				// `ip route show table 4096 128.0.2.0/24` prints the matching
 				// route (empty output means it is not installed).
@@ -178,7 +162,7 @@ var _ = Describe("Non-Default BGP Routes", Label("ipv4", "non-default-bgp"), Ord
 	Context("default route coexistence", func() {
 		It("should still accept the default route from the same peer", func() {
 			Eventually(func(g Gomega) {
-				out, err := routerBirdcShowRoute(pod, defaultPrefix)
+				out, err := e2eutils.RouterBirdcShowRoute(nonDefaultNamespace, pod, defaultPrefix)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(ContainSubstring(defaultPrefix),
 					"BIRD should still hold the default route %s", defaultPrefix)
@@ -189,7 +173,7 @@ var _ = Describe("Non-Default BGP Routes", Label("ipv4", "non-default-bgp"), Ord
 
 		It("should install the default route into the kernel breakout table", func() {
 			Eventually(func(g Gomega) {
-				out, err := routerKernelTableRoute(pod, defaultPrefix)
+				out, err := e2eutils.RouterKernelTableRoute(nonDefaultNamespace, pod, nonDefaultKernelTable, defaultPrefix)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty(),
 					"default route %s should be installed into kernel table %s",
