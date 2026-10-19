@@ -155,3 +155,22 @@ meridio_2_lb_active_targets{dg="dg-b",gateway="gw-a"} 5
 	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected),
 		"meridio_2_lb_flow_matches_total", "meridio_2_lb_active_targets"))
 }
+
+// When a scrape is already in flight (mu held), an overlapping Collect must skip immediately via
+// TryLock — emitting no series and counting one collector error — rather than blocking on the lock.
+func TestCollector_ConcurrentScrapeSkips(t *testing.T) {
+	stats := &fakeStats{
+		flows:   []nfqlb.FlowMatch{{Name: "route-a", MatchesCount: 1}},
+		targets: map[string]int{"dg-a": 1},
+	}
+	errs := newFakeCollectorErrors()
+	c := newTestCollectorWithErrs(stats, errs)
+
+	// Simulate an in-flight scrape holding the lock.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(""),
+		"meridio_2_lb_flow_matches_total", "meridio_2_lb_active_targets"))
+	require.Equal(t, 1, errs.count(CollectorNfqlb))
+}

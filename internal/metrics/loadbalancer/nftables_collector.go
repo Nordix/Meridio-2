@@ -23,26 +23,19 @@ import (
 )
 
 // NftablesReader is the subset of nftables.Manager the NftablesCollector reads at scrape time.
-// *nftables.Manager satisfies it; a fake is used in tests. The nftables-sourced metrics share
-// one collector because they read the same data source (the meridio-lb nftables table).
+// *nftables.Manager satisfies it; a fake is used in tests.
 type NftablesReader interface {
 	// VIPSetSize returns the number of VIP entries in the IPv4 and IPv6 VIP sets.
 	VIPSetSize() (ipv4, ipv6 int, err error)
 	// DropCounts returns per-reason dropped-packet totals from the drop-accounting chain,
-	// keyed by reason. Empty when drop accounting is disabled.
+	// keyed by reason. A reason appears only when its drop rule exists.
 	DropCounts() (map[string]uint64, error)
 }
 
 // NftablesCollector is a prometheus.Collector exposing the nftables-sourced LB metrics for the
 // single Gateway this LB Pod serves. Read lazily (pull-based) at scrape time via the
-// google/nftables client.
-//
-// For external-state safety (#236) Collect serializes with a mutex so overlapping scrapes cannot
-// issue concurrent netlink reads, and it owns that mutex independently of the route and nfqlb
-// collectors. Unlike the nfqlb collector it carries NO collect timeout: the google/nftables
-// client issues synchronous netlink syscalls against the local meridio-lb table with no context
-// support, and such local-table reads do not block in practice — so there is no context to
-// bound. (The route collector, which can scan all host rules, is where a timeout is warranted.)
+// google/nftables client. Serializes reads with a mutex; carries no collect timeout (see the
+// package doc for the per-source safety shapes).
 type NftablesCollector struct {
 	nft         NftablesReader
 	gatewayName string
@@ -73,7 +66,7 @@ func NewNftablesCollector(nft NftablesReader, gatewayName, prefix string, errs e
 			prefix+"_lb_drops_total",
 			"Number of packets dropped by the LB's drop-accounting chain, by reason "+
 				"(no_flow: matched a VIP but no flow selector matched; no_targets: a flow "+
-				"matched but no active targets). Absent when drop accounting is disabled.",
+				"matched but no active targets). A reason is reported only when its drop rule exists.",
 			[]string{"gateway", "reason"}, nil,
 		),
 	}

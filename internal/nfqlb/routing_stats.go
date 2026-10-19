@@ -29,9 +29,9 @@ const (
 	ipFamilyV6 = "IPv6"
 )
 
-// ruleListFunc is the seam for listing policy rules; overridable in tests. Defaults to the real
-// netlink call. Kept separate from the ensureRule/CleanupStaleRules call sites so the read path
-// can be faked without a kernel.
+// ruleListFunc lists policy rules and can be replaced in tests. It defaults to the real netlink
+// call. It is kept as a separate function variable from the ensureRule/CleanupStaleRules call
+// sites so the read path can be faked without a kernel.
 var ruleListFunc = netlink.RuleList
 
 // PolicyRouteCounts returns the number of LB-owned policy routing rules currently installed,

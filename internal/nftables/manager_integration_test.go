@@ -192,8 +192,10 @@ func TestIntegration_DropCounts(t *testing.T) {
 	assert.Equal(t, map[string]uint64{DropReasonNoFlow: 0, DropReasonNoTargets: 0}, counts)
 }
 
-// TestIntegration_DropCounts_Disabled verifies that with drop accounting disabled (both fwmarks
-// 0) the chain is not created and DropCounts returns an empty map (no series for the collector).
+// TestIntegration_DropCounts_Disabled verifies the nil-chain safety guard: a Manager set up with
+// both fwmarks 0 does not create the drop-accounting chain, so DropCounts returns an empty map
+// (no series for the collector). Note: production never hits this (fwmarkBase >= 1 keeps the
+// fwmarks non-zero); this pins the guard behavior only.
 func TestIntegration_DropCounts_Disabled(t *testing.T) {
 	conn := newTestConn(t)
 	mgr := &Manager{

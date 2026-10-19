@@ -128,10 +128,13 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return fmt.Errorf("kube API tuning: %w", err)
 	}
 
-	// Validate the metrics prefix early (fail fast) when metrics are enabled.
+	// Validate metrics settings early (fail fast) when metrics are enabled.
 	if commonmetrics.Enabled(cfg.MetricsAddr) {
 		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
 			return fmt.Errorf("metrics-prefix: %w", err)
+		}
+		if cfg.MetricsCollectTimeout <= 0 {
+			return fmt.Errorf("metrics-collect-timeout must be greater than 0, got %s", cfg.MetricsCollectTimeout)
 		}
 	}
 
@@ -293,13 +296,15 @@ func registerLBMetrics(
 		return fmt.Errorf("register nfqlb collector: %w", err)
 	}
 
+	// NftablesReader is non-nil in production: the shared manager is always a *nftables.Manager,
+	// which the compile-time assertion (see var block at top) proves satisfies the reader
+	// interface. The nil check only guards non-production wiring (e.g. a test mock manager); when
+	// nil we simply skip that collector.
 	if nftReader := lbController.NftablesReader(); nftReader != nil {
 		nftCollector := lbmetrics.NewNftablesCollector(nftReader, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)
 		if err := ctrlmetrics.Registry.Register(nftCollector); err != nil {
 			return fmt.Errorf("register nftables collector: %w", err)
 		}
-	} else {
-		setupLog.Info("nftables manager does not expose read methods; skipping nftables metrics collector")
 	}
 
 	routeCollector := lbmetrics.NewRouteCollector(nfqlbInstance, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)

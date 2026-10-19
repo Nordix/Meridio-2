@@ -24,8 +24,7 @@ import (
 
 // RouteReader is the subset of the nfqlb routing layer the RouteCollector reads at scrape time.
 // It is satisfied by a thin adapter over nfqlb.PolicyRouteCounts (see run.go); a fake is used in
-// tests. This is a different data source (vishvananda/netlink policy rules) from the nftables
-// reads, hence a separate collector.
+// tests.
 type RouteReader interface {
 	// PolicyRouteCounts returns the number of LB-owned policy rules per IP family
 	// (keys "IPv4"/"IPv6").
@@ -34,13 +33,8 @@ type RouteReader interface {
 
 // RouteCollector is a prometheus.Collector exposing the LB policy-route count for the single
 // Gateway this LB Pod serves, split by IP family. Read lazily (pull-based) at scrape time via
-// vishvananda/netlink.
-//
-// For external-state safety (#236) Collect serializes with a mutex so overlapping scrapes cannot
-// issue concurrent rule-list reads, and it owns that mutex independently of the nftables and
-// nfqlb collectors. Like the nftables collector it carries NO collect timeout: vishvananda/netlink
-// has no context API, and RuleList is a single bounded NETLINK_ROUTE dump that does not block in
-// practice — so there is no context to bound. The mutex (the real concurrency concern) remains.
+// vishvananda/netlink. Serializes reads with a mutex; carries no collect timeout (see the package
+// doc for the per-source safety shapes).
 type RouteCollector struct {
 	routes      RouteReader
 	gatewayName string

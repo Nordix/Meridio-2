@@ -81,8 +81,9 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Prefix for custom Meridio-2 metric names. Must start with a lowercase letter and contain only "+
 			"lowercase letters, digits, and underscores. Maximum 10 characters.")
 	fs.DurationVar(&c.MetricsCollectTimeout, "metrics-collect-timeout", 5*time.Second,
-		"Maximum time a single metrics scrape may spend reading nfqlb (flow-list/show) before "+
-			"reporting a collection error. Keep below Prometheus's scrape_timeout (default 10s).")
+		"Time limit for the nfqlb reads (flow-list/show) during one metrics scrape. Only the nfqlb "+
+			"collector uses it; the nftables and route collectors do single local reads and are not "+
+			"timed. Keep it below Prometheus's scrape_timeout (default 10s).")
 	fs.BoolVar(&c.SecureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	fs.StringVar(&c.MetricsCertPath, "metrics-cert-path", "",
