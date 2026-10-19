@@ -101,7 +101,7 @@ jobs:
       - run: make ${{ matrix.image }} BUILD_STEPS=build
 
   e2e:
-    needs: [unit-tests, build]
+    needs: [unit-tests, integration-tests, build]
     if: github.event_name == 'push'
     uses: ./.github/workflows/e2e.yaml
     secrets: inherit

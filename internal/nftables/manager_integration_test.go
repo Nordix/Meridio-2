@@ -19,7 +19,10 @@ limitations under the License.
 package nftables
 
 import (
+	"errors"
+	"os"
 	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/google/nftables"
@@ -29,7 +32,10 @@ import (
 )
 
 // newTestConn creates an nftables.Conn in a new network namespace for isolated testing.
-// Requires CAP_NET_ADMIN.
+// Requires CAP_NET_ADMIN. When the environment lacks it the test is skipped, so an unprivileged
+// `make test-integration` reports SKIP instead of a spurious FAIL — unless MERIDIO_REQUIRE_NETNS
+// is set (CI sets it), in which case the missing capability is a hard failure so the job cannot go
+// green while silently testing nothing. See netnsSetupError.
 func newTestConn(t *testing.T) *nftables.Conn {
 	t.Helper()
 	runtime.LockOSThread()
@@ -40,10 +46,29 @@ func newTestConn(t *testing.T) *nftables.Conn {
 	t.Cleanup(func() { _ = netns.Set(orig); _ = orig.Close() })
 
 	ns, err := netns.New()
-	require.NoError(t, err)
+	if err != nil {
+		netnsSetupError(t, err)
+	}
 	t.Cleanup(func() { _ = ns.Close() })
 
 	return &nftables.Conn{NetNS: int(ns)}
+}
+
+// netnsSetupError handles a failure to create a test network namespace. A permission error
+// (missing CAP_NET_ADMIN) normally skips the test so unprivileged local runs don't fail; but when
+// MERIDIO_REQUIRE_NETNS is set it is turned into a hard failure. This prevents a CI job from
+// passing while every netns test silently skips — which would quietly remove the only coverage of
+// the nftables/nfqlb kernel paths. Any non-permission error always fails.
+func netnsSetupError(t *testing.T, err error) {
+	t.Helper()
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EPERM) {
+		if os.Getenv("MERIDIO_REQUIRE_NETNS") != "" {
+			t.Fatalf("MERIDIO_REQUIRE_NETNS set but network namespace creation was denied "+
+				"(need CAP_NET_ADMIN): %v", err)
+		}
+		t.Skipf("skipping: creating a network namespace requires CAP_NET_ADMIN (%v)", err)
+	}
+	require.NoError(t, err)
 }
 
 func TestIntegration_SetupLoadsAllChains(t *testing.T) {

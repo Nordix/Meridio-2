@@ -133,12 +133,16 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: generate setup-envtest ## Run the unit tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+test: generate setup-envtest ## Run the unit tests (with the race detector).
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -race $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 .PHONY: test-integration
 test-integration: ## Run the integration tests (require CAP_NET_ADMIN; tagged //go:build integration).
-	go test -tags integration ./internal/nftables/... ./internal/nfqlb/...
+	# MERIDIO_REQUIRE_NETNS=1 turns a missing CAP_NET_ADMIN into a failure instead of a silent
+	# skip, so this target cannot pass while testing nothing. -run scopes execution to the
+	# TestIntegration_* functions so the packages' untagged unit tests are not re-run here.
+	MERIDIO_REQUIRE_NETNS=1 go test -tags integration -run 'TestIntegration' \
+		./internal/nftables/... ./internal/nfqlb/...
 
 .PHONY: e2e
 e2e: ## Run end-to-end tests.

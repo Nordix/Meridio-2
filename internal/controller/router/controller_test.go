@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,8 +45,12 @@ import (
 const testGatewayName = "test-gateway"
 const testNamespace = "default"
 
-// mockingBird is a test double for bird.BirdInterface that captures Configure arguments
+// mockingBird is a test double for bird.BirdInterface that captures Configure arguments.
+// Configure is invoked from the controller-runtime reconcile goroutine while tests read the
+// captured values from the test goroutine (notably the async integration test via
+// assert.Eventually), so the captured fields are guarded by mu.
 type mockingBird struct {
+	mu               sync.Mutex
 	configureVIPs    []string
 	configureRouters []*meridio2v1alpha1.GatewayRouter
 	configureErr     error
@@ -56,9 +61,25 @@ func (m *mockingBird) Run(ctx context.Context) error {
 }
 
 func (m *mockingBird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.configureVIPs = vips
 	m.configureRouters = routers
 	return m.configureErr
+}
+
+// getConfigureVIPs returns the VIPs captured by the last Configure call, under the lock.
+func (m *mockingBird) getConfigureVIPs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.configureVIPs
+}
+
+// setConfigureErr sets the error Configure returns, under the lock.
+func (m *mockingBird) setConfigureErr(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.configureErr = err
 }
 
 func (m *mockingBird) Monitor(ctx context.Context, interval time.Duration) (<-chan bird.MonitorStatus, error) {
@@ -175,7 +196,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, ctrl.Result{}, result)
-		assert.Equal(t, []string{"40.0.0.1", "40.0.0.2"}, mock.configureVIPs)
+		assert.Equal(t, []string{"40.0.0.1", "40.0.0.2"}, mock.getConfigureVIPs())
 
 		fetched := &gatewayapiv1.Gateway{}
 		assert.NoError(t, fakeClient.Get(context.Background(), types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}, fetched))
@@ -185,7 +206,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 		gw := newGateway(testGatewayName, testNamespace, "40.0.0.1")
 		reconciler, _ := setupReconciler(gw)
 		mock := reconciler.Bird.(*mockingBird)
-		mock.configureErr = fmt.Errorf("birdc failed")
+		mock.setConfigureErr(fmt.Errorf("birdc failed"))
 
 		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
 		_, err := reconciler.Reconcile(context.Background(), request)
@@ -389,7 +410,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
-		assert.Nil(t, mock.configureVIPs)
+		assert.Nil(t, mock.getConfigureVIPs())
 	})
 
 	t.Run("Enabled_PassesVIPs_WhenReadinessFileExists", func(t *testing.T) {
@@ -406,7 +427,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
-		assert.Equal(t, []string{"10.0.0.1"}, mock.configureVIPs)
+		assert.Equal(t, []string{"10.0.0.1"}, mock.getConfigureVIPs())
 	})
 
 	t.Run("Disabled_AlwaysAdvertisesVIPs", func(t *testing.T) {
@@ -419,7 +440,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
-		assert.Equal(t, []string{"10.0.0.1", "10.0.0.2"}, mock.configureVIPs)
+		assert.Equal(t, []string{"10.0.0.1", "10.0.0.2"}, mock.getConfigureVIPs())
 	})
 
 	t.Run("Disabled_AdvertisesEvenWithNoDir", func(t *testing.T) {
@@ -432,7 +453,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
-		assert.Equal(t, []string{"10.0.0.1"}, mock.configureVIPs)
+		assert.Equal(t, []string{"10.0.0.1"}, mock.getConfigureVIPs())
 	})
 }
 

@@ -111,7 +111,7 @@ func TestIntegration_ReadinessGatingTriggersReconcile(t *testing.T) {
 
 	// Wait for initial reconcile (VIPs should be suppressed — dir is empty)
 	time.Sleep(500 * time.Millisecond)
-	assert.Nil(t, mock.configureVIPs, "VIPs should be suppressed when readiness dir is empty")
+	assert.Nil(t, mock.getConfigureVIPs(), "VIPs should be suppressed when readiness dir is empty")
 
 	// Create readiness file → should trigger reconcile automatically
 	f, err := os.Create(filepath.Join(dir, readiness.LBReadyFilePrefix+"dg1"))
@@ -120,14 +120,14 @@ func TestIntegration_ReadinessGatingTriggersReconcile(t *testing.T) {
 
 	// Wait for watcher to trigger reconcile
 	assert.Eventually(t, func() bool {
-		return len(mock.configureVIPs) > 0
+		return len(mock.getConfigureVIPs()) > 0
 	}, 5*time.Second, 100*time.Millisecond, "VIPs should be advertised after readiness file created")
 
 	// Remove file → should trigger reconcile, VIPs suppressed again
 	require.NoError(t, os.Remove(filepath.Join(dir, readiness.LBReadyFilePrefix+"dg1")))
 
 	assert.Eventually(t, func() bool {
-		return mock.configureVIPs == nil
+		return mock.getConfigureVIPs() == nil
 	}, 5*time.Second, 100*time.Millisecond, "VIPs should be suppressed after readiness file removed")
 }
 

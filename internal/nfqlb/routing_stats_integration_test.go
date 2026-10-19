@@ -19,7 +19,10 @@ limitations under the License.
 package nfqlb
 
 import (
+	"errors"
+	"os"
 	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +32,10 @@ import (
 )
 
 // enterTestNetns moves the current OS thread into a fresh network namespace for isolated
-// policy-rule testing, restoring the original on cleanup. Requires CAP_NET_ADMIN.
+// policy-rule testing, restoring the original on cleanup. Requires CAP_NET_ADMIN. When the
+// environment lacks it the test is skipped so an unprivileged run reports SKIP — unless
+// MERIDIO_REQUIRE_NETNS is set (CI sets it), in which case it is a hard failure so the job cannot
+// go green while silently testing nothing. See netnsSetupError.
 func enterTestNetns(t *testing.T) {
 	t.Helper()
 	runtime.LockOSThread()
@@ -40,8 +46,27 @@ func enterTestNetns(t *testing.T) {
 	t.Cleanup(func() { _ = netns.Set(orig); _ = orig.Close() })
 
 	ns, err := netns.New() // also switches the current thread into ns
-	require.NoError(t, err)
+	if err != nil {
+		netnsSetupError(t, err)
+	}
 	t.Cleanup(func() { _ = ns.Close() })
+}
+
+// netnsSetupError handles a failure to create a test network namespace. A permission error
+// (missing CAP_NET_ADMIN) normally skips the test so unprivileged local runs don't fail; but when
+// MERIDIO_REQUIRE_NETNS is set it is turned into a hard failure. This prevents a CI job from
+// passing while every netns test silently skips — which would quietly remove the only coverage of
+// the nftables/nfqlb kernel paths. Any non-permission error always fails.
+func netnsSetupError(t *testing.T, err error) {
+	t.Helper()
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EPERM) {
+		if os.Getenv("MERIDIO_REQUIRE_NETNS") != "" {
+			t.Fatalf("MERIDIO_REQUIRE_NETNS set but network namespace creation was denied "+
+				"(need CAP_NET_ADMIN): %v", err)
+		}
+		t.Skipf("skipping: creating a network namespace requires CAP_NET_ADMIN (%v)", err)
+	}
+	require.NoError(t, err)
 }
 
 // addFwmarkRule installs a policy rule (fwmark -> table) in the current netns, mirroring what
