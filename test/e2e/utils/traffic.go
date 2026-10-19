@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nordix/meridio-2/test/utils"
 )
 
 // E2EVPNGatewayExecEnv is the environment variable used to select how commands
@@ -669,4 +671,27 @@ func exactPrefixBlock(out, prefix string) (string, bool) {
 		}
 	}
 	return strings.Join(block, "\n"), len(block) > 0
+}
+
+// RouterBirdcShowRoute runs `birdc show route for <prefix> all` inside the LB
+// Pod's router container and returns its output. It is the router-pod-side
+// counterpart to VPNGatewayHasRoute (which inspects the DCGW side): useful for
+// asserting which routes — e.g. non-default BGP-learned prefixes — the LB
+// router's BIRD has accepted. Uses birdSocketPath (defined in health.go).
+func RouterBirdcShowRoute(namespace, podName, prefix string) (string, error) {
+	cmd := exec.Command("kubectl", "exec", "-n", namespace, podName,
+		"-c", "router", "--",
+		"birdc", "-s", birdSocketPath, "show", "route", "for", prefix, "all")
+	return utils.Run(cmd)
+}
+
+// RouterKernelTableRoute runs `ip route show table <table> <prefix>` inside the
+// LB Pod's router container and returns its output. Useful for asserting that a
+// route BIRD accepted was installed into the BIRD-managed kernel breakout table
+// (the router's --table-id, default 4096).
+func RouterKernelTableRoute(namespace, podName, table, prefix string) (string, error) {
+	cmd := exec.Command("kubectl", "exec", "-n", namespace, podName,
+		"-c", "router", "--",
+		"ip", "route", "show", "table", table, prefix)
+	return utils.Run(cmd)
 }
