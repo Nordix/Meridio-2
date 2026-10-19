@@ -80,10 +80,36 @@ type LoadBalancerEndpoint struct {
 	// +optional
 	Identifier *int32 `json:"identifier,omitempty"`
 
-	// ready indicates whether this endpoint is ready to receive traffic.
-	// The DG controller mirrors Pod readiness; the LB controller decides
-	// activation policy based on this field.
-	Ready bool `json:"ready"`
+	// conditions reflects the current state of this endpoint's backing Pod and
+	// may be considered by traffic distribution logic. Consumers needing
+	// upstream-style readiness can derive it as Serving && !Terminating.
+	// +required
+	Conditions EndpointConditions `json:"conditions"`
+}
+
+// EndpointConditions describes the current state of an endpoint.
+//
+// Modelled on discovery/v1.EndpointConditions but intentionally local and
+// reduced: the upstream type is not embedded (avoids a cross-API-group
+// dependency in the CRD schema), and there is no Ready field, since it is
+// derivable from Serving and Terminating.
+//
+// The fields are plain bools rather than *bool. Whoever writes a slice always
+// sets both from the backing Pod, so there is no "unknown" state to
+// distinguish from false and no backward-compatibility default to honour.
+// A future condition that a writer may be unable to determine should instead
+// be added as an optional *bool with a documented nil interpretation.
+type EndpointConditions struct {
+	// serving indicates the backing Pod's Ready condition is True, independent of
+	// termination: it remains true for a terminating Pod whose readiness probe
+	// still passes.
+	// +required
+	Serving bool `json:"serving"`
+
+	// terminating indicates the endpoint's Pod is being deleted
+	// (has a deletion timestamp). A terminating endpoint may still be serving.
+	// +required
+	Terminating bool `json:"terminating"`
 }
 
 // EndpointTarget identifies the Pod backing an endpoint.

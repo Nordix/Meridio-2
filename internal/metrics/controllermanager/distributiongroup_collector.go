@@ -54,7 +54,7 @@ import (
 // series per DG, reflecting distributiongroup.IsAvailable(dg) as-is.
 //
 // Note: IsAvailable currently means "has any assigned endpoint" (a slice exists), not "has any ready
-// endpoint" — per-endpoint LoadBalancerEndpoint.Ready is not consulted. This metric mirrors the
+// endpoint" — per-endpoint conditions (serving/terminating) are not consulted. This metric mirrors the
 // existing condition as-is rather than inventing a metrics-only readiness under the same name;
 // whether the condition itself should consider per-endpoint readiness is a separate open design
 // question for the reconciler.

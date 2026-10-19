@@ -129,7 +129,7 @@ LoadBalancerEndpointSlice (owned by DistributionGroup)
 ├── spec.endpoints[].target → Pod (name + UID)
 ├── spec.endpoints[].addresses[] → IP + family
 ├── spec.endpoints[].identifier → Maglev slot index
-└── spec.endpoints[].ready → target readiness
+└── spec.endpoints[].conditions → endpoint state (serving, terminating)
 
 NFQLB Instance (in-memory, per DistributionGroup)
 ├── shared memory: /dev/shm/<instance-name>
@@ -186,7 +186,7 @@ nftables (shared across all DGs in this LB Pod)
 - Sort by name for deterministic processing
 - Extract target identifiers from `endpoint.Identifier` (int pointer, Maglev slot index)
 - Extract target IPs from `endpoint.Addresses[].IP`
-- Filter by `endpoint.Ready == true`
+- Filter to ready endpoints: `conditions.serving && !conditions.terminating`
 - First occurrence of an identifier wins (duplicates across slices during transients are logged and skipped)
 
 **Deactivate removed targets:**

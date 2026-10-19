@@ -740,8 +740,8 @@ scenarios more realistic. Currently, only static secondary configuration is supp
 ### DG Controller Role
 
 The DG controller currently acts as a truthful mirror of Pod network state — it sets the
-`Ready` field based on actual Pod readiness and includes Pods in EndpointSlices based on
-their actual IPs, without policy decisions about partial presence.
+endpoint `conditions` (serving/terminating) based on actual Pod state and includes Pods in
+EndpointSlices based on their actual IPs, without policy decisions about partial presence.
 
 **Gatekeeper proposal:** The DG controller could restrict adding *new* Pods to
 EndpointSlices until they have IPs in all configured InternalSubnets. This would prevent

@@ -606,7 +606,38 @@ func TestReconcile_PodNotReady_EndpointNotReady(t *testing.T) {
 	slices := tcListSlices(t, c)
 	require.Len(t, slices, 1)
 	require.Len(t, slices[0].Spec.Endpoints, 1)
-	assert.False(t, slices[0].Spec.Endpoints[0].Ready)
+	// NotReady, not terminating: serving=false, terminating=false (ready derived false).
+	conds := slices[0].Spec.Endpoints[0].Conditions
+	assert.False(t, conds.Serving)
+	assert.False(t, conds.Terminating)
+}
+
+// TestReconcile_PodTerminatingButReady pins the producer side of the contract:
+// a Running, Ready Pod with a deletion timestamp must yield an endpoint with
+// serving=true and terminating=true (the case the conditions split exists for).
+func TestReconcile_PodTerminatingButReady(t *testing.T) {
+	dg := tcNewDG()
+	gw := tcNewGateway(true)
+	gwConfig := tcNewGatewayConfig()
+	route := tcNewL34Route(tcGatewayName, tcDGName)
+	pod := tcNewPod("pod-1", true, "192.168.100.10") // ready...
+	// ...but terminating. A finalizer keeps the object present after the fake
+	// client honours the deletion timestamp, so it is still scraped.
+	now := metav1.Now()
+	pod.DeletionTimestamp = &now
+	pod.Finalizers = []string{"test/keep"}
+
+	r, c := tcSetupReconciler(dg, gw, gwConfig, route, pod)
+	result, err := r.Reconcile(context.Background(), tcReconcileRequest())
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+
+	slices := tcListSlices(t, c)
+	require.Len(t, slices, 1)
+	require.Len(t, slices[0].Spec.Endpoints, 1)
+	conds := slices[0].Spec.Endpoints[0].Conditions
+	assert.True(t, conds.Serving, "a terminating Pod whose probe passes is still serving")
+	assert.True(t, conds.Terminating, "a Pod with a deletion timestamp is terminating")
 }
 
 func TestReconcile_RouteReferencesWrongGateway_NoEndpoints(t *testing.T) {

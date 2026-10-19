@@ -87,7 +87,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	newTargets := make(map[int][]string)
 	for _, lbeps := range ownedSlices {
 		for _, endpoint := range lbeps.Spec.Endpoints {
-			if !endpoint.Ready {
+			if !endpointReady(endpoint) {
 				continue
 			}
 			if endpoint.Identifier == nil {
@@ -172,4 +172,16 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 
 	logr.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
 	return nil
+}
+
+// endpointReady is the LoadBalancer's policy for whether an endpoint should be
+// programmed as an NFQLB target. It is the single place that folds the endpoint
+// conditions into an activation decision — deliberately in the consumer, not on
+// the API type, because "should this endpoint receive traffic" is a consumer
+// policy question: once per-DistributionGroup policies exist, this is where they
+// plug in (e.g. keeping a terminating-but-serving endpoint in the distribution
+// table). Today the policy is the plain readiness fold: serving and not
+// terminating.
+func endpointReady(endpoint meridio2v1alpha1.LoadBalancerEndpoint) bool {
+	return endpoint.Conditions.Serving && !endpoint.Conditions.Terminating
 }

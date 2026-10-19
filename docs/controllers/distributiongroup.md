@@ -59,7 +59,7 @@ LoadBalancerEndpointSlice (owned by DistributionGroup via ownerReference)
 ├── spec.endpoints[].target → Pod (name + UID)
 ├── spec.endpoints[].addresses[] → IP + family (dual-stack: up to 2 entries)
 ├── spec.endpoints[].identifier → Maglev slot index (optional)
-└── spec.endpoints[].ready → Pod readiness state
+└── spec.endpoints[].conditions → endpoint state (serving, terminating), derived from the Pod
 ```
 
 **Ownership model:**
@@ -167,7 +167,7 @@ The LoadBalancer controller uses **dynamic ID offsets per DistributionGroup** to
 
 ### 9. Build LoadBalancerEndpointSlices
 **Per Gateway:**
-- Build endpoint entries: Pod target (name + UID), addresses (dual-stack), identifier (Maglev), ready state (based on Pod readiness)
+- Build endpoint entries: Pod target (name + UID), addresses (dual-stack), identifier (Maglev), and conditions (serving/terminating) derived from the Pod
 - Preserve existing slice structure (endpoints stay in their original slice when possible)
 - Fill remaining capacity in existing slices with new endpoints
 - Compact: move endpoints from later slices into earlier slices with free capacity to avoid fragmentation after scale-in
@@ -204,11 +204,11 @@ retain all their endpoints — the controller never truncates or splits an overs
 gradually shrink as Pods scale down naturally. This avoids unnecessary endpoint churn on a
 configuration change.
 
-**Pod readiness logic:**
-- Checks `PodReady` condition (all containers ready + readiness probes pass)
-- Returns false if Pod is being deleted (`DeletionTimestamp != nil`)
-- Matches Kubernetes core EndpointSlice controller behavior
-- Ensures traffic only goes to fully ready Pods
+**Endpoint conditions:**
+- `serving`: the Pod's `PodReady` condition is `True`. Set regardless of termination.
+- `terminating`: the Pod has a `DeletionTimestamp`.
+- Readiness is not stored; a consumer derives it as `serving && !terminating`.
+- Because `serving` is independent of termination, a terminating Pod whose probe still passes is represented as `serving=true, terminating=true` — the producer records the state; consumers decide whether such an endpoint receives traffic.
 
 ### 10. Reconcile LoadBalancerEndpointSlices
 - Create new slices (with ownerReference set)
@@ -588,7 +588,7 @@ kubectl get loadbalancerendpointslices -n meridio-2 -l meridio-2.nordix.org/dist
 kubectl get loadbalancerendpointslices -n meridio-2 -l meridio-2.nordix.org/distribution-group=test-dg -o json | \
   jq -r '.items[] | 
     "Slice: \(.metadata.name) (DG: \(.spec.distributionGroupName), GW: \(.spec.gatewayRef.name))",
-    (.spec.endpoints[] | "  \(.target.name) [ID: \(.identifier // "none")] ready=\(.ready) addresses=\([.addresses[] | "\(.family):\(.ip)"] | join(", "))")'
+    (.spec.endpoints[] | "  \(.target.name) [ID: \(.identifier // "none")] serving=\(.conditions.serving) terminating=\(.conditions.terminating) addresses=\([.addresses[] | "\(.family):\(.ip)"] | join(", "))")'
 
 # Check DistributionGroup status
 kubectl get distributiongroup test-dg -n meridio-2 -o yaml
@@ -663,7 +663,7 @@ kubectl get lbeslice -n meridio-2 -l meridio-2.nordix.org/distribution-group=tes
 kubectl get lbeslice -n meridio-2 -l meridio-2.nordix.org/distribution-group=test-dg-indirect -o json | \
   jq -r '.items[] |
     "Slice: \(.metadata.name) (DG: \(.spec.distributionGroupName), GW: \(.spec.gatewayRef.name))",
-    (.spec.endpoints[] | "  \(.target.name) [ID: \(.identifier // "none")] ready=\(.ready) addresses=\([.addresses[] | "\(.family):\(.ip)"] | join(", "))")'
+    (.spec.endpoints[] | "  \(.target.name) [ID: \(.identifier // "none")] serving=\(.conditions.serving) terminating=\(.conditions.terminating) addresses=\([.addresses[] | "\(.family):\(.ip)"] | join(", "))")'
 
 # Check DistributionGroup status
 kubectl get distributiongroup test-dg-indirect -n meridio-2 -o jsonpath='{.status.conditions}'

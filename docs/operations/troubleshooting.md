@@ -635,7 +635,7 @@ Each LoadBalancerEndpointSlice has:
 Dual-stack endpoints are co-located in a single entry (no per-family split). Each endpoint should have:
 - `spec.endpoints[].target` — Pod name and UID
 - `spec.endpoints[].addresses` — list of IPs with family annotation (e.g., `[{ip: "10.0.0.5", family: "IPv4"}, {ip: "fd00::5", family: "IPv6"}]`)
-- `spec.endpoints[].ready` — `true` if the Pod is Ready
+- `spec.endpoints[].conditions.serving` / `spec.endpoints[].conditions.terminating` — the endpoint's state (the Pod's readiness, and whether it is being deleted). An endpoint is ready when `serving` is `true` and `terminating` is `false`.
 - `spec.endpoints[].identifier` — Maglev slot index (e.g., `5`). This is the identifier used by the LB controller to activate targets in the NFQLB shared memory instance
 
 If LoadBalancerEndpointSlices are missing:

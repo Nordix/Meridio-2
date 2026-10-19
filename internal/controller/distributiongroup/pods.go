@@ -28,17 +28,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// isPodReady returns true if the Pod is ready to serve traffic
-// Matches Kubernetes EndpointSlice controller behavior:
-// - Checks PodReady condition (not just Phase)
-// - Returns false if Pod is being deleted
-func isPodReady(pod *corev1.Pod) bool {
-	// Pods being deleted should not receive traffic
-	if pod.DeletionTimestamp != nil {
-		return false
+// endpointConditions derives an endpoint's conditions from its backing Pod:
+//   - Serving:     the Pod's Ready condition is True, regardless of termination
+//   - Terminating: the Pod has a deletion timestamp
+//
+// Readiness is not stored; a consumer derives it as Serving && !Terminating.
+// Keeping Serving independent of termination lets a terminating Pod that still
+// passes its probe be represented as able to serve; whether it receives traffic
+// is the consumer's decision.
+func endpointConditions(pod *corev1.Pod) meridio2v1alpha1.EndpointConditions {
+	return meridio2v1alpha1.EndpointConditions{
+		Serving:     isPodReadyConditionTrue(pod),
+		Terminating: pod.DeletionTimestamp != nil,
 	}
+}
 
-	// Check PodReady condition (all containers ready + readiness probes pass)
+// isPodReadyConditionTrue reports whether the Pod's Ready condition is True.
+// A missing or Unknown condition counts as not ready. This is exactly what the
+// Serving condition carries; termination is tracked separately in Terminating.
+func isPodReadyConditionTrue(pod *corev1.Pod) bool {
 	for _, condition := range pod.Status.Conditions {
 		if condition.Type == corev1.PodReady {
 			return condition.Status == corev1.ConditionTrue
