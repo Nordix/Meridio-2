@@ -29,17 +29,22 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
+	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
+	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
@@ -110,6 +115,17 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return fmt.Errorf("gateway-name and gateway-namespace are required")
 	}
 
+	if err := cfg.ValidateKubeAPI(); err != nil {
+		return fmt.Errorf("kube API tuning: %w", err)
+	}
+
+	// Validate the metrics prefix early (fail fast) when metrics are enabled.
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+			return fmt.Errorf("metrics-prefix: %w", err)
+		}
+	}
+
 	// Initialize NFQLB
 	nfqlbInstance, err := nfqlb.New(nfqlb.WithQueue(cfg.NFQueue), nfqlb.WithFwmarkBase(cfg.FwmarkBase))
 	if err != nil {
@@ -151,7 +167,17 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	}
 
 	// Create manager
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restCfg, err := cfg.RESTConfig()
+	if err != nil {
+		setupLog.Error(err, "failed to load Kubernetes client configuration")
+		return err
+	}
+	setupLog.Info("Kubernetes API client tuning",
+		"cacheSyncTimeout", cfg.CacheSyncTimeout,
+		"clientRateLimiting", cfg.RateLimitingEnabled(),
+		"qps", restCfg.QPS, "burst", restCfg.Burst)
+
+	mgr, err := ctrl.NewManager(restCfg, ctrl.Options{
 		Scheme:         scheme,
 		LeaderElection: false,
 		Cache: cache.Options{
@@ -161,6 +187,12 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		},
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
+		PprofBindAddress:       httpsec.ResolvePprofBindAddress(cfg.PprofBindAddress, setupLog),
+		// The LB caches all L34Routes in the Gateway's namespace; the initial
+		// sync can exceed the controller-runtime default at scale.
+		Controller: ctrlconfig.Controller{
+			CacheSyncTimeout: cfg.CacheSyncTimeout,
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create manager")
@@ -188,6 +220,20 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		return err
+	}
+
+	// Register custom LB metrics collector (lazy, nfqlb-sourced) when metrics are enabled.
+	// nfqlbInstance satisfies lbmetrics.StatsReader (FlowMatches/ActiveTargets).
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		collector := lbmetrics.NewCollector(
+			nfqlbInstance, cfg.GatewayName, cfg.MetricsPrefix, cfg.MetricsCollectTimeout,
+		)
+		if err := ctrlmetrics.Registry.Register(collector); err != nil {
+			setupLog.Error(err, "failed to register LB metrics collector")
+			return err
+		}
+		setupLog.Info("Registered custom metrics collector",
+			"collector", "LBCollector", "metricsPrefix", cfg.MetricsPrefix, "collectTimeout", cfg.MetricsCollectTimeout)
 	}
 
 	setupLog.Info("starting manager", "gateway", cfg.GatewayName, "namespace", cfg.GatewayNamespace)

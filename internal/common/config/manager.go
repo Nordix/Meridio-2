@@ -52,11 +52,17 @@ type ManagerConfig struct {
 	LogLevel    string
 	LogLevelAPI string
 
+	// Profiling
+	PprofBindAddress string
+
 	// Features
 	MaxEndpointsPerSlice int
 
 	// Filtering
 	PodCacheLabel string
+
+	// Kubernetes API client / informer cache tuning
+	KubeAPIConfig
 
 	// Templates
 	TemplatePath string
@@ -111,6 +117,10 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Log level (debug, info, warn, error)")
 	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
 		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
+	fs.StringVar(&c.PprofBindAddress, "pprof-bind-address", "",
+		"Loopback address for the Go pprof HTTP endpoint (e.g., 127.0.0.1:6060). "+
+			"Empty disables the feature. Must be a loopback address (127.0.0.1 or [::1]); "+
+			"access it via kubectl port-forward.")
 	fs.IntVar(&c.MaxEndpointsPerSlice, "max-endpoints-per-slice", 200,
 		"Maximum number of endpoints per LoadBalancerEndpointSlice.")
 	fs.StringVar(&c.PodCacheLabel, "pod-cache-label", "",
@@ -136,6 +146,7 @@ func (c *ManagerConfig) AddFlags(fs *pflag.FlagSet) {
 		"The name of the metrics server certificate file.")
 	fs.StringVar(&c.MetricsCertKey, "metrics-cert-key", "tls.key",
 		"The name of the metrics server key file.")
+	c.AddKubeAPIFlags(fs)
 }
 
 // BindEnv binds environment variables to configuration fields
@@ -158,6 +169,7 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindDuration(fs, "metrics-collect-timeout", "MERIDIO_METRICS_COLLECT_TIMEOUT", &c.MetricsCollectTimeout)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
+	bindString(fs, "pprof-bind-address", "MERIDIO_PPROF_ADDR", &c.PprofBindAddress)
 	bindInt(fs, "max-endpoints-per-slice", "MERIDIO_MAX_ENDPOINTS_PER_SLICE", &c.MaxEndpointsPerSlice)
 	bindString(fs, "pod-cache-label", "MERIDIO_POD_CACHE_LABEL", &c.PodCacheLabel)
 	bindString(fs, "template-path", "MERIDIO_TEMPLATE_PATH", &c.TemplatePath)
@@ -170,4 +182,5 @@ func (c *ManagerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "metrics-cert-path", "MERIDIO_METRICS_CERT_PATH", &c.MetricsCertPath)
 	bindString(fs, "metrics-cert-name", "MERIDIO_METRICS_CERT_NAME", &c.MetricsCertName)
 	bindString(fs, "metrics-cert-key", "MERIDIO_METRICS_CERT_KEY", &c.MetricsCertKey)
+	c.BindKubeAPIEnv(fs)
 }

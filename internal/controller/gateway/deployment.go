@@ -549,7 +549,7 @@ func applyReadinessGates(deployment *appsv1.Deployment, gatewayConfig *meridio2v
 func injectRouterPodIdentityEnvVars(deployment *appsv1.Deployment) {
 	for i := range deployment.Spec.Template.Spec.Containers {
 		container := &deployment.Spec.Template.Spec.Containers[i]
-		if container.Name == "router" {
+		if container.Name == containerRouter {
 			// Check if env vars already exist to avoid unnecessary updates
 			hasPodName := false
 			hasPodNamespace := false

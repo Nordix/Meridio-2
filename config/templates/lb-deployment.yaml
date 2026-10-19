@@ -47,6 +47,12 @@ spec:
           value: info
         - name: MERIDIO_LOG_LEVEL_API
           value: 127.0.0.1:9901
+        # Scale tuning (optional). The LB caches all L34Routes in the Gateway's
+        # namespace, so at scale its initial informer sync can exceed the default
+        # 2m deadline. Uncomment and raise to tune the LB Pods.
+        # See docs/operations/scale-tuning.md
+        # - name: MERIDIO_CACHE_SYNC_TIMEOUT
+        #   value: "5m"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

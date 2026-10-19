@@ -710,12 +710,16 @@ The `stateless-load-balancer` binary accepts the following flags:
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8081` | Address the health/ready probe endpoint binds to |
 | `--log-level` | `MERIDIO_LOG_LEVEL` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
 | `--log-level-api` | `MERIDIO_LOG_LEVEL_API` | *(empty)* | Address for dynamic log level HTTP endpoint (e.g., `127.0.0.1:9901`). Empty disables the feature. |
+| `--pprof-bind-address` | `MERIDIO_PPROF_ADDR` | *(empty)* | Loopback address for the Go pprof HTTP endpoint (e.g., `127.0.0.1:6060`). Empty disables the feature; must be a loopback address. See [Runtime profiling with pprof](../operations/profiling.md). |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` (disabled) | Address the metrics endpoint binds to. Use `:8443` for HTTPS or `:8080` for HTTP. |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | Serve metrics endpoint via HTTPS |
 | `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | `""` | Directory containing the metrics server TLS certificate |
 | `--metrics-cert-name` | `MERIDIO_METRICS_CERT_NAME` | `tls.crt` | Filename of the metrics server certificate |
 | `--metrics-cert-key` | `MERIDIO_METRICS_CERT_KEY` | `tls.key` | Filename of the metrics server private key |
 | `--enable-http2` | `MERIDIO_ENABLE_HTTP2` | `false` | Enable HTTP/2 for metrics and webhook servers |
+| `--cache-sync-timeout` | `MERIDIO_CACHE_SYNC_TIMEOUT` | `2m` | Time limit for the initial informer cache sync. Raise for large deployments — see [Scale Tuning](../operations/scale-tuning.md). `0` falls back to the controller-runtime default (2m). |
+| `--kube-api-qps` | `MERIDIO_KUBE_API_QPS` | `-1` (disabled) | Sustained client-side request rate towards the API server. Passed through to client-go's [`rest.Config.QPS`](https://pkg.go.dev/k8s.io/client-go/rest#Config). Values `<= 0` disable client-side rate limiting, relying on server-side API Priority and Fairness. Not a remedy for a slow cache sync — see [Scale Tuning](../operations/scale-tuning.md). |
+| `--kube-api-burst` | `MERIDIO_KUBE_API_BURST` | `30` | Client-side burst allowance, passed through to client-go's [`rest.Config.Burst`](https://pkg.go.dev/k8s.io/client-go/rest#Config). Only effective when `--kube-api-qps > 0`. |
 
 ### NFQLB Internal Defaults
 

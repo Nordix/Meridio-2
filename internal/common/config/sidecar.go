@@ -32,6 +32,7 @@ type SidecarConfig struct {
 	ProbeAddr             string
 	LogLevel              string
 	LogLevelAPI           string
+	PprofBindAddress      string
 	MinTableID            int
 	MaxTableID            int
 	TableIDMappingFile    string
@@ -59,6 +60,10 @@ func (c *SidecarConfig) AddFlags(fs *pflag.FlagSet) {
 		"Log level (debug, info, warn, error)")
 	fs.StringVar(&c.LogLevelAPI, "log-level-api", "",
 		"Address for dynamic log level HTTP endpoint (e.g., 127.0.0.1:9901). Empty disables the feature.")
+	fs.StringVar(&c.PprofBindAddress, "pprof-bind-address", "",
+		"Loopback address for the Go pprof HTTP endpoint (e.g., 127.0.0.1:6060). "+
+			"Empty disables the feature. Must be a loopback address (127.0.0.1 or [::1]); "+
+			"access it via kubectl port-forward.")
 	fs.IntVar(&c.MinTableID, "min-table-id", 50000,
 		"Minimum routing table ID for source-based routing")
 	fs.IntVar(&c.MaxTableID, "max-table-id", 55000,
@@ -95,6 +100,7 @@ func (c *SidecarConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "health-probe-bind-address", "MERIDIO_PROBE_ADDR", &c.ProbeAddr)
 	bindString(fs, "log-level", "MERIDIO_LOG_LEVEL", &c.LogLevel)
 	bindString(fs, "log-level-api", "MERIDIO_LOG_LEVEL_API", &c.LogLevelAPI)
+	bindString(fs, "pprof-bind-address", "MERIDIO_PPROF_ADDR", &c.PprofBindAddress)
 	bindInt(fs, "min-table-id", "MERIDIO_MIN_TABLE_ID", &c.MinTableID)
 	bindInt(fs, "max-table-id", "MERIDIO_MAX_TABLE_ID", &c.MaxTableID)
 	bindString(fs, "table-id-mapping-file", "MERIDIO_TABLE_ID_MAPPING_FILE", &c.TableIDMappingFile)

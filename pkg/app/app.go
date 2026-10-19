@@ -42,9 +42,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -55,6 +57,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
+	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/prerequisites"
@@ -136,15 +139,28 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 	setupLog := ctrl.Log.WithName("setup")
 	setupLog.Info("starting controller-manager", "config", cfg)
 
+	// Validate everything that does not require talking to the API server first,
+	// so a bad configuration is reported before any cluster contact.
 	if err := validate(cfg); err != nil {
 		return fmt.Errorf("config validation: %w", err)
+	}
+
+	// Build the tuned REST config once: the prerequisite checks and the manager
+	// must talk to the API server with the same client settings.
+	restCfg, err := cfg.RESTConfig()
+	if err != nil {
+		return err
+	}
+
+	if err := checkClusterPrerequisites(restCfg); err != nil {
+		return err
 	}
 
 	if err := waitForCerts(cfg); err != nil {
 		return err
 	}
 
-	mgr, err := setupManager(cfg)
+	mgr, err := setupManager(cfg, restCfg)
 	if err != nil {
 		return fmt.Errorf("setup manager: %w", err)
 	}
@@ -182,7 +198,8 @@ func run(cfg *config.ManagerConfig, additional ...ControllerSetup) error {
 	return nil
 }
 
-// validate checks configuration preconditions.
+// validate checks configuration preconditions that do not require API server
+// access.
 func validate(cfg *config.ManagerConfig) error {
 	if err := validateConfig(cfg); err != nil {
 		return err
@@ -192,15 +209,21 @@ func validate(cfg *config.ManagerConfig) error {
 		return err
 	}
 
-	if err := prerequisites.CheckGatewayAPI(); err != nil {
+	if err := prerequisites.CheckFile(cfg.TemplatePath, gateway.LBDeploymentTemplateFile); err != nil {
+		return fmt.Errorf("LB deployment template not found: %w", err)
+	}
+
+	return nil
+}
+
+// checkClusterPrerequisites verifies preconditions that require API server
+// access, using the same tuned client settings as the manager.
+func checkClusterPrerequisites(restCfg *rest.Config) error {
+	if err := prerequisites.CheckGatewayAPI(restCfg); err != nil {
 		return fmt.Errorf("gateway API CRDs not found: %w\n\n"+
 			"Install for example with:\n"+
 			"  kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml",
 			err)
-	}
-
-	if err := prerequisites.CheckFile(cfg.TemplatePath, gateway.LBDeploymentTemplateFile); err != nil {
-		return fmt.Errorf("LB deployment template not found: %w", err)
 	}
 
 	return nil
@@ -213,6 +236,9 @@ func validateConfig(cfg *config.ManagerConfig) error {
 	}
 	if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
 		return fmt.Errorf("metrics-prefix: %w", err)
+	}
+	if err := cfg.ValidateKubeAPI(); err != nil {
+		return fmt.Errorf("kube API tuning: %w", err)
 	}
 	return nil
 }
@@ -263,8 +289,10 @@ func waitForCerts(cfg *config.ManagerConfig) error {
 }
 
 // setupManager creates a configured ctrl.Manager.
-func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
+func setupManager(cfg *config.ManagerConfig, restCfg *rest.Config) (ctrl.Manager, error) {
 	scheme := runtime.NewScheme()
+	setupLog := ctrl.Log.WithName("setup")
+
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(meridio2v1alpha1.AddToScheme(scheme))
 	utilruntime.Must(gatewayapiv1.Install(scheme))
@@ -322,18 +350,29 @@ func setupManager(cfg *config.ManagerConfig) (ctrl.Manager, error) {
 		}
 	}
 
-	return ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	setupLog.Info("Kubernetes API client tuning",
+		"cacheSyncTimeout", cfg.CacheSyncTimeout,
+		"clientRateLimiting", cfg.RateLimitingEnabled(),
+		"qps", restCfg.QPS, "burst", restCfg.Burst)
+
+	return ctrl.NewManager(restCfg, ctrl.Options{
 		Scheme:                        scheme,
 		Cache:                         cacheOptions,
 		Metrics:                       metricsServerOptions,
 		WebhookServer:                 webhook.NewServer(webhookServerOptions),
 		HealthProbeBindAddress:        cfg.ProbeAddr,
+		PprofBindAddress:              httpsec.ResolvePprofBindAddress(cfg.PprofBindAddress, setupLog),
 		LeaderElection:                cfg.EnableLeaderElection,
 		LeaderElectionID:              "e9d059a3.nordix.org",
 		LeaseDuration:                 &cfg.LeaseDuration,
 		RenewDeadline:                 &cfg.RenewDeadline,
 		RetryPeriod:                   &cfg.RetryPeriod,
 		LeaderElectionReleaseOnCancel: cfg.LeaderElectionReleaseOnCancel,
+		// Manager-wide default for every controller registered below. Controllers
+		// that do not set their own CacheSyncTimeout inherit this value.
+		Controller: ctrlconfig.Controller{
+			CacheSyncTimeout: cfg.CacheSyncTimeout,
+		},
 	})
 }
 

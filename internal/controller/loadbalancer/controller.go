@@ -18,6 +18,7 @@ package loadbalancer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -192,22 +193,38 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Cleanup NFQLB service
+	var errs []error
+
+	// Cleanup NFQLB service. Only drop our own tracking (c.instances/targets/flows)
+	// once DeleteInstance actually succeeds — if it fails, the NFQLB layer keeps the
+	// instance (and its fwmark offset) reserved for retry, so forgetting it here would
+	// mean nothing ever calls DeleteInstance again for this DG (reconcileNFQLBInstance
+	// only acts when the DG is absent from c.instances, and a deleted DG never
+	// reappears to re-trigger creation).
 	if _, exists := c.instances[distGroupName]; exists {
 		logr.Info("Deleting NFQLB service", "distGroup", distGroupName)
 		if err := c.NFQLB.DeleteInstance(ctx, distGroupName); err != nil {
-			logr.Error(err, "Failed to delete NFQLB service", "distGroup", distGroupName)
+			logr.Error(err, "Failed to delete NFQLB service, will retry", "distGroup", distGroupName)
+			errs = append(errs, fmt.Errorf("failed to delete NFQLB service for %q: %w", distGroupName, err))
+		} else {
+			delete(c.instances, distGroupName)
+			delete(c.targets, distGroupName)
+			delete(c.flows, distGroupName)
 		}
-		delete(c.instances, distGroupName)
-		delete(c.targets, distGroupName)
-		delete(c.flows, distGroupName)
 	}
 
 	// Note: nftables manager is shared, not cleaned up per-DG
 
-	// Remove readiness file
+	// Remove readiness file. Attempted independently of the NFQLB cleanup above —
+	// a stuck DeleteInstance must not keep this DG's VIP advertised via BGP
+	// (readiness.Manager.IsReady() is keyed off file presence) while cleanup retries.
 	if err := c.Readiness.Remove(distGroupName); err != nil {
 		logr.Error(err, "Failed to remove readiness file", "distGroup", distGroupName)
+		errs = append(errs, fmt.Errorf("failed to remove readiness file for %q: %w", distGroupName, err))
+	}
+
+	if len(errs) > 0 {
+		return ctrl.Result{}, errors.Join(errs...)
 	}
 
 	return ctrl.Result{}, nil
