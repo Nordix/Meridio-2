@@ -46,6 +46,7 @@ import (
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
 	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
 	"github.com/nordix/meridio-2/internal/nfqlb"
+	"github.com/nordix/meridio-2/internal/nfqueueproc"
 	nftablesmanager "github.com/nordix/meridio-2/internal/nftables"
 )
 
@@ -310,6 +311,15 @@ func registerLBMetrics(
 	routeCollector := lbmetrics.NewRouteCollector(nfqlbInstance, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)
 	if err := ctrlmetrics.Registry.Register(routeCollector); err != nil {
 		return fmt.Errorf("register route collector: %w", err)
+	}
+
+	// nfqueue backlog/drop collector: reads /proc/net/netfilter/nfnetlink_queue for the LB's own
+	// queue range (the LB process holds CAP_NET_ADMIN, so the in-process read succeeds).
+	queueStart, queueEnd := nfqlbInstance.QueueRange()
+	nfqueueReader := nfqueueproc.NewReader(queueStart, queueEnd)
+	nfqueueCollector := lbmetrics.NewNfqueueCollector(nfqueueReader, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)
+	if err := ctrlmetrics.Registry.Register(nfqueueCollector); err != nil {
+		return fmt.Errorf("register nfqueue collector: %w", err)
 	}
 
 	if err := ctrlmetrics.Registry.Register(configErrors.Collector()); err != nil {

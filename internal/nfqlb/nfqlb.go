@@ -84,6 +84,19 @@ func (nfqlb *NFQueueLoadBalancer) NoTargetsFwmark() int {
 	return nfqlb.fwmarkBase + 1
 }
 
+// QueueRange returns the inclusive netfilter queue-number range this LB is bound to (start, end),
+// parsed from the configured --nfqueue value. A single queue "N" yields (N, N); a range "N:M"
+// yields (N, M). The value was already validated when the LB was created, so this never errors in
+// practice; on an unexpected parse failure it returns (0, 0). Used by the nfqueue metrics reader
+// to count only this LB's queues in /proc/net/netfilter/nfnetlink_queue.
+func (nfqlb *NFQueueLoadBalancer) QueueRange() (start, end int) {
+	start, end, err := getQueue(nfqlb.queue)
+	if err != nil {
+		return 0, 0
+	}
+	return start, end
+}
+
 // PolicyRouteCounts returns the number of this LB's installed policy routing rules per IP family
 // (keys "IPv4"/"IPv6"), read fresh from the kernel. It uses the instance's own fwmark starting
 // offset as the ownership predicate, so callers do not need access to the (unexported) offset.
