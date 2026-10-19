@@ -407,12 +407,12 @@ The first column is the queue number (0-3 matching the nftables `queue to 0-3` r
 ### Check NFQLB shared memory instances
 
 ```bash
-kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb show --shm=tshm-<dg-name>
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb show --shm=<dg-name>
 ```
 
 Example output:
 ```
-Shm: tshm-test-backend
+Shm: test-backend
   Fw: own=0
   Maglev: M=3191, N=32
    Lookup: 1 2 0 0 3 2 3 2 2 1 1 3 0 3 2 2 0 0 2 0 0 1 1 3 2...
@@ -420,12 +420,14 @@ Shm: tshm-test-backend
 ```
 
 ```
-Shm: tshm-test-backend-indirect
+Shm: test-backend-indirect
   Fw: own=0
   Maglev: M=3191, N=32
    Lookup: 1 2 0 0 3 2 3 2 2 1 1 3 0 3 2 2 0 0 2 0 0 1 1 3 2...
    Active: 6024(0) 6025(1) 6026(2) 6027(3)
 ```
+
+The shared-memory instance name is the DistributionGroup name (passed as `--shm`).
 
 - `M` is the Maglev hash table size (prime near `maxEndpoints × 100`), `N` is the max endpoints capacity
 - `Lookup` shows the Maglev hash table entries (target indices)
@@ -440,17 +442,17 @@ kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb flow-list
 Example output:
 ```json
 [{
-  "name": "tshm-test-backend-indirect-test-route-indirect",
+  "name": "test-route-indirect",
   "priority": 2,
   "protocols": [ "udp" ],
   "dests": [
     "::ffff:50.0.0.1/128"
   ],
   "matches_count": 289,
-  "user_ref": "tshm-test-backend-indirect"
+  "user_ref": "test-backend-indirect"
 },
 {
-  "name": "tshm-test-backend-test-route",
+  "name": "test-route",
   "priority": 1,
   "protocols": [ "tcp" ],
   "dests": [
@@ -461,11 +463,11 @@ Example output:
     "3000::1/128"
   ],
   "matches_count": 1923,
-  "user_ref": "tshm-test-backend"
+  "user_ref": "test-backend"
 }]
 ```
 
-Each flow corresponds to an L34Route. The `name` is `tshm-<dg-name>-<route-name>`, `user_ref` is the NFQLB shared memory instance (`tshm-<dg-name>`), `dests` are the VIPs from `destinationCIDRs` (IPv4 shown as IPv4-mapped IPv6), and `matches_count` tracks how many packets matched this flow.
+Each flow corresponds to an L34Route. The `name` is the L34Route name, `user_ref` is the NFQLB shared memory instance (the DistributionGroup name), `dests` are the VIPs from `destinationCIDRs` (IPv4 shown as IPv4-mapped IPv6), and `matches_count` tracks how many packets matched this flow.
 
 ### Check fwmark routing to targets
 
