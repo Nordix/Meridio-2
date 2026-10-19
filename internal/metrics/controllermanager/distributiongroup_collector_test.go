@@ -84,9 +84,9 @@ func dcNewOwnedSlice(
 	for i := range endpoints {
 		podName := fmt.Sprintf("%s-pod-%d", name, i)
 		endpoints[i] = meridio2v1alpha1.LoadBalancerEndpoint{
-			Target:    meridio2v1alpha1.EndpointTarget{Name: podName, UID: podName},
-			Addresses: []meridio2v1alpha1.EndpointAddress{{IP: fmt.Sprintf("10.0.0.%d", i+1), Family: meridio2v1alpha1.IPv4}},
-			Ready:     true,
+			Target:     meridio2v1alpha1.EndpointTarget{Name: podName, UID: podName},
+			Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: fmt.Sprintf("10.0.0.%d", i+1), Family: meridio2v1alpha1.IPv4}},
+			Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 		}
 	}
 	slice := &meridio2v1alpha1.LoadBalancerEndpointSlice{
