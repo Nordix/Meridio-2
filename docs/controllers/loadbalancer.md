@@ -930,9 +930,55 @@ internal/common/config/
 └── loadbalancer.go         # LoadBalancerConfig with CLI flags + env binding
 ```
 
-## References
+## Metrics
 
-- [ADR-001: DistributionGroup as Primary Resource](../architecture/adr-001-distributiongroup-primary-resource.md)
+The LB Pod exposes custom Prometheus metrics for the single Gateway it serves. All
+series carry a `gateway` label (the Gateway name) and names are prefixed with
+`--metrics-prefix` (default `meridio_2`). The endpoint is off unless
+`--metrics-bind-address` is set.
+
+### Catalog
+
+Names below omit the prefix. Counters reset when their underlying object is
+re-created or the process restarts, so consume them with `rate()`/`increase()`.
+
+| Metric | Type | Extra labels | Source |
+| --- | --- | --- | --- |
+| `_lb_flow_matches_total` | counter | `l34route` | nfqlb flow-list `matches_count` |
+| `_lb_active_targets` | gauge | `dg` | nfqlb instance target count |
+| `_lb_nftables_vip_set_size` | gauge | — | size of the nftables VIP sets (IPv4+IPv6) |
+| `_lb_drops_total` | counter | `reason` (`no_flow`, `no_targets`) | nftables drop-accounting chain |
+| `_lb_policy_routes` | gauge | `ip_family` (`IPv4`, `IPv6`) | kernel policy routing rules owned by this LB |
+| `_lb_nfqueue_items` | gauge | — | `/proc/net/netfilter/nfnetlink_queue` backlog, summed over the LB's queue range |
+| `_lb_nfqueue_dropped_total` | counter | — | same file: kernel queue-full + verdict-delivery drops |
+| `_lb_collector_errors_total` | counter | `collector` | incremented when a read-at-scrape collector fails |
+| `_lb_route_config_errors_total` | counter | `reason` (`route_config`, `vip_config`) | incremented when a reconcile data-plane config op fails |
+
+### How the metrics are produced
+
+Two distinct patterns:
+
+- **Read at scrape time (most metrics).** A collector reads its source (nfqlb, the
+  nftables kernel state, policy routes, or the nfqueue proc file) each time Prometheus
+  scrapes. There is no cached state to drift. If a read fails, the collector skips
+  only its own series for that scrape and increments
+  `_lb_collector_errors_total{collector="..."}` rather than failing the whole scrape.
+  So a missing data series plus a rising `collector_errors` rate means "could not
+  read", not "value is zero". The `collector` values are `nfqlb`, `nftables`, `route`,
+  and `nfqueue`.
+- **Counted where the event happens (the two `*_errors_total`).** A failed reconcile
+  config operation has no durable source to read later, so it is counted at the point
+  of failure. `_lb_route_config_errors_total` covers policy rule/route and target
+  activation failures (`route_config`) and nftables VIP set update failures
+  (`vip_config`); both reasons are pre-initialized to 0.
+
+### nftables drop-accounting chain
+
+`_lb_drops_total` is read from a dedicated prerouting chain at priority `filter+1`,
+kept separate from the forwarding path so counting never changes a verdict. It counts
+packets dropped by the no-flow and no-targets fwmarks (`fwmarkBase+0` / `fwmarkBase+1`).
+
+
 - [NFQLB (nfqueue-loadbalancer)](https://github.com/Nordix/nfqueue-loadbalancer) — upstream documentation for the Maglev load balancer binary
 - [Gateway Controller](gateway.md) — manages LB Deployment lifecycle and Gateway status
 - [DistributionGroup Controller](distributiongroup.md) — manages LoadBalancerEndpointSlices consumed by this controller
