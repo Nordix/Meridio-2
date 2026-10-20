@@ -262,7 +262,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 func monitorConnectivity(
 	ctx context.Context, mgr ctrl.Manager, birdInstance *bird.Bird, cfg *config.RouterConfig,
 ) error {
-	logger := ctrl.Log.WithName("monitor")
+	log := ctrl.Log.WithName("monitor")
 
 	// Wait for manager cache to sync
 	if !mgr.GetCache().WaitForCacheSync(ctx) {
@@ -277,12 +277,12 @@ func monitorConnectivity(
 			types.UID(cfg.PodUID), cfg.ConnectivityHoldTime,
 		)
 		if err := gateMgr.DiscoverGates(ctx); err != nil {
-			logger.Error(err, "failed to discover readiness gates, continuing without gate management")
+			log.Error(err, "failed to discover readiness gates, continuing without gate management")
 			gateMgr = nil
 		} else if gateMgr.HasIPv4Gate() || gateMgr.HasIPv6Gate() {
-			logger.Info("readiness gates discovered", "ipv4", gateMgr.HasIPv4Gate(), "ipv6", gateMgr.HasIPv6Gate())
+			log.Info("readiness gates discovered", "ipv4", gateMgr.HasIPv4Gate(), "ipv6", gateMgr.HasIPv6Gate())
 			if err := gateMgr.SetAllGatesFalse(ctx); err != nil {
-				logger.Error(err, "failed to set gates to False on startup")
+				log.Error(err, "failed to set gates to False on startup")
 			}
 		} else {
 			gateMgr = nil // No gates declared, skip gate management
@@ -315,13 +315,13 @@ func monitorConnectivity(
 			// Fetch routers from informer cache (local memory read)
 			routers, err := getGatewayRoutersFromCache(ctx, mgr.GetClient(), cfg.GatewayName, cfg.GatewayNamespace)
 			if err != nil {
-				logger.Error(err, "failed to get gateway routers from cache")
+				log.Error(err, "failed to get gateway routers from cache")
 				continue
 			}
 
 			// Mutate static protocol states based on BFD session status.
 			// After this, all protocols reflect true connectivity (Info != Established if BFD is down).
-			applyBfdState(status.Protocols, status.BfdSessions, routers, logger)
+			applyBfdState(status.Protocols, status.BfdSessions, routers, log)
 
 			familyMap := router.BuildFamilyMap(routers)
 
@@ -342,7 +342,7 @@ func monitorConnectivity(
 						kvs = append(kvs, name, familyMap[name]+":not yet configured in bird")
 					}
 				}
-				logger.Info("Gateway connectivity", kvs...)
+				log.Info("Gateway connectivity", kvs...)
 				lastProtocols = append([]bird.ProtocolStatus(nil), status.Protocols...)
 				lastFamilyMap = familyMap
 				firstUpdate = false
@@ -356,7 +356,7 @@ func monitorConnectivity(
 				}
 				// When no routers exist, ipv4/ipv6 stay false — gates set to False
 				if err := gateMgr.OnStatusUpdate(ctx, ipv4, ipv6); err != nil {
-					logger.Error(err, "failed to update readiness gates")
+					log.Error(err, "failed to update readiness gates")
 				}
 			}
 		}

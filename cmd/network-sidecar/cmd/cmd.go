@@ -17,7 +17,6 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -25,8 +24,8 @@ import (
 
 // Execute runs the root command
 func Execute() {
+	// Cobra prints the error to stderr itself; we only set the exit code.
 	if err := getRootCmd().Execute(); err != nil {
-		fmt.Println(err)
 		os.Exit(1)
 	}
 }

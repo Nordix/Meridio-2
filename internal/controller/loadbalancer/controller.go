@@ -27,7 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -135,7 +135,7 @@ func resolveBackendRefDG(backendRef gatewayv1.BackendRef, routeNamespace string)
 }
 
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	// Defense-in-depth: this controller's cache and all its internal state
 	// (c.instances/c.targets/c.flows, keyed by name only) are scoped to a single
@@ -146,7 +146,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// NotFound here is treated as "deleted" and triggers destructive cleanup keyed
 	// by name only, which could tear down an unrelated same-named DG in our namespace.
 	if req.Namespace != c.GatewayNamespace {
-		logr.V(1).Info("Ignoring reconcile request outside Gateway namespace",
+		log.V(1).Info("Ignoring reconcile request outside Gateway namespace",
 			"requestNamespace", req.Namespace, "gatewayNamespace", c.GatewayNamespace)
 		return ctrl.Result{}, nil
 	}
@@ -156,7 +156,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := c.Get(ctx, req.NamespacedName, distGroup); err != nil {
 		if apierrors.IsNotFound(err) {
 			// DistributionGroup deleted - cleanup NFQLB instance and nftables
-			logr.Info("DistributionGroup deleted, cleaning up resources", "distGroup", req.Name)
+			log.Info("DistributionGroup deleted, cleaning up resources", "distGroup", req.Name)
 			return c.cleanupDistributionGroup(ctx, req.Name)
 		}
 		return ctrl.Result{}, err
@@ -175,35 +175,35 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		if wasManaged {
 			// DistributionGroup moved to another Gateway - cleanup local resources
-			logr.Info("DistributionGroup moved to another Gateway, cleaning up local resources",
+			log.Info("DistributionGroup moved to another Gateway, cleaning up local resources",
 				"distGroup", distGroup.Name,
 				"gateway", c.GatewayName)
 			return c.cleanupDistributionGroup(ctx, distGroup.Name)
 		}
 
-		logr.V(1).Info("DistributionGroup does not belong to this Gateway, skipping",
+		log.V(1).Info("DistributionGroup does not belong to this Gateway, skipping",
 			"distGroup", distGroup.Name,
 			"gateway", c.GatewayName)
 		return ctrl.Result{}, nil
 	}
 
-	logr.Info("Reconciling DistributionGroup", "distGroup", distGroup.Name)
+	log.Info("Reconciling DistributionGroup", "distGroup", distGroup.Name)
 
 	// Reconcile NFQLB instance
 	if err := c.reconcileNFQLBInstance(ctx, distGroup); err != nil {
-		logr.Error(err, "Failed to reconcile NFQLB instance")
+		log.Error(err, "Failed to reconcile NFQLB instance")
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile targets from LoadBalancerEndpointSlices
 	if err := c.reconcileTargets(ctx, distGroup); err != nil {
-		logr.Error(err, "Failed to reconcile targets")
+		log.Error(err, "Failed to reconcile targets")
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile flows from L34Routes
 	if err := c.reconcileFlows(ctx, distGroup); err != nil {
-		logr.Error(err, "Failed to reconcile flows")
+		log.Error(err, "Failed to reconcile flows")
 		return ctrl.Result{}, err
 	}
 
@@ -213,7 +213,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 // cleanupDistributionGroup removes all local resources for a DistributionGroup.
 // Used when DG is deleted or moved to another Gateway.
 func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName string) (ctrl.Result, error) {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -227,9 +227,9 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	// only acts when the DG is absent from c.instances, and a deleted DG never
 	// reappears to re-trigger creation).
 	if _, exists := c.instances[distGroupName]; exists {
-		logr.Info("Deleting NFQLB service", "distGroup", distGroupName)
+		log.Info("Deleting NFQLB service", "distGroup", distGroupName)
 		if err := c.NFQLB.DeleteInstance(ctx, distGroupName); err != nil {
-			logr.Error(err, "Failed to delete NFQLB service, will retry", "distGroup", distGroupName)
+			log.Error(err, "Failed to delete NFQLB service, will retry", "distGroup", distGroupName)
 			errs = append(errs, fmt.Errorf("failed to delete NFQLB service for %q: %w", distGroupName, err))
 		} else {
 			delete(c.instances, distGroupName)
@@ -244,7 +244,7 @@ func (c *Controller) cleanupDistributionGroup(ctx context.Context, distGroupName
 	// a stuck DeleteInstance must not keep this DG's VIP advertised via BGP
 	// (readiness.Manager.IsReady() is keyed off file presence) while cleanup retries.
 	if err := c.Readiness.Remove(distGroupName); err != nil {
-		logr.Error(err, "Failed to remove readiness file", "distGroup", distGroupName)
+		log.Error(err, "Failed to remove readiness file", "distGroup", distGroupName)
 		errs = append(errs, fmt.Errorf("failed to remove readiness file for %q: %w", distGroupName, err))
 	}
 
@@ -317,7 +317,7 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 	// 1. Direct: DGs with spec.parentRefs pointing to this Gateway
 	dgList := &meridio2v1alpha1.DistributionGroupList{}
 	if err := c.List(ctx, dgList, client.InNamespace(c.GatewayNamespace)); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to list DistributionGroups in gatewayEnqueue")
+		logf.FromContext(ctx).Error(err, "Failed to list DistributionGroups in gatewayEnqueue")
 	} else {
 		for _, dg := range dgList.Items {
 			for _, parentRef := range dg.Spec.ParentRefs {
@@ -337,7 +337,7 @@ func (c *Controller) gatewayEnqueue(ctx context.Context, obj client.Object) []ct
 	// 2. Indirect: DGs referenced by L34Routes that point to this Gateway
 	l34routeList := &meridio2v1alpha1.L34RouteList{}
 	if err := c.List(ctx, l34routeList, client.InNamespace(c.GatewayNamespace)); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to list L34Routes in gatewayEnqueue, returning partial results")
+		logf.FromContext(ctx).Error(err, "Failed to list L34Routes in gatewayEnqueue, returning partial results")
 	} else {
 		for i := range l34routeList.Items {
 			route := &l34routeList.Items[i]
@@ -382,7 +382,7 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 
 	// Clean up readiness directory on startup
 	if !c.Readiness.Enabled() {
-		log.Log.Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), no readiness files will be written")
+		logf.Log.Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), no readiness files will be written")
 	}
 	if err := c.Readiness.Cleanup(); err != nil {
 		return fmt.Errorf("failed to cleanup readiness directory: %w", err)

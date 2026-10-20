@@ -24,7 +24,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -33,7 +33,7 @@ import (
 
 // reconcileFlows configures NFQLB flows from L34Routes.
 func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -59,14 +59,14 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 
 	// Handle empty L34Route list — no routes means no flows needed
 	if len(newFlows) == 0 {
-		logr.Info("No L34Routes found, deleting existing flows for distributionGroup", "distGroup", distGroup.Name)
+		log.Info("No L34Routes found, deleting existing flows for distributionGroup", "distGroup", distGroup.Name)
 		if err := c.deleteAllFlows(ctx, instance, distGroup.Name); err != nil {
 			// NOTE: not propagated for retry on purpose. deleteAllFlows clears the
 			// tracked flows map unconditionally (even for entries it failed to delete),
 			// so a retry would find nothing to re-attempt — returning the error would
 			// requeue in vain. Making retry meaningful requires deleteAllFlows to be
 			// transactional (keep failed entries tracked); until then, just log.
-			logr.Error(err, "Failed to delete all flows")
+			log.Error(err, "Failed to delete all flows")
 		}
 		// Keep the shared nftables VIP set in sync with the Gateway, not just with
 		// this DG's now-empty route set. Flow work above is independent of VIP config.
@@ -79,10 +79,10 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	for flowName := range currentFlows {
 		if _, exists := newFlows[flowName]; !exists {
 			if err := instance.DeleteFlow(ctx, &nameOnlyFlow{name: flowName}); err != nil {
-				logr.Error(err, "Failed to delete flow", "flow", flowName)
+				log.Error(err, "Failed to delete flow", "flow", flowName)
 				errFinal = errors.Join(errFinal, fmt.Errorf("failed to delete flow %s: %w", flowName, err))
 			} else {
-				logr.Info("Deleted flow", "distGroup", distGroup.Name, "flow", flowName)
+				log.Info("Deleted flow", "distGroup", distGroup.Name, "flow", flowName)
 			}
 		}
 	}
@@ -92,10 +92,10 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	for flowName, route := range newFlows {
 		flow := newL34RouteFlow(flowName, route)
 		if err := instance.AddFlow(ctx, flow); err != nil {
-			logr.Error(err, "Failed to set flow", "flow", flowName)
+			log.Error(err, "Failed to set flow", "flow", flowName)
 			errFinal = errors.Join(errFinal, fmt.Errorf("failed to set flow %s: %w", flowName, err))
 		} else {
-			logr.Info("Configured flow", "distGroup", distGroup.Name, "flow", flowName)
+			log.Info("Configured flow", "distGroup", distGroup.Name, "flow", flowName)
 			successfulFlows[flowName] = route
 		}
 	}
@@ -108,21 +108,21 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	// Update tracked flows with only successful ones
 	c.flows[distGroup.Name] = successfulFlows
 
-	logr.Info("Reconciled flows", "distGroup", distGroup.Name, "count", len(successfulFlows))
+	log.Info("Reconciled flows", "distGroup", distGroup.Name, "count", len(successfulFlows))
 	return errFinal
 }
 
 // deleteAllFlows deletes all flows for a DistributionGroup.
 func (c *Controller) deleteAllFlows(ctx context.Context, instance nfqlbInstance, distGroupName string) error {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	currentFlows := c.flows[distGroupName]
 	var errFinal error
 	for flowName := range currentFlows {
 		if err := instance.DeleteFlow(ctx, &nameOnlyFlow{name: flowName}); err != nil {
-			logr.Error(err, "Failed to delete flow", "flow", flowName)
+			log.Error(err, "Failed to delete flow", "flow", flowName)
 			errFinal = errors.Join(errFinal, fmt.Errorf("failed to delete flow %s: %w", flowName, err))
 		} else {
-			logr.Info("Deleted flow", "distGroup", distGroupName, "flow", flowName)
+			log.Info("Deleted flow", "distGroup", distGroupName, "flow", flowName)
 		}
 	}
 	c.flows[distGroupName] = make(map[string]*meridio2v1alpha1.L34Route)
@@ -131,7 +131,7 @@ func (c *Controller) deleteAllFlows(ctx context.Context, instance nfqlbInstance,
 
 // listMatchingL34Routes finds L34Routes that reference this Gateway and DistributionGroup.
 func (c *Controller) listMatchingL34Routes(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) (map[string]*meridio2v1alpha1.L34Route, error) {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	l34routeList := &meridio2v1alpha1.L34RouteList{}
 	if err := c.List(ctx, l34routeList, client.InNamespace(c.GatewayNamespace)); err != nil {
@@ -157,7 +157,7 @@ func (c *Controller) listMatchingL34Routes(ctx context.Context, distGroup *merid
 		var dg meridio2v1alpha1.DistributionGroup
 		if err := c.Get(ctx, client.ObjectKey{Name: dgName, Namespace: c.GatewayNamespace}, &dg); err != nil {
 			if apierrors.IsNotFound(err) {
-				logr.Info("Skipping L34Route: DistributionGroup not found", "route", route.Name, "distributionGroup", dgName)
+				log.Info("Skipping L34Route: DistributionGroup not found", "route", route.Name, "distributionGroup", dgName)
 				continue
 			}
 			return nil, err
@@ -250,21 +250,21 @@ func (c *Controller) getGatewayVIPs(ctx context.Context) ([]string, error) {
 // error backoff — the Gateway is watched, and its (re)creation re-enqueues affected DGs.
 // Any other fetch error, or a failure to program nftables, is returned so it is retried.
 func (c *Controller) applyGatewayVIPs(ctx context.Context, distGroupName string) error {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	vips, err := c.getGatewayVIPs(ctx)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			logr.V(1).Info("Gateway not found; skipping VIP configuration until Gateway is observed",
+			log.V(1).Info("Gateway not found; skipping VIP configuration until Gateway is observed",
 				"gateway", c.GatewayName, "distGroup", distGroupName)
 			return nil
 		}
-		logr.Error(err, "Failed to get Gateway VIPs", "distGroup", distGroupName)
+		log.Error(err, "Failed to get Gateway VIPs", "distGroup", distGroupName)
 		return fmt.Errorf("failed to get Gateway VIPs: %w", err)
 	}
 
 	if err := c.configureNftables(ctx, distGroupName, vips); err != nil {
-		logr.Error(err, "Failed to configure nftables", "distGroup", distGroupName)
+		log.Error(err, "Failed to configure nftables", "distGroup", distGroupName)
 		return fmt.Errorf("failed to configure nftables: %w", err)
 	}
 	return nil
@@ -281,7 +281,7 @@ func (c *Controller) applyGatewayVIPs(ctx context.Context, distGroupName string)
 // BGP stops advertising the VIP, so no traffic is drawn toward it. The stale set is
 // inert until reconciliation rewrites it.
 func (c *Controller) configureNftables(ctx context.Context, distGroupName string, vips []string) error {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	if c.nftManager == nil {
 		return fmt.Errorf("shared nftables manager not initialized")
@@ -298,7 +298,7 @@ func (c *Controller) configureNftables(ctx context.Context, distGroupName string
 	}
 
 	c.currentVIPs = append([]string{}, vips...) // Store copy
-	logr.Info("Configured nftables VIP rules", "distGroup", distGroupName, "vipCount", len(vips))
+	log.Info("Configured nftables VIP rules", "distGroup", distGroupName, "vipCount", len(vips))
 	return nil
 }
 
