@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // listOwnedSlices returns LoadBalancerEndpointSlices owned by the DistributionGroup.
@@ -95,7 +95,7 @@ func (r *DistributionGroupReconciler) calculateDesiredSlices(ctx context.Context
 		}
 	}
 
-	logger := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	var allDesiredSlices []meridio2v1alpha1.LoadBalancerEndpointSlice
 	var capacityInfo *maglevCapacityInfo
 
@@ -103,7 +103,7 @@ func (r *DistributionGroupReconciler) calculateDesiredSlices(ctx context.Context
 		// Scrape all IPs for each Pod across this Gateway's networks
 		podsWithAddrs := r.scrapePodsForGateway(pods, gwContext)
 		if len(podsWithAddrs) == 0 {
-			logger.V(1).Info("Skipping Gateway as no Pods in DistributionGroup have matching IP addresses", "distributionGroup", dg.Name, "gateway", gwContext.gateway.Name)
+			log.V(1).Info("Skipping Gateway as no Pods in DistributionGroup have matching IP addresses", "distributionGroup", dg.Name, "gateway", gwContext.gateway.Name)
 			continue
 		}
 
