@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -41,8 +42,30 @@ type CommandRunner interface {
 // execRunner is the production CommandRunner, executing the `birdc` binary found on PATH.
 type execRunner struct{}
 
+// birdcWaitDelay bounds how long Run waits after the context is cancelled before force-closing
+// birdc's I/O pipes. Without it, CombinedOutput reads the pipes until EOF, which only occurs once
+// every holder of the write end exits; a killed process whose descendants still hold the pipe
+// would block Wait past the deadline, so --metrics-collect-timeout would not be a hard bound.
+// birdc does not fork, so this is a safety net rather than an expected path. Kept small: it is a
+// grace period to let a signalled birdc flush and exit, not a second query budget, and it is
+// additive to the collect timeout (worst case collectTimeout + birdcWaitDelay), which must stay
+// under Prometheus's scrape_timeout.
+//
+// This acts only on the birdc client process we spawn, never on the long-running BIRD daemon,
+// which is a separate process reached over the control socket. A force-killed birdc is, to the
+// daemon, an ordinary client disconnect; a read-only `show` holds no lock and mutates no state.
+// CommandContext already kills birdc on timeout today, so this bounds our wait without changing
+// what birdc itself receives.
+const birdcWaitDelay = 1 * time.Second
+
+// Note: If WaitDelay force-closes the pipes while birdc had otherwise exited 0, CombinedOutput
+// returns ErrWaitDelay instead of nil, surfacing as a fetch error to every caller of this shared
+// runner. We do not special-case ErrWaitDelay because birdc does not spawn children or orphan its
+// pipes, so this path does not occur in practice.
 func (execRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "birdc", args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, "birdc", args...)
+	cmd.WaitDelay = birdcWaitDelay
+	return cmd.CombinedOutput()
 }
 
 // Client issues `birdc` commands against one BIRD control socket and parses the responses.

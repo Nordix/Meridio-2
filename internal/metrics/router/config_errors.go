@@ -27,11 +27,12 @@ import (
 // at the netlink failure sites in that package, which cannot import this one (this package imports
 // bird for the collector, so the reverse direction is an import cycle).
 //
-//   - ReasonRule: policy-routing rule add/delete for the BIRD and blackhole tables.
+//   - ReasonRule: policy-routing rule listing/add/delete for the BIRD and blackhole tables.
 //   - ReasonRoute: blackhole default route installation in the blackhole table.
 //
-// Unlike the sidecar's equivalent there is no link reason: the router does not enumerate or
-// configure interfaces, it only installs rules and routes.
+// Unlike the sidecar's equivalent there is no link reason: the router never discovers or
+// configures network interfaces. It does list existing routing rules, but those listing
+// failures fall under ReasonRule.
 const (
 	ReasonRule  = bird.ReasonRule
 	ReasonRoute = bird.ReasonRoute

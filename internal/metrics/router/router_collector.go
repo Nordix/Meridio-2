@@ -34,6 +34,13 @@ limitations under the License.
 // bird.Client, which is stateless (a socket path and a command runner), rather than the bird.Bird
 // value the controller reconfigures through. A scrape therefore never touches that value or the
 // mutex serializing its reconfiguration.
+//
+// Collect is deliberately not serialized against itself. A single Prometheus instance keeps one
+// scrape per target in flight, so overlap requires a second scraper or a manual request, and the
+// collect timeout (kept below Prometheus's scrape_timeout) bounds every invocation and reaps the
+// birdc process with it. Concurrent scrapes therefore cost a few extra short-lived, read-only
+// forks rather than piling up, and a mutex would instead make one scrape wait out another's full
+// timeout.
 package router
 
 import (

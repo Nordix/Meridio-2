@@ -59,11 +59,18 @@ type Config struct {
 
 type Bird struct {
 	Config
-	client     *Client
 	nl         abstractNetlink
 	running    bool
 	lastConfig string // last written config for skip-if-unchanged guard
 	mu         sync.Mutex
+}
+
+// birdClient returns a Client for this Bird's control socket. The Client is stateless (socket path
+// plus command runner, no lifecycle or lock), so it is built on demand rather than stored. This
+// keeps every Bird usable regardless of how it was constructed: the client derives only from
+// SocketPath, with no field that a constructor must populate first.
+func (b *Bird) birdClient() *Client {
+	return NewClient(b.SocketPath)
 }
 
 func New(cfg Config) (*Bird, error) {
@@ -85,7 +92,6 @@ func New(cfg Config) (*Bird, error) {
 	cfg.LogParams = slices.Clone(cfg.LogParams)
 	return &Bird{
 		Config: cfg,
-		client: NewClient(cfg.SocketPath),
 		nl:     &netlink.Handle{},
 	}, nil
 }
@@ -178,7 +184,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	if b.running {
 		// A cancellation-induced failure is tolerated: the caller's context going away is not a
 		// configuration problem, and the next reconcile retries.
-		if err := b.client.Configure(ctx, b.ConfigFile); err != nil && !errors.Is(err, context.Cause(ctx)) {
+		if err := b.birdClient().Configure(ctx, b.ConfigFile); err != nil && !errors.Is(err, context.Cause(ctx)) {
 			return fmt.Errorf("birdc configure failed: %w", err)
 		}
 	}

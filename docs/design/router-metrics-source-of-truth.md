@@ -8,9 +8,9 @@ these metrics represent**, because two mutually exclusive sources of truth are
 possible. This document records that decision and its consequences so future
 work (and future metrics for the router/LB) stays consistent.
 
-## The two options
+## The options
 
-### Option 1 — BIRD-truth (chosen)
+### Option 1: BIRD-truth, queried at scrape time (chosen)
 
 Metrics report exactly what `birdc` reports, with no correlation back to
 `GatewayRouter` custom resources. Each metric uses the natural key of the BIRD
@@ -22,18 +22,55 @@ object it describes.
   parses them. It does not read the controller cache and does not reuse the
   connectivity decision.
 
-### Option 2 — Router-effective-status (rejected)
+### Option 2: Router-effective-status (rejected)
 
-Metrics report the router's *effective* connectivity view — the same
+Metrics report the router's *effective* connectivity view, the same
 BFD-correlated state the control loop computes in `applyBfdState` /
 `monitorConnectivity` and acts on for readiness gates, keyed by `GatewayRouter`.
 
 - Source of truth: the control loop's derived snapshot (post-`applyBfdState`),
   not raw `birdc`.
-- Would **have to** share data at the `monitorConnectivity` level — replicating
+- Would **have to** share data at the `monitorConnectivity` level. Replicating
   `applyBfdState` in an independent metrics collector is pointless and
   dangerous, because a second implementation could diverge from the real
   connectivity decision.
+
+### Option 3: Reuse the monitor's raw snapshot (rejected)
+
+Same source of truth as Option 1 (raw `birdc`, pre-`applyBfdState`), but instead
+of querying at scrape time the collector would read the last `MonitorStatus` the
+monitor already holds. `monitorConnectivity` runs the same two commands
+(`show protocols all "NBR-*"`, `show bfd sessions`) every `--monitor-interval`
+(default 1s), so the process already has a fresh answer. Unlike Option 2 this
+reuses the *raw* snapshot, so there is no derived logic to replicate and no
+connectivity decision involved.
+
+Rejected because:
+
+- The external-connectivity monitor actuates: it drives the readiness gates
+  that decide whether traffic reaches this Pod. We deliberately keep metrics
+  from interacting with it at all, including a snapshot read. A shared snapshot
+  could in principle be made non-interfering (atomic pointer, latest-write-wins
+  so a scrape never stalls the monitor), but that adds coupling and complexity
+  to a crucial path for a metrics convenience. Querying `birdc` independently at
+  scrape time avoids the question entirely. This is also consistent with #236's
+  preference for reading the durable source fresh at scrape time rather than
+  keeping an in-memory snapshot for metrics, though that guidance is advisory;
+  the deciding factor here is protecting the monitor.
+- It would weaken the collector's own failure signal.
+  `router_metrics_collect_success` reports whether this collector's fetch
+  succeeded on each scrape. Reproducing that from a shared snapshot would
+  require the monitor to carry per-fetch status fields it does not have today
+  (more coupling), and without them the collector would serve the last good
+  snapshot on a failed fetch, reporting stale data as current, which contradicts
+  the "do not fabricate state on a failed fetch" principle in "Fetch-failure
+  handling" below. Scrape-time querying makes the per-scrape success/failure
+  truthful by construction.
+- A shared snapshot is mutable state needing synchronization, and is nil until
+  the monitor's first tick; a scrape in that startup window (not covered by the
+  cache-sync gate) would see nothing.
+- The only thing it saves is one `birdc` invocation per scrape, negligible at a
+  15-30s scrape interval against the monitor's own 1/s cadence.
 
 ## Decision
 
@@ -70,7 +107,7 @@ below for how to add this without reopening Option 2's problems.
 ## Labeling
 
 Each metric uses its own BIRD object's natural key. This is not an
-inconsistency — a BGP protocol and a BFD session are different BIRD objects with
+inconsistency: a BGP protocol and a BFD session are different BIRD objects with
 different identities.
 
 | Metric | Key labels | Notes |
@@ -85,12 +122,12 @@ different identities.
 
 **Each label name denotes exactly one kind of identity.** #153 proposed a single
 `peer` label for both families, but that would have named the `GatewayRouter` on
-the `bgp_*` metrics and a neighbor IP on `bfd_session_up` — one name meaning two
+the `bgp_*` metrics and a neighbor IP on `bfd_session_up`, one name meaning two
 things, and useless for joining across them.
 
 - `gateway` is kept on all metrics (semantically meaningful, not auto-injected;
   a router Pod serves exactly one Gateway).
-- `pod` / `instance` are **not** set by us — Prometheus injects them from
+- `pod` / `instance` are **not** set by us. Prometheus injects them from
   per-Pod target discovery (PodMonitor), consistent with the network-sidecar
   decision in #153/#236.
 - Static `GatewayRouter`s produce **no** `bgp_*` series (no BGP session). Their
@@ -102,7 +139,7 @@ things, and useless for joining across them.
 
 If filtering/grouping the session metrics by `GatewayRouter` attributes
 (namespace, spec fields, etc.) is ever needed, add it via a Prometheus
-**info metric** joined at query time — do **not** add `GatewayRouter` labels
+**info metric** joined at query time. Do **not** add `GatewayRouter` labels
 to the session metrics directly.
 
 An info metric is a separate, controller-sourced series carrying mapping
@@ -121,7 +158,7 @@ problems:
 - **Stuck/orphaned sessions would be hidden.** A BIRD session with no matching
   `GatewayRouter` could not be labeled, so it would be dropped or stamped
   "unknown". With the join, it simply has no matching info row: the extra labels
-  are empty but **the session series is still present** — visibly
+  are empty but **the session series is still present**, visibly
   un-correlated rather than missing.
 - **It would couple two lifecycles.** The info metric follows the CRD (controller
   -managed, pre-seeded/removed on reconcile); the session metric follows BIRD
@@ -140,13 +177,13 @@ Under Option 1 the session/route gauges are produced by a **lazy
 (pull/`Collect`-time) collector** that builds series fresh from the current
 `birdc` output on every scrape. Therefore:
 
-- A session exists in the output if and only if BIRD currently reports it —
+- A session exists in the output if and only if BIRD currently reports it:
   absence of a series is the truthful "no such session" signal.
 - There is no retained registry to seed with zeros or to unregister from.
 
 So the lifecycle requirement is **satisfied by construction** for the lazy
 gauges. We deliberately do **not** forge `bfd_session_up=0` (or similar) for a
-`GatewayRouter` that declares BFD but has no session yet in BIRD — that would
+`GatewayRouter` that declares BFD but has no session yet in BIRD. That would
 fabricate observation data from CRD intent. If "configured but absent" is ever
 needed, it belongs in a separate intent-vs-observation metric, not as a forged
 value on an observation gauge.
@@ -157,7 +194,7 @@ unregistration concern.
 
 ## Fetch-failure handling
 
-On a `birdc` failure the collector emits no session gauges for that scrape —
+On a `birdc` failure the collector emits no session gauges for that scrape:
 absence, not forged zeros. This is the metrics-appropriate form of the "status
 report validity" concern raised on PR #233: do not fabricate state on a failed
 fetch. Scrapes do not actuate, so a one-scrape gap is benign (unlike the
@@ -166,7 +203,7 @@ connectivity gate, which does actuate and is handled separately).
 **Why not `prometheus.NewInvalidMetric`,** as the cache-backed collectors
 (controller-manager, network-sidecar) use for a failed read: controller-runtime's
 handler uses `promhttp.HTTPErrorOnError`, so a `Gather` error serves HTTP 500
-instead of the payload, and Prometheus treats a failed scrape as an *empty* one —
+instead of the payload, and Prometheus treats a failed scrape as an *empty* one,
 staling **every** series on the endpoint, including controller-runtime, Go-runtime
 and process metrics. (Prometheus `scrape.go`: "A failed scrape is the same as an
 empty scrape, we still call sl.append to trigger stale markers".) `birdc` is a
@@ -182,7 +219,7 @@ single `0` sample.
 A gauge, not a counter: the collector only queries BIRD during `Collect`, so
 every attempt is observed by the scrape that caused it and no cross-scrape state
 is needed. Emitted from within `Collect` rather than as a registered
-`CounterVec`, because the registry gathers collectors concurrently — a separate
+`CounterVec`, because the registry gathers collectors concurrently: a separate
 counter could be gathered before the increment lands, reporting the failure a
 scrape late.
 
@@ -217,7 +254,7 @@ derived at scrape time as `now - Since`, and is `0` while it is not established.
 
 **A duration, not a timestamp.** Prometheus's guidance ("Timestamps, not time
 since") targets monotonic "last time X happened" events and has no answer for a
-value that is not currently true — there is no sensible timestamp for a session
+value that is not currently true: there is no sensible timestamp for a session
 that is down, whereas a duration has one: `0`. `czerwonk/bird_exporter` likewise
 exports `bird_uptime` as a seconds gauge.
 
@@ -234,7 +271,7 @@ positive evidence of a restart.
 **Unparseable `Since`** (bird.conf missing `timeformat protocol "%s"`) omits the
 series rather than reporting `0`, which would look like a session that just reset.
 
-`now` and `Since` share one host clock — BIRD runs in the router container — so
+`now` and `Since` share one host clock (BIRD runs in the router container), so
 the subtraction carries no cross-host skew.
 
 ## `timeformat` dependency

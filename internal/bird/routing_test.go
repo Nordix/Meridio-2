@@ -267,10 +267,16 @@ func TestSetPolicyRoutes_InvalidCIDR(t *testing.T) {
 
 func TestSetPolicyRoutes_RuleListFails(t *testing.T) {
 	m := &netlinkMock{ruleListErr: fmt.Errorf("ENOMEM")}
+	rec := newRecorderMock()
 
-	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, nil)
+	err := setPolicyRoutes(m, []string{"20.0.0.1/32"}, testTableID, testRulePriority, rec)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list")
+	// A listing failure aborts the pass before any add/delete, so exactly one rule error is
+	// counted and no route error. This is the worst case (nothing reconciled), so the counter
+	// must move here, not stay flat.
+	assert.Equal(t, 1, rec.counts[ReasonRule])
+	assert.Equal(t, 0, rec.counts[ReasonRoute])
 }
 
 func TestSetPolicyRoutes_RuleAddFails_BestEffort(t *testing.T) {

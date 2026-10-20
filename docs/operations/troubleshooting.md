@@ -261,15 +261,20 @@ Expected output shows BGP sessions in `Established` state:
 ```
 BIRD 3.3.2 ready.
 Name       Proto      Table      State  Since         Info
-VIP4       Static     master4    up     2026-03-29    
-VIP6       Static     master6    up     2026-03-29    
-NBR-gateway-router-v4 BGP        ---        up     09:02:51.101  Established   
-NBR-gateway-router-v6 BGP        ---        up     09:02:40.874  Established   
-device1    Device     ---        up     2026-03-29    
-kernel1    Kernel     master4    up     2026-03-29    
-kernel2    Kernel     master6    up     2026-03-29    
-bfd1       BFD        ---        up     2026-03-29    
+VIP4       Static     master4    up     1743238800    
+VIP6       Static     master6    up     1743238800    
+NBR-gateway-router-v4 BGP        ---        up     1743238971  Established   
+NBR-gateway-router-v6 BGP        ---        up     1743238960  Established   
+device1    Device     ---        up     1743238800    
+kernel1    Kernel     master4    up     1743238800    
+kernel2    Kernel     master6    up     1743238800    
+bfd1       BFD        ---        up     1743238800    
 ```
+
+> The `Since` column is Unix epoch seconds, not a clock time, because the
+> generated `bird.conf` sets `timeformat protocol "%s"` (needed for the
+> `bgp_session_uptime_seconds` metric). See
+> [router metrics](../development/metrics/router.md).
 
 If sessions are `DOWN` or `Active`, check:
 - GatewayRouter configuration (address, ASN, ports)

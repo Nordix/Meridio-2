@@ -129,13 +129,14 @@ func (b *Bird) checkStatus(ctx context.Context) MonitorStatus {
 		return status
 	}
 
-	protocols, err := b.client.GetProtocolStatuses(ctx)
+	client := b.birdClient()
+	protocols, err := client.GetProtocolStatuses(ctx)
 	if err != nil {
 		return status
 	}
 	status.Protocols = protocols
 
-	bfdSessions, err := b.client.GetBfdSessions(ctx)
+	bfdSessions, err := client.GetBfdSessions(ctx)
 	if err != nil {
 		return status
 	}

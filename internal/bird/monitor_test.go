@@ -18,6 +18,9 @@ package bird
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -530,39 +533,94 @@ NBR-gatewayrouter-sample-v6 BGP        ---        up     10:04:12.499  Establish
 	}
 }
 
+// stubRunner is a CommandRunner that returns canned output/error, so client
+// tests exercise the real command construction and error wrapping in
+// Client.run without needing a birdc binary on PATH.
+type stubRunner struct {
+	out []byte
+	err error
+}
+
+func (s *stubRunner) Run(ctx context.Context, _ ...string) ([]byte, error) {
+	// Honor cancellation the way a real exec would, so a canceled context
+	// short-circuits the call rather than returning canned output.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.out, s.err
+}
+
 // TestGetProtocolStatuses_InvalidSocket verifies that a birdc failure (e.g. no
 // BIRD instance listening on the socket) is surfaced as an error rather than
 // silently swallowed, since GetProtocolStatuses is called by callers (e.g.
 // an independent metrics collector) that need to distinguish "fetch failed"
-// from "no protocols configured".
+// from "no protocols configured". The injected runner returns a canned error;
+// the assertions confirm Client.run wraps it with the command context, so the
+// socket path and the underlying error both reach the caller. This fails if
+// the call ever stops routing through run (where that wrapping lives).
 func TestGetProtocolStatuses_InvalidSocket(t *testing.T) {
-	_, err := NewClient("/nonexistent/bird.ctl").GetProtocolStatuses(context.Background())
+	stub := &stubRunner{err: fmt.Errorf("connection refused")}
+	_, err := NewClient("/nonexistent/bird.ctl", WithCommandRunner(stub)).
+		GetProtocolStatuses(context.Background())
 	if err == nil {
-		t.Fatal("expected error for nonexistent socket, got nil")
+		t.Fatal("expected error for failed birdc, got nil")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent/bird.ctl") {
+		t.Errorf("error should carry the socket path from the wrapped command, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("error should wrap the underlying runner error, got: %v", err)
 	}
 }
 
 // TestGetBfdSessions_InvalidSocket mirrors TestGetProtocolStatuses_InvalidSocket
 // for the BFD sessions query.
 func TestGetBfdSessions_InvalidSocket(t *testing.T) {
-	_, err := NewClient("/nonexistent/bird.ctl").GetBfdSessions(context.Background())
+	stub := &stubRunner{err: fmt.Errorf("connection refused")}
+	_, err := NewClient("/nonexistent/bird.ctl", WithCommandRunner(stub)).
+		GetBfdSessions(context.Background())
 	if err == nil {
-		t.Fatal("expected error for nonexistent socket, got nil")
+		t.Fatal("expected error for failed birdc, got nil")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent/bird.ctl") {
+		t.Errorf("error should carry the socket path from the wrapped command, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("error should wrap the underlying runner error, got: %v", err)
 	}
 }
 
 // TestGetProtocolStatuses_ContextCanceled verifies that a canceled context is
-// honored (the exec is not even attempted to run to completion), confirming
-// callers can bound these calls with a timeout independent of any Bird
-// instance's own lifecycle.
+// honored by the call path, confirming callers can bound these calls with a
+// timeout independent of any Bird instance's own lifecycle. The injected
+// runner returns ctx.Err() when the context is done, so this asserts the
+// cancellation actually propagates to the caller.
 func TestGetProtocolStatuses_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := NewClient("/nonexistent/bird.ctl").GetProtocolStatuses(ctx)
-	if err == nil {
-		t.Fatal("expected error for canceled context, got nil")
+	stub := &stubRunner{out: []byte("should not be returned")}
+	_, err := NewClient("/nonexistent/bird.ctl", WithCommandRunner(stub)).
+		GetProtocolStatuses(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
+}
+
+// TestCheckStatus_StructLiteralBirdWithRunningDoesNotPanic asserts that a struct-literal Bird (one
+// not built by New) is usable in the monitor path: with running=true and an unreachable socket,
+// checkStatus degrades to a blank status rather than panicking. The other struct-literal monitor
+// tests use running=false and return before this path, so the no-panic property is asserted here.
+func TestCheckStatus_StructLiteralBirdWithRunningDoesNotPanic(t *testing.T) {
+	b := &Bird{running: true}
+	b.SocketPath = "/nonexistent/bird.ctl"
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("checkStatus panicked on a struct-literal Bird: %v", r)
+		}
+	}()
+	b.checkStatus(context.Background())
 }
 
 func TestMonitorChannelClosure(t *testing.T) {

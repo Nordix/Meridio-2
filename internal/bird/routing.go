@@ -31,7 +31,9 @@ var log = logf.Log.WithName("routing")
 // Config-error reason label values for ConfigErrorRecorder. Each maps to a distinct netlink
 // object the router manages for VIP source-based routing, so a failure points at a specific
 // diagnosis:
-//   - rule: policy-routing rule add/delete (RuleAdd/RuleDel) for the BIRD and blackhole tables.
+//   - rule: policy-routing rule listing/add/delete (RuleListFiltered/RuleAdd/RuleDel) for the
+//     BIRD and blackhole tables. Listing failures are counted here too; they abort the reconcile
+//     pass, so leaving them uncounted would blind the counter in the case where nothing is programmed.
 //   - route: blackhole default route installation (RouteReplace) in the blackhole table.
 //
 // These live here rather than in internal/metrics/router (where the sidecar keeps its equivalent)
@@ -87,6 +89,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int, r
 		Table: tableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
+		recordConfigError(rec, ReasonRule)
 		return fmt.Errorf("failed to list BGP rules: %w", err)
 	}
 
@@ -95,6 +98,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int, r
 		Table: blackholeTableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
+		recordConfigError(rec, ReasonRule)
 		return fmt.Errorf("failed to list blackhole rules: %w", err)
 	}
 
