@@ -978,7 +978,9 @@ Two distinct patterns:
 kept separate from the forwarding path so counting never changes a verdict. It counts
 packets dropped by the no-flow and no-targets fwmarks (`fwmarkBase+0` / `fwmarkBase+1`).
 
+## References
 
+- [ADR-001: DistributionGroup as Primary Resource](../architecture/adr-001-distributiongroup-primary-resource.md)
 - [NFQLB (nfqueue-loadbalancer)](https://github.com/Nordix/nfqueue-loadbalancer) — upstream documentation for the Maglev load balancer binary
 - [Gateway Controller](gateway.md) — manages LB Deployment lifecycle and Gateway status
 - [DistributionGroup Controller](distributiongroup.md) — manages LoadBalancerEndpointSlices consumed by this controller
