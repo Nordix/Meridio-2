@@ -36,7 +36,8 @@ type NfqueueReader interface {
 // /proc/net/netfilter/nfnetlink_queue.
 //
 //   - <prefix>_lb_nfqueue_items        (gauge;   gateway) — packets currently queued for a verdict
-//   - <prefix>_lb_nfqueue_dropped_total (counter; gateway) — queue-full + verdict-delivery drops
+//   - <prefix>_lb_nfqueue_dropped_total (counter; gateway, reason) — reason=queue: queue-full
+//     drops (saturation, pairs with _items); reason=user: verdict-delivery drops (error)
 //
 // Per external-state safety (#236) Collect serializes with a mutex; on a read failure it skips
 // both series and increments the collector-errors counter (option-3), rather than emitting an
@@ -69,11 +70,12 @@ func NewNfqueueCollector(reader NfqueueReader, gatewayName, prefix string, errs 
 		),
 		droppedDesc: prometheus.NewDesc(
 			prefix+"_lb_nfqueue_dropped_total",
-			"Packets dropped by the LB's netfilter queues, summed over the configured queue range. "+
-				"Includes both kernel queue-full drops (the queue was full when a packet arrived) "+
-				"and verdict-delivery drops (the kernel could not hand a packet to userspace). "+
-				"Cumulative since the queues were bound.",
-			[]string{"gateway"}, nil,
+			"Packets dropped by the LB's netfilter queues, summed over the configured queue range, "+
+				"by reason. reason=queue: the queue was full when a packet arrived (a saturation "+
+				"signal — pair it with _lb_nfqueue_items and consider raising --qlength). "+
+				"reason=user: the kernel could not hand a packet to userspace (a delivery error, "+
+				"independent of queue fullness). Cumulative since the queues were bound.",
+			[]string{"gateway", "reason"}, nil,
 		),
 	}
 }
@@ -101,6 +103,9 @@ func (c *NfqueueCollector) Collect(ch chan<- prometheus.Metric) {
 		c.itemsDesc, prometheus.GaugeValue, float64(stats.Items), c.gatewayName,
 	)
 	ch <- prometheus.MustNewConstMetric(
-		c.droppedDesc, prometheus.CounterValue, float64(stats.Dropped), c.gatewayName,
+		c.droppedDesc, prometheus.CounterValue, float64(stats.QueueDropped), c.gatewayName, "queue",
+	)
+	ch <- prometheus.MustNewConstMetric(
+		c.droppedDesc, prometheus.CounterValue, float64(stats.UserDropped), c.gatewayName, "user",
 	)
 }

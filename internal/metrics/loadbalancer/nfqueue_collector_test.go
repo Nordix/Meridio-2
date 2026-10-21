@@ -43,7 +43,7 @@ func newTestNfqueueCollector(r NfqueueReader, errs errorRecorder) *NfqueueCollec
 
 func TestNfqueueCollector_Values(t *testing.T) {
 	c := newTestNfqueueCollector(
-		&fakeNfqueue{stats: nfqueueproc.Stats{Items: 8, Dropped: 7}},
+		&fakeNfqueue{stats: nfqueueproc.Stats{Items: 8, QueueDropped: 2, UserDropped: 5}},
 		newFakeCollectorErrors(),
 	)
 
@@ -51,19 +51,20 @@ func TestNfqueueCollector_Values(t *testing.T) {
 # HELP meridio_2_lb_nfqueue_items Packets currently waiting in the LB's netfilter queues for a userspace verdict (instantaneous backlog, summed over the configured queue range). A gauge: it is normally 0 and rises only when userspace cannot keep up with the packet rate.
 # TYPE meridio_2_lb_nfqueue_items gauge
 meridio_2_lb_nfqueue_items{gateway="gw-a"} 8
-# HELP meridio_2_lb_nfqueue_dropped_total Packets dropped by the LB's netfilter queues, summed over the configured queue range. Includes both kernel queue-full drops (the queue was full when a packet arrived) and verdict-delivery drops (the kernel could not hand a packet to userspace). Cumulative since the queues were bound.
+# HELP meridio_2_lb_nfqueue_dropped_total Packets dropped by the LB's netfilter queues, summed over the configured queue range, by reason. reason=queue: the queue was full when a packet arrived (a saturation signal — pair it with _lb_nfqueue_items and consider raising --qlength). reason=user: the kernel could not hand a packet to userspace (a delivery error, independent of queue fullness). Cumulative since the queues were bound.
 # TYPE meridio_2_lb_nfqueue_dropped_total counter
-meridio_2_lb_nfqueue_dropped_total{gateway="gw-a"} 7
+meridio_2_lb_nfqueue_dropped_total{gateway="gw-a",reason="queue"} 2
+meridio_2_lb_nfqueue_dropped_total{gateway="gw-a",reason="user"} 5
 `
 	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected),
 		"meridio_2_lb_nfqueue_items", "meridio_2_lb_nfqueue_dropped_total"))
 }
 
-// The idle case (0 backlog, 0 drops) still emits both series — a 0 gauge and a 0 counter are
+// The idle case (0 backlog, 0 drops) still emits all series — a 0 gauge and 0 counters are
 // meaningful (and let consumers distinguish "healthy, nothing queued" from "no data").
 func TestNfqueueCollector_Zero_StillEmits(t *testing.T) {
 	c := newTestNfqueueCollector(
-		&fakeNfqueue{stats: nfqueueproc.Stats{Items: 0, Dropped: 0}},
+		&fakeNfqueue{stats: nfqueueproc.Stats{Items: 0, QueueDropped: 0, UserDropped: 0}},
 		newFakeCollectorErrors(),
 	)
 
@@ -71,9 +72,10 @@ func TestNfqueueCollector_Zero_StillEmits(t *testing.T) {
 # HELP meridio_2_lb_nfqueue_items Packets currently waiting in the LB's netfilter queues for a userspace verdict (instantaneous backlog, summed over the configured queue range). A gauge: it is normally 0 and rises only when userspace cannot keep up with the packet rate.
 # TYPE meridio_2_lb_nfqueue_items gauge
 meridio_2_lb_nfqueue_items{gateway="gw-a"} 0
-# HELP meridio_2_lb_nfqueue_dropped_total Packets dropped by the LB's netfilter queues, summed over the configured queue range. Includes both kernel queue-full drops (the queue was full when a packet arrived) and verdict-delivery drops (the kernel could not hand a packet to userspace). Cumulative since the queues were bound.
+# HELP meridio_2_lb_nfqueue_dropped_total Packets dropped by the LB's netfilter queues, summed over the configured queue range, by reason. reason=queue: the queue was full when a packet arrived (a saturation signal — pair it with _lb_nfqueue_items and consider raising --qlength). reason=user: the kernel could not hand a packet to userspace (a delivery error, independent of queue fullness). Cumulative since the queues were bound.
 # TYPE meridio_2_lb_nfqueue_dropped_total counter
-meridio_2_lb_nfqueue_dropped_total{gateway="gw-a"} 0
+meridio_2_lb_nfqueue_dropped_total{gateway="gw-a",reason="queue"} 0
+meridio_2_lb_nfqueue_dropped_total{gateway="gw-a",reason="user"} 0
 `
 	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected),
 		"meridio_2_lb_nfqueue_items", "meridio_2_lb_nfqueue_dropped_total"))

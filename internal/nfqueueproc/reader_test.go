@@ -54,15 +54,17 @@ func TestParse_RealIdle_AllZero(t *testing.T) {
 	r := NewReader(0, 3)
 	s := r.parse(procIdle)
 	assert.Equal(t, uint64(0), s.Items)
-	assert.Equal(t, uint64(0), s.Dropped)
+	assert.Equal(t, uint64(0), s.QueueDropped)
+	assert.Equal(t, uint64(0), s.UserDropped)
 }
 
 func TestParse_RealAfterTraffic_StillZero(t *testing.T) {
-	// id_sequence moving (col 8) must NOT affect items/dropped — only cols 3/6/7 matter.
+	// id_sequence moving (col 8) must NOT affect items/drops — only cols 3/6/7 matter.
 	r := NewReader(0, 3)
 	s := r.parse(procAfterTraffic)
 	assert.Equal(t, uint64(0), s.Items)
-	assert.Equal(t, uint64(0), s.Dropped)
+	assert.Equal(t, uint64(0), s.QueueDropped)
+	assert.Equal(t, uint64(0), s.UserDropped)
 }
 
 func TestParse_SynthLoaded_SumsAcrossRange(t *testing.T) {
@@ -70,8 +72,9 @@ func TestParse_SynthLoaded_SumsAcrossRange(t *testing.T) {
 	s := r.parse(procSynthLoaded)
 	// Items = 5 + 3 + 0 + 0.
 	assert.Equal(t, uint64(8), s.Items)
-	// Dropped = (2+1) + (0+4) + 0 + 0.
-	assert.Equal(t, uint64(7), s.Dropped)
+	// QueueDropped (Qdrop) = 2 + 0; UserDropped (Udrop) = 1 + 4 — kept separate, not summed.
+	assert.Equal(t, uint64(2), s.QueueDropped)
+	assert.Equal(t, uint64(5), s.UserDropped)
 }
 
 func TestParse_RangeFilter_SingleQueue(t *testing.T) {
@@ -79,15 +82,17 @@ func TestParse_RangeFilter_SingleQueue(t *testing.T) {
 	r := NewReader(0, 0)
 	s := r.parse(procSynthLoaded)
 	assert.Equal(t, uint64(5), s.Items)
-	assert.Equal(t, uint64(3), s.Dropped) // 2 + 1
+	assert.Equal(t, uint64(2), s.QueueDropped)
+	assert.Equal(t, uint64(1), s.UserDropped)
 }
 
 func TestParse_RangeFilter_Subset(t *testing.T) {
-	// Queues 1..2 only: queue 1 has backlog 3 / drops 4, queue 2 idle.
+	// Queues 1..2 only: queue 1 has backlog 3 / Qdrop 0 / Udrop 4, queue 2 idle.
 	r := NewReader(1, 2)
 	s := r.parse(procSynthLoaded)
 	assert.Equal(t, uint64(3), s.Items)
-	assert.Equal(t, uint64(4), s.Dropped)
+	assert.Equal(t, uint64(0), s.QueueDropped)
+	assert.Equal(t, uint64(4), s.UserDropped)
 }
 
 func TestParse_RangeOutsideBoundQueues_Empty(t *testing.T) {
@@ -95,27 +100,30 @@ func TestParse_RangeOutsideBoundQueues_Empty(t *testing.T) {
 	r := NewReader(10, 12)
 	s := r.parse(procSynthLoaded)
 	assert.Equal(t, uint64(0), s.Items)
-	assert.Equal(t, uint64(0), s.Dropped)
+	assert.Equal(t, uint64(0), s.QueueDropped)
+	assert.Equal(t, uint64(0), s.UserDropped)
 }
 
 func TestParse_MalformedLines_Skipped(t *testing.T) {
 	content := "" +
 		"garbage line with too few fields\n" +
-		"    0     21     5 2  1500     2     1      900  1\n" + // valid: items 5, drops 3
+		"    0     21     5 2  1500     2     1      900  1\n" + // valid: items 5, Qdrop 2, Udrop 1
 		"a b c d e f g h i\n" + // 9 fields but non-numeric where counts expected — skipped
 		"\n" + // blank — skipped
 		"    1 4112809925     3 2  1500     0     4      450  1 EXTRA\n" // 10 fields — skipped
 	r := NewReader(0, 3)
 	s := r.parse(content)
 	assert.Equal(t, uint64(5), s.Items)
-	assert.Equal(t, uint64(3), s.Dropped)
+	assert.Equal(t, uint64(2), s.QueueDropped)
+	assert.Equal(t, uint64(1), s.UserDropped)
 }
 
 func TestParse_Empty(t *testing.T) {
 	r := NewReader(0, 3)
 	s := r.parse("")
 	assert.Equal(t, uint64(0), s.Items)
-	assert.Equal(t, uint64(0), s.Dropped)
+	assert.Equal(t, uint64(0), s.QueueDropped)
+	assert.Equal(t, uint64(0), s.UserDropped)
 }
 
 func TestRead_FromFile(t *testing.T) {
@@ -128,7 +136,8 @@ func TestRead_FromFile(t *testing.T) {
 	s, err := r.Read()
 	require.NoError(t, err)
 	assert.Equal(t, uint64(8), s.Items)
-	assert.Equal(t, uint64(7), s.Dropped)
+	assert.Equal(t, uint64(2), s.QueueDropped)
+	assert.Equal(t, uint64(5), s.UserDropped)
 }
 
 func TestRead_MissingFile_IsZeroNotError(t *testing.T) {
@@ -140,7 +149,8 @@ func TestRead_MissingFile_IsZeroNotError(t *testing.T) {
 	s, err := r.Read()
 	require.NoError(t, err)
 	assert.Equal(t, uint64(0), s.Items)
-	assert.Equal(t, uint64(0), s.Dropped)
+	assert.Equal(t, uint64(0), s.QueueDropped)
+	assert.Equal(t, uint64(0), s.UserDropped)
 }
 
 func TestRead_UnreadableFile_IsError(t *testing.T) {

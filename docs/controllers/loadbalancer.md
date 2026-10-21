@@ -950,7 +950,7 @@ re-created or the process restarts, so consume them with `rate()`/`increase()`.
 | `_lb_drops_total` | counter | `reason` (`no_flow`, `no_targets`) | nftables drop-accounting chain |
 | `_lb_policy_routes` | gauge | `ip_family` (`IPv4`, `IPv6`) | kernel policy routing rules owned by this LB |
 | `_lb_nfqueue_items` | gauge | — | `/proc/net/netfilter/nfnetlink_queue` backlog, summed over the LB's queue range |
-| `_lb_nfqueue_dropped_total` | counter | — | same file: kernel queue-full + verdict-delivery drops |
+| `_lb_nfqueue_dropped_total` | counter | `reason` (`queue`, `user`) | same file: `queue` = queue-full drops (saturation), `user` = verdict-delivery drops (error) |
 | `_lb_collector_errors_total` | counter | `collector` | incremented when a read-at-scrape collector fails |
 | `_lb_route_config_errors_total` | counter | `reason` (`route_config`, `vip_config`) | incremented when a reconcile data-plane config op fails |
 
@@ -990,13 +990,20 @@ One scrape runs one `nfqlb flow-list` plus one `nfqlb show` per DistributionGrou
 reads. Subprocess cost grows with the number of DGs, so do not scrape faster than
 `--metrics-collect-timeout`; the default Prometheus 15s–30s interval is safe.
 
-### Why nfqueue drops are one counter
+### Why nfqueue drops are split by reason
 
-`_lb_nfqueue_dropped_total` sums the kernel's queue-full drops (Qdrop) and
-verdict-delivery drops (Udrop). The proc file reports them separately, but they are
-merged into one series to keep cardinality at one series per gateway; the two causes are
-explained in the metric help. A `reason` label could split them if the distinction is
-later needed for alerting.
+`_lb_nfqueue_dropped_total` carries a `reason` label with two values, kept separate
+rather than summed because they are different signals that call for different actions:
+
+- `reason="queue"` (kernel Qdrop) — the queue was full when a packet arrived. A
+  **saturation** signal; pair it with `_lb_nfqueue_items` to see how close the queue runs
+  to full, and raise `--qlength` if it climbs.
+- `reason="user"` (kernel Udrop) — the kernel could not hand a packet to userspace. A
+  **delivery error**, independent of queue fullness; a rising rate points at the userspace
+  reader, not the queue depth.
+
+Summing them would merge a saturation metric with an error metric and lose the ratio
+coverage an operator needs to tell the two situations apart.
 
 ### nfqueue read requires group 0
 

@@ -30,9 +30,12 @@ limitations under the License.
 //     a gauge, not a counter: a load balancer that keeps up drains the queue immediately, so it
 //     reads 0 almost always and only rises under backpressure.
 //   - queue_dropped (field 6) — packets the kernel dropped because the queue was full ("Qdrop").
+//     A saturation signal; pairs with queue_total to show how close the queue is to overflowing.
 //   - user_dropped  (field 7) — packets dropped while delivering the verdict to userspace ("Udrop").
+//     An error signal, independent of queue fullness.
 //
-// queue_dropped and user_dropped are summed into one cumulative drop total. The remaining fields
+// queue_dropped and user_dropped are kept as separate totals (not summed): one is saturation, the
+// other is a delivery error, and they drive different operator actions. The remaining fields
 // (peer_portid, copy_mode, copy_range, id_sequence, and the trailing constant 1) are read past but
 // not exposed.
 package nfqueueproc
@@ -60,14 +63,18 @@ const (
 	colUserDropped  = 6
 )
 
-// Stats is the reduced per-netns view the collector consumes.
+// Stats is the reduced per-netns view the collector consumes. All fields are summed over the
+// queues in the configured range.
 type Stats struct {
-	// Items is the summed backlog (queue_total) across the queues in range: packets currently
-	// waiting for a userspace verdict. A gauge.
+	// Items is the backlog (queue_total): packets currently waiting for a userspace verdict. A
+	// gauge.
 	Items uint64
-	// Dropped is the summed drop count (queue_dropped + user_dropped) across the queues in range.
+	// QueueDropped is the queue-full drop count (queue_dropped, "Qdrop") — a saturation signal.
 	// Cumulative since the queues were bound.
-	Dropped uint64
+	QueueDropped uint64
+	// UserDropped is the verdict-delivery drop count (user_dropped, "Udrop") — an error signal.
+	// Cumulative since the queues were bound.
+	UserDropped uint64
 }
 
 // Reader reads and reduces the nfqueue proc file for a fixed, inclusive queue-number range. The
@@ -130,7 +137,8 @@ func (r *Reader) parse(content string) Stats {
 			continue // a non-numeric where a count is expected — skip the row
 		}
 		s.Items += total
-		s.Dropped += qdrop + udrop
+		s.QueueDropped += qdrop
+		s.UserDropped += udrop
 	}
 	return s
 }
