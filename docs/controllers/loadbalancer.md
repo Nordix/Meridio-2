@@ -968,8 +968,9 @@ Two distinct patterns:
   and `nfqueue`. A fifth value, `nfqlb_busy`, counts scrapes that skipped the nfqlb read
   because another scrape held the lock (normal with HA Prometheus or federation) — it is
   kept separate so an alert on `nfqlb` read failures is not polluted by benign overlap.
-  When nfqlb's queues are not yet bound (startup, or the `nfnetlink_queue` module not
-  loaded) the nfqueue read reports zero rather than counting an error.
+  If the `nfnetlink_queue` module is not loaded (so the proc file is absent) the nfqueue
+  read reports zero rather than counting an error; on supported platforms the module is
+  always loaded (Kind auto-loads it, OpenShift persists it), so this path is defensive.
 - **Counted where the event happens (the two `*_errors_total`).** A failed reconcile
   config operation has no durable source to read later, so it is counted at the point
   of failure. `_lb_route_config_errors_total` covers policy rule/route and target
@@ -996,6 +997,17 @@ verdict-delivery drops (Udrop). The proc file reports them separately, but they 
 merged into one series to keep cardinality at one series per gateway; the two causes are
 explained in the metric help. A `reason` label could split them if the distinction is
 later needed for alerting.
+
+### nfqueue read requires group 0
+
+The nfqueue collector reads `/proc/net/netfilter/nfnetlink_queue`, which is mode
+`0440 root:root` — not world-readable. The LB runs `runAsNonRoot`, so the pod
+securityContext sets `supplementalGroups: [0]` to make the group-read bit apply. gid 0
+grants no capabilities and no uid change; `runAsNonRoot`/`readOnlyRootFilesystem` stay
+in force. Without it the read fails with EACCES and `_lb_nfqueue_*` is absent while
+`_lb_collector_errors_total{collector="nfqueue"}` climbs. If you deploy from a custom
+template or a hardened OpenShift SCC that strips the supplemental group, re-add it (or
+grant it in the SCC).
 
 ## References
 

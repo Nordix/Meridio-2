@@ -132,13 +132,31 @@ func TestRead_FromFile(t *testing.T) {
 }
 
 func TestRead_MissingFile_IsZeroNotError(t *testing.T) {
-	// A missing proc file means the nfnetlink_queue module is not loaded / no queue is bound yet
-	// (normal at startup) — report zero stats, not a read failure, so the collector does not count
-	// a spurious error.
+	// A missing proc file means the nfnetlink_queue module is not loaded (not the case on
+	// supported platforms, but defensive) — report zero stats, not a read failure, so the
+	// collector does not count a spurious error on an unsupported/misconfigured kernel.
 	r := NewReader(0, 3)
 	r.path = filepath.Join(t.TempDir(), "does-not-exist")
 	s, err := r.Read()
 	require.NoError(t, err)
 	assert.Equal(t, uint64(0), s.Items)
 	assert.Equal(t, uint64(0), s.Dropped)
+}
+
+func TestRead_UnreadableFile_IsError(t *testing.T) {
+	// The real proc file is 0440 root:root, so a non-root LB without gid 0 gets EACCES.
+	// That must surface as a collection error (so the collector counts it and skips the
+	// series), NOT as zero stats — zero would read as a healthy, idle queue.
+	if os.Geteuid() == 0 {
+		t.Skip("skipping: root bypasses DAC read checks, so a 0o000 file is still readable")
+	}
+	path := filepath.Join(t.TempDir(), "nfnetlink_queue")
+	if err := os.WriteFile(path, []byte("  0 1 0 2 128 0 0 0 1\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	r := NewReader(0, 3)
+	r.path = path
+	_, err := r.Read()
+	require.Error(t, err)
+	require.ErrorIs(t, err, os.ErrPermission)
 }

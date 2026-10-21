@@ -404,6 +404,19 @@ Example output:
 
 The first column is the queue number (0-3 matching the nftables `queue to 0-3` rule). If no queues are listed, NFQLB is not running or failed to bind to the queues.
 
+### nfqueue metrics missing (`_lb_nfqueue_*`)
+
+If `_lb_nfqueue_items` / `_lb_nfqueue_dropped_total` are absent from the metrics endpoint while `_lb_collector_errors_total{collector="nfqueue"}` keeps rising, the collector cannot read `/proc/net/netfilter/nfnetlink_queue`. That file is mode `0440 root:root`, and the LB runs as non-root, so it is read via the pod's `supplementalGroups: [0]`. Check the group is present:
+
+```bash
+kubectl get pod -n <ns> <sllbr-pod> -o jsonpath='{.spec.securityContext.supplementalGroups}'
+# Expected: [0]
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- id
+# Expected: groups=...,0
+```
+
+If the group is missing (custom deployment template, or a hardened OpenShift SCC that strips it), re-add `supplementalGroups: [0]` to the pod securityContext or grant it in the SCC. A separate case: on a kernel where the `nfnetlink_queue` module is not loaded the file is absent and the collector reports zero (no error) — supported platforms always load it (Kind auto-loads; OpenShift persists it via `/etc/modules-load.d`).
+
 ### Check NFQLB shared memory instances
 
 ```bash

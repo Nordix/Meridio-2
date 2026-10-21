@@ -96,8 +96,11 @@ func (r *Reader) Read() (Stats, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // fixed kernel proc path, not user input
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			// File missing = nfnetlink_queue module not loaded / no queue bound yet (normal at
-			// startup). Report zero stats, not a read failure.
+			// Defensive: the file is absent only when the nfnetlink_queue module is not loaded.
+			// Supported platforms always have it (Kind auto-loads; OpenShift persists it via
+			// /etc/modules-load.d), so this is not a normal state there — report zero rather than
+			// a collection error for an unsupported/misconfigured kernel. (Queues merely "not
+			// bound yet" show up as an empty file, which parse handles as zero.)
 			return Stats{}, nil
 		}
 		return Stats{}, fmt.Errorf("read %s: %w", path, err)
