@@ -30,9 +30,8 @@ The two `PodMonitor` components share an auth and TLS pattern, factored out into
 [podmonitor-https.md](podmonitor-https.md). Read it once; the component chapters
 supply only their own values.
 
-> The LB (`stateless-load-balancer`) container exposes no metrics yet. When it does,
-> its collection model (nfqlb, nftables) may not fit the pattern above, so revisit
-> this structure rather than assuming a fourth chapter drops in.
+> The LB (`stateless-load-balancer`) container shares the router's Pod and its
+> network namespace, so if both expose metrics they must bind different ports.
 
 ## Metric index
 

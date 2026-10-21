@@ -106,9 +106,10 @@ disk on every reconcile, and kubelet refreshes the mounted ConfigMap on its own 
 can take up to a minute). Touch the Gateway to trigger a reconcile once the mounted
 file shows the change.
 
-> The `loadbalancer` container in the same Pod exposes no metrics today. Since a
-> PodMonitor matches `port: metrics` by name across all containers, if it ever gains a
-> port with that name one PodMonitor will scrape both.
+> The `router` and `loadbalancer` containers share the Pod and its network namespace,
+> so they cannot both bind the same metrics port. If both expose metrics, give them
+> distinct ports. A PodMonitor matches its port by name across all containers in the
+> Pod, so a port name shared by both containers would make one PodMonitor scrape both.
 
 ## 2. Apply the RBAC
 
