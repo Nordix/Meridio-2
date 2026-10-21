@@ -314,7 +314,8 @@ func registerLBMetrics(
 	}
 
 	// nfqueue backlog/drop collector: reads /proc/net/netfilter/nfnetlink_queue for the LB's own
-	// queue range. The proc file is world-readable; it exists once nfqlb has bound its queues.
+	// queue range. The file is 0440 root:root, so the read relies on the pod's supplementalGroups:
+	// [0] (see the LB deployment template); it exists once the nfnetlink_queue module is loaded.
 	queueStart, queueEnd := nfqlbInstance.QueueRange()
 	nfqueueReader := nfqueueproc.NewReader(queueStart, queueEnd)
 	nfqueueCollector := lbmetrics.NewNfqueueCollector(nfqueueReader, cfg.GatewayName, cfg.MetricsPrefix, collectorErrors)

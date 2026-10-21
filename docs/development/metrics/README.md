@@ -21,17 +21,19 @@ port-forward, verify a scrape, Grafana), then follow the chapter for your compon
 | Controller-manager | `ServiceMonitor` | [controller-manager.md](controller-manager.md) |
 | Network-sidecar | `PodMonitor` | [network-sidecar.md](network-sidecar.md) |
 | Router | `PodMonitor` | [router.md](router.md) |
+| Stateless-load-balancer | `PodMonitor` | [loadbalancer.md](loadbalancer.md) |
 
 Note the two controller-manager files: `controller-manager.md` is the in-cluster
 scrape covered here, while [controller-manager-local.md](controller-manager-local.md)
 is the local `go run` workflow.
 
-The two `PodMonitor` components share an auth and TLS pattern, factored out into
+The `PodMonitor` components share an auth and TLS pattern, factored out into
 [podmonitor-https.md](podmonitor-https.md). Read it once; the component chapters
 supply only their own values.
 
-> The LB (`stateless-load-balancer`) container shares the router's Pod and its
-> network namespace, so if both expose metrics they must bind different ports.
+> The LB (`stateless-load-balancer`) and router containers share the Pod and its
+> network namespace, so if both expose metrics they must bind different port numbers
+> (see [loadbalancer.md](loadbalancer.md)).
 
 ## Metric index
 
@@ -54,6 +56,15 @@ All names take the `--metrics-prefix` prefix, default `meridio_2`.
 | `bfd_session_up` | `gateway`, `neighbor`, `interface` | router |
 | `router_metrics_collect_success` | `gateway`, `source` | router |
 | `router_route_config_errors_total` | `gateway`, `reason` | router |
+| `lb_flow_matches_total` | `gateway`, `l34route` | stateless-load-balancer |
+| `lb_active_targets` | `gateway`, `dg` | stateless-load-balancer |
+| `lb_nftables_vip_set_size` | `gateway` | stateless-load-balancer |
+| `lb_drops_total` | `gateway`, `reason` | stateless-load-balancer |
+| `lb_policy_routes` | `gateway`, `ip_family` | stateless-load-balancer |
+| `lb_nfqueue_items` | `gateway` | stateless-load-balancer |
+| `lb_nfqueue_dropped_total` | `gateway`, `reason` | stateless-load-balancer |
+| `lb_collector_errors_total` | `gateway`, `collector` | stateless-load-balancer |
+| `lb_route_config_errors_total` | `gateway`, `reason` | stateless-load-balancer |
 
 `pod` and `instance` are injected by the scraper, so no per-Pod component
 instruments them.

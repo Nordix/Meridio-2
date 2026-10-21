@@ -935,7 +935,8 @@ internal/common/config/
 The LB Pod exposes custom Prometheus metrics for the single Gateway it serves. All
 series carry a `gateway` label (the Gateway name) and names are prefixed with
 `--metrics-prefix` (default `meridio_2`). The endpoint is off unless
-`--metrics-bind-address` is set.
+`--metrics-bind-address` is set. For how to enable and scrape it in-cluster, see
+[Scraping the stateless-load-balancer](../development/metrics/loadbalancer.md).
 
 ### Catalog
 
