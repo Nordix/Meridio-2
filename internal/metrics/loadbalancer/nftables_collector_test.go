@@ -82,7 +82,7 @@ func TestNftablesCollector_Drops_PerReason(t *testing.T) {
 	}, newFakeCollectorErrors())
 
 	expected := `
-# HELP meridio_2_lb_drops_total Number of packets dropped by the LB's drop-accounting chain, by reason (no_flow: matched a VIP but no flow selector matched; no_targets: a flow matched but no active targets). Absent when drop accounting is disabled.
+# HELP meridio_2_lb_drops_total Number of packets dropped by the LB's drop-accounting chain, by reason (no_flow: matched a VIP but no flow selector matched; no_targets: a flow matched but no active targets). A reason is reported only when its drop rule exists.
 # TYPE meridio_2_lb_drops_total counter
 meridio_2_lb_drops_total{gateway="gw-a",reason="no_flow"} 7
 meridio_2_lb_drops_total{gateway="gw-a",reason="no_targets"} 3
@@ -103,7 +103,7 @@ func TestNftablesCollector_Drops_SingleReason(t *testing.T) {
 	c := newTestNftablesCollector(&fakeNftables{drops: map[string]uint64{"no_flow": 5}}, newFakeCollectorErrors())
 
 	expected := `
-# HELP meridio_2_lb_drops_total Number of packets dropped by the LB's drop-accounting chain, by reason (no_flow: matched a VIP but no flow selector matched; no_targets: a flow matched but no active targets). Absent when drop accounting is disabled.
+# HELP meridio_2_lb_drops_total Number of packets dropped by the LB's drop-accounting chain, by reason (no_flow: matched a VIP but no flow selector matched; no_targets: a flow matched but no active targets). A reason is reported only when its drop rule exists.
 # TYPE meridio_2_lb_drops_total counter
 meridio_2_lb_drops_total{gateway="gw-a",reason="no_flow"} 5
 `
@@ -130,7 +130,7 @@ func TestNftablesCollector_OneSourceError_OtherStillCollected(t *testing.T) {
 	}, errs)
 
 	expected := `
-# HELP meridio_2_lb_drops_total Number of packets dropped by the LB's drop-accounting chain, by reason (no_flow: matched a VIP but no flow selector matched; no_targets: a flow matched but no active targets). Absent when drop accounting is disabled.
+# HELP meridio_2_lb_drops_total Number of packets dropped by the LB's drop-accounting chain, by reason (no_flow: matched a VIP but no flow selector matched; no_targets: a flow matched but no active targets). A reason is reported only when its drop rule exists.
 # TYPE meridio_2_lb_drops_total counter
 meridio_2_lb_drops_total{gateway="gw-a",reason="no_flow"} 4
 `

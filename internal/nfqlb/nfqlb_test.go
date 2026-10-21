@@ -211,6 +211,33 @@ var _ = Describe("New", func() {
 	})
 })
 
+var _ = Describe("QueueRange", func() {
+	It("returns (N, N) for a single queue", func() {
+		lb, err := New(WithQueue("2"))
+		Expect(err).ToNot(HaveOccurred())
+		start, end := lb.QueueRange()
+		Expect(start).To(Equal(2))
+		Expect(end).To(Equal(2))
+	})
+
+	It("returns (N, M) for a range", func() {
+		lb, err := New(WithQueue("0:3"))
+		Expect(err).ToNot(HaveOccurred())
+		start, end := lb.QueueRange()
+		Expect(start).To(Equal(0))
+		Expect(end).To(Equal(3))
+	})
+
+	It("returns a range that matches nothing on an unparseable queue string", func() {
+		// New rejects a bad queue string, so the error path is only reachable with a directly
+		// constructed instance. The fallback must be start > end (matches no queue number), not
+		// (0,0) which would plausibly count queue 0.
+		lb := &NFQueueLoadBalancer{nfqlbConfig: &nfqlbConfig{queue: "bad"}}
+		start, end := lb.QueueRange()
+		Expect(start > end).To(BeTrue(), "fallback range must match nothing")
+	})
+})
+
 // DeleteInstance must clean up targets (and their policy routes) and flows
 // before unlinking the shm segment, and must only release the instance's
 // fwmark offset once all of that succeeded.

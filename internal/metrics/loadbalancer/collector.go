@@ -17,25 +17,57 @@ limitations under the License.
 // Package loadbalancer implements the stateless-load-balancer binary's custom Prometheus
 // metrics.
 //
-// This collector exposes two nfqlb-sourced metrics, both read lazily (pull-based) at scrape time
-// via the nfqlb subprocess — never from a background loop or the reconcile/packet path:
+// The package registers six things with the controller-runtime registry (see run.go):
+// four lazy, pull-based collectors that read fresh at scrape time, and two push counters that
+// the controller increments as it runs.
 //
-//   - <prefix>_lb_flow_matches_total (Counter, labels: gateway, l34route) — packets matched per
-//     L34Route, from `nfqlb flow-list` (matches_count). Monotonic while a flow exists; resets if
-//     the flow is re-created, so it is exposed as a counter (consume via rate()/increase()).
-//   - <prefix>_lb_active_targets (Gauge, labels: gateway, dg) — backends currently receiving
-//     traffic, from `nfqlb show --shm=<dg>` (the Maglev "Active:" activation state).
+// Lazy collectors (read on each scrape; never from a background loop or the reconcile/packet path):
 //
-// Lazy collection gives correct lifecycle for free: a removed flow/DG simply stops appearing in
-// the next scrape (Prometheus marks the series stale) — no explicit unregistration.
+//   - nfqlb collector (this file) — <prefix>_lb_flow_matches_total (counter; gateway, l34route)
+//     and <prefix>_lb_active_targets (gauge; gateway, dg), from the nfqlb subprocess
+//     (`nfqlb flow-list` and `nfqlb show`).
+//   - nftables collector (nftables_collector.go) — <prefix>_lb_nftables_vip_set_size (gauge) and
+//     <prefix>_lb_drops_total (counter; gateway, reason), from the shared nftables manager.
+//   - route collector (route_collector.go) — <prefix>_lb_policy_routes (gauge; gateway, ip_family),
+//     from the kernel's netlink policy rules.
+//   - nfqueue collector (nfqueue_collector.go) — <prefix>_lb_nfqueue_items (gauge) and
+//     <prefix>_lb_nfqueue_dropped_total (counter), from /proc/net/netfilter/nfnetlink_queue.
 //
-// # Subprocess-backed safety (per #236)
+// Push counters (incremented by the controller, registered here):
 //
-// Unlike cache-backed collectors, this one shells out to nfqlb. Collect therefore (a) bounds the
-// work with a context timeout (collectTimeout) so a hung nfqlb cannot accumulate stuck
-// goroutines, and (b) serializes with a mutex so an overlapping/retried scrape cannot spawn a
-// second concurrent set of nfqlb subprocesses. Document a minimum scrape interval for the LB —
-// each scrape runs one `nfqlb flow-list` plus one `nfqlb show` per DG.
+//   - <prefix>_lb_collector_errors_total (gateway, collector) — a lazy collector increments this
+//     and skips the failing series when a scrape-time read fails (see collector_errors.go).
+//   - <prefix>_lb_route_config_errors_total (gateway, reason) — failed data-plane route/VIP config
+//     operations (see config_errors.go).
+//
+// One collector per data source. The lazy collectors are split by where they read from — the nfqlb
+// subprocess, the nftables table, netlink policy rules, and the nfqueue proc file — because those
+// are separate sources with separate failure modes, and each owns its own mutex.
+//
+// Lazy collection gives correct lifecycle for free: a removed flow/DG/route simply stops appearing
+// in the next scrape (Prometheus marks the series stale) — no explicit unregistration.
+//
+// # Scrape-time safety (per #236)
+//
+// These collectors read external state at scrape time, so each limits concurrent reads of the
+// same source. Two safety shapes exist, by source:
+//
+//   - nfqlb collector: a context timeout (collectTimeout) PLUS TryLock. It shells out to the nfqlb
+//     subprocess, so a hung subprocess must be bounded or stuck goroutines would pile up. It uses
+//     TryLock (not Lock) so that if a scrape is already reading nfqlb, an overlapping scrape skips
+//     immediately instead of queuing — a plain Lock() is not context-aware, so a queued scrape
+//     could wait far longer than collectTimeout behind a slow read.
+//   - nftables, route, and nfqueue collectors: a plain mutex, NO timeout. They do single bounded
+//     local reads (nftables/netlink syscalls, or a single os.ReadFile of the nfqueue proc file)
+//     with no context API and no realistic way to block, so there is nothing to time out and
+//     queuing is naturally short.
+//
+// # Minimum scrape interval
+//
+// One scrape of the nfqlb collector runs one `nfqlb flow-list` plus one `nfqlb show` per
+// DistributionGroup (subprocess calls); the nftables, route, and nfqueue collectors add only
+// bounded local reads. Subprocess cost grows with the number of DGs, so do not scrape faster than
+// collectTimeout; the default Prometheus 15s–30s interval is safe.
 package loadbalancer
 
 import (
@@ -106,12 +138,25 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector. It reads nfqlb state fresh on every scrape, bounded
-// by collectTimeout and serialized by mu (see package doc). On a read failure it SKIPS that
-// source's series and increments the collector-errors counter, rather than emitting an invalid
-// metric — under controller-runtime's HTTPErrorOnError an invalid metric would fail the entire
-// scrape. The two sources are independent: a failure in one does not suppress the other.
+// by collectTimeout. On a read failure it SKIPS that source's series and increments the
+// collector-errors counter, rather than emitting an invalid metric — under controller-runtime's
+// HTTPErrorOnError an invalid metric would fail the entire scrape. The two sources are
+// independent: a failure in one does not suppress the other.
+//
+// Concurrency: it uses TryLock, not Lock. If another scrape is already reading nfqlb, this one
+// returns immediately (skipping its series and counting an error) instead of queuing behind the
+// in-flight read. This keeps a single scrape's cost bounded by collectTimeout alone: sync.Mutex
+// is not context-aware, so a plain Lock() could make a queued scrape wait far longer than
+// collectTimeout while a slow nfqlb read holds the lock. Only one nfqlb read runs at a time, as
+// before; overlapping scrapes simply skip rather than pile up.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
-	c.mu.Lock()
+	if !c.mu.TryLock() {
+		// Another scrape is already reading nfqlb; skip this one rather than queue behind it.
+		// Counted under a distinct value (not CollectorNfqlb) so a benign concurrent-scrape skip
+		// is not mistaken for a read failure.
+		c.errs.Inc(CollectorNfqlbBusy)
+		return
+	}
 	defer c.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.collectTimeout)
