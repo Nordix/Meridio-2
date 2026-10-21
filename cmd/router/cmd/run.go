@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -46,8 +47,10 @@ import (
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
+	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/router"
+	routermetrics "github.com/nordix/meridio-2/internal/metrics/router"
 )
 
 // NewRunCmd creates the run subcommand
@@ -107,6 +110,12 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 
 	setupLog.Info("Starting Router controller", "config", cfg)
 
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+			return fmt.Errorf("metrics-prefix: %w", err)
+		}
+	}
+
 	// Configure TLS options
 	var tlsOpts []func(*tls.Config)
 	if !cfg.EnableHTTP2 {
@@ -150,6 +159,14 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		return err
 	}
 
+	// Construct the push-style config-error counter before the BIRD instance so it can be
+	// injected. When metrics are disabled it stays a typed-nil *ConfigErrors and the routing
+	// path's increments are no-ops via its nil-safe Inc. Registered alongside the collector below.
+	var configErrors *routermetrics.ConfigErrors
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		configErrors = routermetrics.NewConfigErrors(cfg.MetricsPrefix, cfg.GatewayName)
+	}
+
 	birdInstance, err := bird.New(bird.Config{
 		LogParams:      cfg.BirdLogs,
 		KernelScanTime: cfg.BirdKernelScanTime,
@@ -157,6 +174,7 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 		ConfigFile:     cfg.BirdConfig,
 		TableID:        cfg.TableID,
 		RulePriority:   cfg.RulePriority,
+		ConfigErrors:   configErrors, // nil when metrics disabled; Inc is nil-safe
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create BIRD instance")
@@ -173,6 +191,30 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to create controller", "controller", "GatewayRouter")
 		return err
+	}
+
+	// Register custom metrics collectors when metrics are enabled. Must run before mgr.Start:
+	// controller-runtime brings the metrics HTTP server up early, so registering afterwards could
+	// let a scrape hit /metrics before the collector exists. The collector is lazy — it queries
+	// BIRD only when a scrape calls Collect — so registering before BIRD is up is safe: early
+	// scrapes simply report the collection as failed via its collect-success gauge.
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := ctrlmetrics.Registry.Register(configErrors.Collector()); err != nil {
+			return fmt.Errorf("register router ConfigErrors: %w", err)
+		}
+		// Its own bird.Client rather than reaching into birdInstance: a Client is stateless (socket
+		// path plus command runner, no lock or lifecycle state), so the collector is independent of
+		// BIRD management by construction and a second one costs nothing. birdInstance need not
+		// expose its client.
+		collector := routermetrics.NewRouterCollector(
+			bird.NewClient(cfg.BirdSocket), cfg.MetricsCollectTimeout, cfg.GatewayName, cfg.MetricsPrefix,
+		)
+		if err := ctrlmetrics.Registry.Register(collector); err != nil {
+			return fmt.Errorf("register RouterCollector: %w", err)
+		}
+		setupLog.Info("Registered custom metrics collector",
+			"collector", "RouterCollector", "metricsPrefix", cfg.MetricsPrefix,
+			"collectTimeout", cfg.MetricsCollectTimeout)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

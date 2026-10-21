@@ -55,6 +55,7 @@ func TestGenerateConfig(t *testing.T) {
 	t.Run("with router", testWithRouter(b))
 	t.Run("matches reference config", testMatchesReferenceConfig())
 	t.Run("duplicate interface dedup", testDuplicateInterfaceDedup(b))
+	t.Run("BGP template selected per family", testBGPTemplateSelectedPerFamily(b))
 	t.Run("static router with bfd", testStaticRouterWithBFD(b))
 	t.Run("static router bfd params on interface", testStaticRouterBFDParamsOnInterface(b))
 	t.Run("static bfd params first alphabetically wins", testStaticBFDParamsFirstAlphabeticallyWins(b))
@@ -161,6 +162,9 @@ func testMatchesReferenceConfig() func(t *testing.T) {
 log stderr { info, warning, error, fatal };
 log "/var/log/bird.log" 1048576 "/var/log/bird.log.1" all;
 
+# Unix epoch seconds, for machine-readable 'show protocols' timestamps.
+timeformat protocol "%s";
+
 protocol device {}
 
 filter gateway_routes {
@@ -183,8 +187,8 @@ filter announced_routes {
 	else reject;
 }
 
-template bgp BGP_TEMPLATE {
-	debug {events, states};
+template bgp BGP_TEMPLATE_V4 {
+	debug {events, states, interfaces};
 	direct;
 	bfd off;
 	graceful restart off;
@@ -194,6 +198,14 @@ template bgp BGP_TEMPLATE {
 		export none;
 		next hop self;
 	};
+}
+
+template bgp BGP_TEMPLATE_V6 {
+	debug {events, states, interfaces};
+	direct;
+	bfd off;
+	graceful restart off;
+	setkey off;
 	ipv6 {
 		import none;
 		export none;
@@ -231,7 +243,7 @@ protocol static VIP4 {
 	route 20.0.0.1/32 via "lo";
 }
 
-protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
+protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE_V4 {
 	interface "vlan-100";
 	local port 10179 as 64512;
 	neighbor 169.254.100.150 port 10179 as 4200000000;
@@ -245,6 +257,57 @@ protocol bgp 'NBR-gatewayrouter-sample' from BGP_TEMPLATE {
 
 		if normalizeWhitespace(got) != normalizeWhitespace(want) {
 			t.Errorf("config mismatch\nGot:\n%s\n\nWant:\n%s", got, want)
+		}
+	}
+}
+
+func testBGPTemplateSelectedPerFamily(b *Bird) func(t *testing.T) {
+	return func(t *testing.T) {
+		routers := []*meridio2v1alpha1.GatewayRouter{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "net1", Address: "192.168.1.1",
+					BGP: &testBGPSpec,
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
+				Spec: meridio2v1alpha1.GatewayRouterSpec{
+					Interface: "net1", Address: "fd00::1",
+					BGP: &testBGPSpec,
+				},
+			},
+		}
+
+		conf, err := b.generateConfig([]string{}, routers, nil)
+		if err != nil {
+			t.Fatalf("generateConfig() error = %v", err)
+		}
+
+		// Each protocol must select the template matching its own address
+		// family, so BIRD only advertises the corresponding AFI/SAFI
+		// capability to that peer (see bgpTemplateName in config.go).
+		if !strings.Contains(conf, "protocol bgp 'NBR-gw-v4' from BGP_TEMPLATE_V4") {
+			t.Errorf("expected IPv4 router to use BGP_TEMPLATE_V4, got:\n%s", conf)
+		}
+		if !strings.Contains(conf, "protocol bgp 'NBR-gw-v6' from BGP_TEMPLATE_V6") {
+			t.Errorf("expected IPv6 router to use BGP_TEMPLATE_V6, got:\n%s", conf)
+		}
+
+		// Each template must declare only its own channel, never the other
+		// family's — that's the entire point of splitting the template.
+		v4Start := strings.Index(conf, "template bgp BGP_TEMPLATE_V4")
+		v6Start := strings.Index(conf, "template bgp BGP_TEMPLATE_V6")
+		if v4Start == -1 || v6Start == -1 {
+			t.Fatalf("expected both BGP_TEMPLATE_V4 and BGP_TEMPLATE_V6 blocks, got:\n%s", conf)
+		}
+		v4Block := conf[v4Start:v6Start]
+		if strings.Contains(v4Block, "ipv6 {") {
+			t.Errorf("BGP_TEMPLATE_V4 must not declare an ipv6 channel, got:\n%s", v4Block)
+		}
+		if !strings.Contains(v4Block, "ipv4 {") {
+			t.Errorf("BGP_TEMPLATE_V4 must declare an ipv4 channel, got:\n%s", v4Block)
 		}
 	}
 }
