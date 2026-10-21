@@ -945,7 +945,7 @@ re-created or the process restarts, so consume them with `rate()`/`increase()`.
 | Metric | Type | Extra labels | Source |
 | --- | --- | --- | --- |
 | `_lb_flow_matches_total` | counter | `l34route` | nfqlb flow-list `matches_count` |
-| `_lb_active_targets` | gauge | `dg` | nfqlb instance target count |
+| `_lb_active_targets` | gauge | `dg` | Maglev `Active:` line from `nfqlb show` (targets currently serving, not controller intent) |
 | `_lb_nftables_vip_set_size` | gauge | — | size of the nftables VIP sets (IPv4+IPv6) |
 | `_lb_drops_total` | counter | `reason` (`no_flow`, `no_targets`) | nftables drop-accounting chain |
 | `_lb_policy_routes` | gauge | `ip_family` (`IPv4`, `IPv6`) | kernel policy routing rules owned by this LB |
@@ -965,7 +965,11 @@ Two distinct patterns:
   `_lb_collector_errors_total{collector="..."}` rather than failing the whole scrape.
   So a missing data series plus a rising `collector_errors` rate means "could not
   read", not "value is zero". The `collector` values are `nfqlb`, `nftables`, `route`,
-  and `nfqueue`.
+  and `nfqueue`. A fifth value, `nfqlb_busy`, counts scrapes that skipped the nfqlb read
+  because another scrape held the lock (normal with HA Prometheus or federation) — it is
+  kept separate so an alert on `nfqlb` read failures is not polluted by benign overlap.
+  When nfqlb's queues are not yet bound (startup, or the `nfnetlink_queue` module not
+  loaded) the nfqueue read reports zero rather than counting an error.
 - **Counted where the event happens (the two `*_errors_total`).** A failed reconcile
   config operation has no durable source to read later, so it is counted at the point
   of failure. `_lb_route_config_errors_total` covers policy rule/route and target
@@ -977,6 +981,21 @@ Two distinct patterns:
 `_lb_drops_total` is read from a dedicated prerouting chain at priority `filter+1`,
 kept separate from the forwarding path so counting never changes a verdict. It counts
 packets dropped by the no-flow and no-targets fwmarks (`fwmarkBase+0` / `fwmarkBase+1`).
+
+### Minimum scrape interval
+
+One scrape runs one `nfqlb flow-list` plus one `nfqlb show` per DistributionGroup
+(subprocess calls); the nftables, route, and nfqueue collectors add only bounded local
+reads. Subprocess cost grows with the number of DGs, so do not scrape faster than
+`--metrics-collect-timeout`; the default Prometheus 15s–30s interval is safe.
+
+### Why nfqueue drops are one counter
+
+`_lb_nfqueue_dropped_total` sums the kernel's queue-full drops (Qdrop) and
+verdict-delivery drops (Udrop). The proc file reports them separately, but they are
+merged into one series to keep cardinality at one series per gateway; the two causes are
+explained in the metric help. A `reason` label could split them if the distinction is
+later needed for alerting.
 
 ## References
 

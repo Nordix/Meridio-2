@@ -38,6 +38,7 @@ limitations under the License.
 package nfqueueproc
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -94,6 +95,11 @@ func (r *Reader) Read() (Stats, error) {
 	}
 	data, err := os.ReadFile(path) //nolint:gosec // fixed kernel proc path, not user input
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// File missing = nfnetlink_queue module not loaded / no queue bound yet (normal at
+			// startup). Report zero stats, not a read failure.
+			return Stats{}, nil
+		}
 		return Stats{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	return r.parse(string(data)), nil

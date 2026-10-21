@@ -131,9 +131,14 @@ func TestRead_FromFile(t *testing.T) {
 	assert.Equal(t, uint64(7), s.Dropped)
 }
 
-func TestRead_MissingFile_Errors(t *testing.T) {
+func TestRead_MissingFile_IsZeroNotError(t *testing.T) {
+	// A missing proc file means the nfnetlink_queue module is not loaded / no queue is bound yet
+	// (normal at startup) — report zero stats, not a read failure, so the collector does not count
+	// a spurious error.
 	r := NewReader(0, 3)
 	r.path = filepath.Join(t.TempDir(), "does-not-exist")
-	_, err := r.Read()
-	assert.Error(t, err)
+	s, err := r.Read()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), s.Items)
+	assert.Equal(t, uint64(0), s.Dropped)
 }

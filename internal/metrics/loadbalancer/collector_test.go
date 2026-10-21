@@ -172,5 +172,7 @@ func TestCollector_ConcurrentScrapeSkips(t *testing.T) {
 
 	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(""),
 		"meridio_2_lb_flow_matches_total", "meridio_2_lb_active_targets"))
-	require.Equal(t, 1, errs.count(CollectorNfqlb))
+	// A concurrent-scrape skip is counted under nfqlb_busy, NOT nfqlb (which is for read failures).
+	require.Equal(t, 1, errs.count(CollectorNfqlbBusy))
+	require.Equal(t, 0, errs.count(CollectorNfqlb))
 }

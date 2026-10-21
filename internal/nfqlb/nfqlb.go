@@ -87,12 +87,13 @@ func (nfqlb *NFQueueLoadBalancer) NoTargetsFwmark() int {
 // QueueRange returns the inclusive netfilter queue-number range this LB is bound to (start, end),
 // parsed from the configured --nfqueue value. A single queue "N" yields (N, N); a range "N:M"
 // yields (N, M). The value was already validated when the LB was created, so this never errors in
-// practice; on an unexpected parse failure it returns (0, 0). Used by the nfqueue metrics reader
-// to count only this LB's queues in /proc/net/netfilter/nfnetlink_queue.
+// practice; on an unexpected parse failure it returns a range that matches nothing (start > end)
+// so the nfqueue metrics report zero rather than a plausible-but-wrong count for queue 0. Used by
+// the nfqueue metrics reader to count only this LB's queues in /proc/net/netfilter/nfnetlink_queue.
 func (nfqlb *NFQueueLoadBalancer) QueueRange() (start, end int) {
 	start, end, err := getQueue(nfqlb.queue)
 	if err != nil {
-		return 0, 0
+		return 0, -1 // matches no queue number
 	}
 	return start, end
 }

@@ -52,6 +52,7 @@ meridio_2_lb_collector_errors_total{collector="nftables",gateway="gw-a"} 0
 meridio_2_lb_collector_errors_total{collector="route",gateway="gw-a"} 0
 meridio_2_lb_collector_errors_total{collector="nfqlb",gateway="gw-a"} 0
 meridio_2_lb_collector_errors_total{collector="nfqueue",gateway="gw-a"} 0
+meridio_2_lb_collector_errors_total{collector="nfqlb_busy",gateway="gw-a"} 0
 `
 	require.NoError(t, testutil.CollectAndCompare(c.Collector(), strings.NewReader(expected),
 		"meridio_2_lb_collector_errors_total"))
@@ -70,6 +71,7 @@ meridio_2_lb_collector_errors_total{collector="nftables",gateway="gw-a"} 2
 meridio_2_lb_collector_errors_total{collector="route",gateway="gw-a"} 1
 meridio_2_lb_collector_errors_total{collector="nfqlb",gateway="gw-a"} 0
 meridio_2_lb_collector_errors_total{collector="nfqueue",gateway="gw-a"} 0
+meridio_2_lb_collector_errors_total{collector="nfqlb_busy",gateway="gw-a"} 0
 `
 	require.NoError(t, testutil.CollectAndCompare(c.Collector(), strings.NewReader(expected),
 		"meridio_2_lb_collector_errors_total"))

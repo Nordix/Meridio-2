@@ -30,10 +30,15 @@ const (
 	CollectorRoute    = "route"
 	CollectorNfqlb    = "nfqlb"
 	CollectorNfqueue  = "nfqueue"
+	// CollectorNfqlbBusy counts scrapes that skipped the nfqlb read because another scrape held
+	// the lock (TryLock miss). It is a separate value from CollectorNfqlb so a benign
+	// concurrent-scrape skip (normal with HA Prometheus or federation) is not conflated with a
+	// genuine read failure — alerts on CollectorNfqlb stay meaningful.
+	CollectorNfqlbBusy = "nfqlb_busy"
 )
 
 // collectors lists the valid collector label values, used to pre-initialize series to 0.
-var collectors = []string{CollectorNftables, CollectorRoute, CollectorNfqlb, CollectorNfqueue}
+var collectors = []string{CollectorNftables, CollectorRoute, CollectorNfqlb, CollectorNfqueue, CollectorNfqlbBusy}
 
 // CollectorErrors is a push-style counter of scrape-time read failures in the LB's lazy
 // collectors (<prefix>_lb_collector_errors_total, labels: gateway, collector).

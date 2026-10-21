@@ -138,10 +138,11 @@ test: generate setup-envtest ## Run the unit tests (with the race detector).
 
 .PHONY: test-integration
 test-integration: ## Run the integration tests (require CAP_NET_ADMIN; tagged //go:build integration).
-	# MERIDIO_REQUIRE_NETNS=1 turns a missing CAP_NET_ADMIN into a failure instead of a silent
-	# skip, so this target cannot pass while testing nothing. -run scopes execution to the
-	# TestIntegration_* functions so the packages' untagged unit tests are not re-run here.
-	MERIDIO_REQUIRE_NETNS=1 go test -tags integration -run 'TestIntegration' \
+	# -run scopes execution to the TestIntegration_* functions so the packages' untagged unit
+	# tests are not re-run here. Without CAP_NET_ADMIN the netns tests SKIP (not fail), so a local
+	# run is non-fatal. CI sets MERIDIO_REQUIRE_NETNS=1 to turn that skip into a failure so the job
+	# cannot pass while testing nothing.
+	go test -tags integration -run 'TestIntegration' \
 		./internal/nftables/... ./internal/nfqlb/...
 
 .PHONY: e2e

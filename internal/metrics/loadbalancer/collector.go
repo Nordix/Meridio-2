@@ -17,8 +17,8 @@ limitations under the License.
 // Package loadbalancer implements the stateless-load-balancer binary's custom Prometheus
 // metrics.
 //
-// The package registers five things with the controller-runtime registry (see run.go):
-// three lazy, pull-based collectors that read fresh at scrape time, and two push counters that
+// The package registers six things with the controller-runtime registry (see run.go):
+// four lazy, pull-based collectors that read fresh at scrape time, and two push counters that
 // the controller increments as it runs.
 //
 // Lazy collectors (read on each scrape; never from a background loop or the reconcile/packet path):
@@ -30,6 +30,8 @@ limitations under the License.
 //     <prefix>_lb_drops_total (counter; gateway, reason), from the shared nftables manager.
 //   - route collector (route_collector.go) — <prefix>_lb_policy_routes (gauge; gateway, ip_family),
 //     from the kernel's netlink policy rules.
+//   - nfqueue collector (nfqueue_collector.go) — <prefix>_lb_nfqueue_items (gauge) and
+//     <prefix>_lb_nfqueue_dropped_total (counter), from /proc/net/netfilter/nfnetlink_queue.
 //
 // Push counters (incremented by the controller, registered here):
 //
@@ -38,9 +40,9 @@ limitations under the License.
 //   - <prefix>_lb_route_config_errors_total (gateway, reason) — failed data-plane route/VIP config
 //     operations (see config_errors.go).
 //
-// One collector per data source. The three lazy collectors are split by where they read from —
-// the nfqlb subprocess, the nftables table, and netlink policy rules — because those are separate
-// sources with separate failure modes, and each owns its own mutex.
+// One collector per data source. The lazy collectors are split by where they read from — the nfqlb
+// subprocess, the nftables table, netlink policy rules, and the nfqueue proc file — because those
+// are separate sources with separate failure modes, and each owns its own mutex.
 //
 // Lazy collection gives correct lifecycle for free: a removed flow/DG/route simply stops appearing
 // in the next scrape (Prometheus marks the series stale) — no explicit unregistration.
@@ -55,12 +57,17 @@ limitations under the License.
 //     TryLock (not Lock) so that if a scrape is already reading nfqlb, an overlapping scrape skips
 //     immediately instead of queuing — a plain Lock() is not context-aware, so a queued scrape
 //     could wait far longer than collectTimeout behind a slow read.
-//   - nftables and route collectors: a plain mutex, NO timeout. They do single bounded local reads
-//     (google/nftables and vishvananda/netlink syscalls) with no context API and no realistic way
-//     to block, so there is nothing to time out and queuing is naturally short.
+//   - nftables, route, and nfqueue collectors: a plain mutex, NO timeout. They do single bounded
+//     local reads (nftables/netlink syscalls, or a single os.ReadFile of the nfqueue proc file)
+//     with no context API and no realistic way to block, so there is nothing to time out and
+//     queuing is naturally short.
 //
-// Document a minimum scrape interval for the LB: one scrape runs one `nfqlb flow-list` plus one
-// `nfqlb show` per DG, plus the local nftables/netlink reads.
+// # Minimum scrape interval
+//
+// One scrape of the nfqlb collector runs one `nfqlb flow-list` plus one `nfqlb show` per
+// DistributionGroup (subprocess calls); the nftables, route, and nfqueue collectors add only
+// bounded local reads. Subprocess cost grows with the number of DGs, so do not scrape faster than
+// collectTimeout; the default Prometheus 15s–30s interval is safe.
 package loadbalancer
 
 import (
@@ -145,7 +152,9 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	if !c.mu.TryLock() {
 		// Another scrape is already reading nfqlb; skip this one rather than queue behind it.
-		c.errs.Inc(CollectorNfqlb)
+		// Counted under a distinct value (not CollectorNfqlb) so a benign concurrent-scrape skip
+		// is not mistaken for a read failure.
+		c.errs.Inc(CollectorNfqlbBusy)
 		return
 	}
 	defer c.mu.Unlock()
