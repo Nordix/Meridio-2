@@ -53,7 +53,7 @@ counter-reset behavior are in
 | `lb_policy_routes` | `gateway`, `ip_family` (`IPv4`, `IPv6`) | kernel policy routing rules owned by this LB |
 | `lb_nfqueue_items` | `gateway` | netfilter-queue backlog (gauge; normally 0) |
 | `lb_nfqueue_dropped_total` | `gateway`, `reason` (`queue`, `user`) | queue-full (saturation) vs verdict-delivery (error) drops |
-| `lb_collector_errors_total` | `gateway`, `collector` | a scrape-time read failed; the series it would read is absent for that scrape |
+| `lb_collector_errors_total` | `gateway`, `collector` (`nfqlb`, `nftables`, `route`, `nfqueue`, `nfqlb_busy`) | a scrape-time read failed; the series it would read is absent for that scrape. `nfqlb_busy` is a benign concurrent-scrape skip rather than a failure, so exclude it from alerts |
 | `lb_route_config_errors_total` | `gateway`, `reason` (`route_config`, `vip_config`) | failed data-plane config op in the reconcile path |
 
 Most are read fresh at scrape time; the two `*_errors_total` are counted where the
