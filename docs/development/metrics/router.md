@@ -18,10 +18,10 @@ Throughout, `NS` is the namespace the Gateway and its LB Deployment run in.
 
 | Shared variable | Value |
 | --- | --- |
-| `POOL` | the PodMonitor's name from step 4 (matched as a substring of `podMonitor/<ns>/<name>/<index>`) |
+| `POOL` | the PodMonitor's name from step 4 below (matched as a substring of `podMonitor/<ns>/<name>/<index>`) |
 | `METRIC` | any from the table below, e.g. `meridio_2_bgp_session_up` |
 | Recipe `COMPONENT` | `router` |
-| Recipe `SA` | the LB Pod's SA, shared by both containers (see step 2) |
+| Recipe `SA` | the LB Pod's SA, shared by both containers (see step 2 below) |
 
 ## Identifying LB Pods
 
@@ -139,7 +139,7 @@ to why. Both read off a running Pod, so they hold regardless of naming:
 kubectl -n $NS get $POD \
   -o jsonpath='{.spec.containers[?(@.name=="router")].args}{"\n"}'
 
-# b) the router's SA may create TokenReviews (step 2), without which every scrape 403s
+# b) the router's SA may create TokenReviews (podmonitor-https.md step 1), without which every scrape 403s
 SA=$(kubectl -n $NS get $POD -o jsonpath='{.spec.serviceAccountName}')
 kubectl auth can-i create tokenreviews --as=system:serviceaccount:$NS:$SA
 ```
@@ -154,7 +154,7 @@ cert's SAN matches. Any client meeting those requirements works; the command bel
 uses busybox `wget`, which the current image provides.
 
 ```bash
-SCRAPER_SA=<the scraper ServiceAccount you created in recipe step 2>
+SCRAPER_SA=<the scraper ServiceAccount you created in podmonitor-https.md step 2>
 
 # Find that SA's token Secret rather than assuming its name.
 SECRET=$(kubectl -n $NS get secret \
@@ -177,7 +177,7 @@ The variable parts:
 | Part | Where it comes from |
 | --- | --- |
 | `-c router` | the LB Pod has two containers and only `router` serves these metrics. Without it `kubectl` picks the first container |
-| `SCRAPER_SA` / `SECRET` | the identity from recipe step 2. The request needs **both** halves of the filter: a token that authenticates and a subject authorized to GET `/metrics` |
+| `SCRAPER_SA` / `SECRET` | the identity from podmonitor-https.md step 2. The request needs **both** halves of the filter: a token that authenticates and a subject authorized to GET `/metrics` |
 | `--no-check-certificate` | the skip-verification requirement. The cert is self-signed, so a verifying client refuses the connection (busybox reports `ssl_client: SSL_connect`). Busybox supports this flag without listing it in `wget --help`; another client spells it differently, e.g. `curl -k` |
 
 Expected output for one BGP GatewayRouter with BFD:
