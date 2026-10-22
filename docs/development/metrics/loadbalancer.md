@@ -18,10 +18,10 @@ Throughout, `NS` is the namespace the Gateway and its LB Deployment run in.
 
 | Shared variable | Value |
 | --- | --- |
-| `POOL` | the PodMonitor's name from step 4 (matched as a substring of `podMonitor/<ns>/<name>/<index>`) |
+| `POOL` | the PodMonitor's name from step 4 below (matched as a substring of `podMonitor/<ns>/<name>/<index>`) |
 | `METRIC` | any from the table below, e.g. `meridio_2_lb_flow_matches_total` |
 | Recipe `COMPONENT` | `loadbalancer` |
-| Recipe `SA` | the LB Pod's SA, shared by both containers (see step 2) |
+| Recipe `SA` | the LB Pod's SA, shared by both containers (see step 2 below) |
 
 ## Identifying LB Pods
 
@@ -87,7 +87,7 @@ A `PodMonitor` matches its port **by name** across all containers in the Pod. So
 router and LB container ports are **both** named `metrics` (on their distinct numbers),
 one PodMonitor scrapes both — the `bgp_*`/`bfd_*` and `_lb_*` series arrive on the same
 target, told apart by metric name. If you instead want a separate PodMonitor per
-container, give the LB port a distinct name (e.g. `lb-metrics`) and select it in step 4.
+container, give the LB port a distinct name (e.g. `lb-metrics`) and select it in step 4 below.
 
 > The LB process runs as non-root with `supplementalGroups: [0]` (already in the
 > template): the nfqueue collector reads `/proc/net/netfilter/nfnetlink_queue`, which is
@@ -155,7 +155,7 @@ spec:
     matchLabels:
       app.kubernetes.io/managed-by: gateway-controller.meridio-2.nordix.org
   podMetricsEndpoints:
-  - port: lb-metrics        # the LB container's port name (see step 1)
+  - port: lb-metrics        # the LB container's port name (see step 1 above)
     scheme: https
     # …authorization and tlsConfig per the recipe…
 ```
@@ -172,7 +172,7 @@ TLS and adoption. LB-specific:
 
 | Symptom | Cause |
 | --- | --- |
-| `lb_nfqueue_*` absent, `lb_collector_errors_total{collector="nfqueue"}` rising | the LB cannot read `/proc/net/netfilter/nfnetlink_queue` — the Pod is missing `supplementalGroups: [0]` (custom template, or an OpenShift SCC that strips it). See step 1 |
+| `lb_nfqueue_*` absent, `lb_collector_errors_total{collector="nfqueue"}` rising | the LB cannot read `/proc/net/netfilter/nfnetlink_queue` — the Pod is missing `supplementalGroups: [0]` (custom template, or an OpenShift SCC that strips it). See step 1 above |
 | a data series absent with `lb_collector_errors_total{collector="..."}` rising | that collector's scrape-time read failed; the `collector` label says which source (`nfqlb`, `nftables`, `route`, `nfqueue`). `nfqlb_busy` is a benign concurrent-scrape skip, not a read failure — do not alert on it |
 | `lb_route_config_errors_total` rising | a data-plane config op failed in the reconcile path; check the `reason` (`route_config` / `vip_config`) and the loadbalancer container's NET_ADMIN capability |
 | both LB and router metrics DOWN together | if one PodMonitor scrapes both containers (shared `metrics` port name), a single endpoint failure marks both down. Separate PodMonitors (distinct port names) decouple them |
