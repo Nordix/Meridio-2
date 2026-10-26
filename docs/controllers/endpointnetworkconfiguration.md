@@ -390,7 +390,7 @@ The ENC controller does not write status conditions to the ENC resource. Status 
 
 A cross-controller race exists: the ENC controller may expose VIPs to application Pods (via ENC creation/update) before the router controller has set up policy routing rules for those VIPs on the LB Pods. An app Pod could start sourcing traffic from a new VIP before any router has plumbed it. The next-hop two-level filtering mitigates this for new LB Pods, but VIP additions to existing Gateways with already-ready LB Pods are exposed immediately. This is noted in the [Router controller documentation](router.md) as well.
 
-Note: This is distinct from LB readiness gating ([constraints #10/#11](../operations/constraints-and-limitations.md), resolved via readiness files and connectivity gates). This race concerns the timing of policy-routing setup on LB Pods relative to VIP exposure to app Pods - see the cross-controller race note in [router.md](router.md).
+Note: This is distinct from LB readiness gating, which is resolved via readiness files and connectivity gates. This race concerns the timing of policy-routing setup on LB Pods relative to VIP exposure to app Pods - see the cross-controller race note in [router.md](router.md).
 
 ### Pod Phase Gate
 
