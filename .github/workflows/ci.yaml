@@ -80,9 +80,11 @@ jobs:
       # The integration tests (//go:build integration) create network namespaces
       # and program nftables, which require CAP_NET_ADMIN. Run them via sudo,
       # preserving the runner's Go toolchain and module cache (PATH/HOME/GOPATH)
-      # so no re-download happens as root.
+      # so no re-download happens as root. MERIDIO_REQUIRE_NETNS=1 makes a missing
+      # CAP_NET_ADMIN a hard failure here (the make target skips by default), so
+      # the job cannot go green while every netns test silently skips.
       - name: Run integration tests
-        run: sudo --preserve-env=PATH,HOME,GOPATH,GOCACHE,GOMODCACHE "$(command -v make)" test-integration
+        run: sudo --preserve-env=PATH,HOME,GOPATH,GOCACHE,GOMODCACHE MERIDIO_REQUIRE_NETNS=1 "$(command -v make)" test-integration
 
   build:
     name: Build ${{ matrix.image }}
@@ -101,7 +103,7 @@ jobs:
       - run: make ${{ matrix.image }} BUILD_STEPS=build
 
   e2e:
-    needs: [unit-tests, build]
+    needs: [unit-tests, integration-tests, build]
     if: github.event_name == 'push'
     uses: ./.github/workflows/e2e.yaml
     secrets: inherit

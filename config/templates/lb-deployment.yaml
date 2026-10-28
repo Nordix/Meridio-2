@@ -18,6 +18,10 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+        # gid 0 lets the metrics collector read /proc/net/netfilter/nfnetlink_queue
+        # (0440 root:root) for the nfqueue counters. gid 0 grants no caps and keeps
+        # runAsNonRoot. On OpenShift, needs an SCC that allows supplementalGroups.
+        supplementalGroups: [0]
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

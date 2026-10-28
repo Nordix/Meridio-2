@@ -129,7 +129,7 @@ LoadBalancerEndpointSlice (owned by DistributionGroup)
 ├── spec.endpoints[].target → Pod (name + UID)
 ├── spec.endpoints[].addresses[] → IP + family
 ├── spec.endpoints[].identifier → Maglev slot index
-└── spec.endpoints[].ready → target readiness
+└── spec.endpoints[].conditions → endpoint state (serving, terminating)
 
 NFQLB Instance (in-memory, per DistributionGroup)
 ├── shared memory: /dev/shm/<instance-name>
@@ -186,7 +186,7 @@ nftables (shared across all DGs in this LB Pod)
 - Sort by name for deterministic processing
 - Extract target identifiers from `endpoint.Identifier` (int pointer, Maglev slot index)
 - Extract target IPs from `endpoint.Addresses[].IP`
-- Filter by `endpoint.Ready == true`
+- Filter to ready endpoints: `conditions.serving && !conditions.terminating`
 - First occurrence of an identifier wins (duplicates across slices during transients are logged and skipped)
 
 **Deactivate removed targets:**
@@ -929,6 +929,93 @@ cmd/stateless-load-balancer/
 internal/common/config/
 └── loadbalancer.go         # LoadBalancerConfig with CLI flags + env binding
 ```
+
+## Metrics
+
+The LB Pod exposes custom Prometheus metrics for the single Gateway it serves. All
+series carry a `gateway` label (the Gateway name) and names are prefixed with
+`--metrics-prefix` (default `meridio_2`). The endpoint is off unless
+`--metrics-bind-address` is set. For how to enable and scrape it in-cluster, see
+[Scraping the stateless-load-balancer](../development/metrics/loadbalancer.md).
+
+### Catalog
+
+Names below omit the prefix. Counters reset when their underlying object is
+re-created or the process restarts, so consume them with `rate()`/`increase()`.
+
+| Metric | Type | Extra labels | Source |
+| --- | --- | --- | --- |
+| `_lb_flow_matches_total` | counter | `l34route` | nfqlb flow-list `matches_count` |
+| `_lb_active_targets` | gauge | `dg` | Maglev `Active:` line from `nfqlb show` (targets currently serving, not controller intent) |
+| `_lb_nftables_vip_set_size` | gauge | — | size of the nftables VIP sets (IPv4+IPv6) |
+| `_lb_drops_total` | counter | `reason` (`no_flow`, `no_targets`) | nftables drop-accounting chain |
+| `_lb_policy_routes` | gauge | `ip_family` (`IPv4`, `IPv6`) | kernel policy routing rules owned by this LB |
+| `_lb_nfqueue_items` | gauge | — | `/proc/net/netfilter/nfnetlink_queue` backlog, summed over the LB's queue range |
+| `_lb_nfqueue_dropped_total` | counter | `reason` (`queue`, `user`) | same file: `queue` = queue-full drops (saturation), `user` = verdict-delivery drops (error) |
+| `_lb_collector_errors_total` | counter | `collector` | incremented when a read-at-scrape collector fails |
+| `_lb_route_config_errors_total` | counter | `reason` (`route_config`, `vip_config`) | incremented when a reconcile data-plane config op fails |
+
+### How the metrics are produced
+
+Two distinct patterns:
+
+- **Read at scrape time (most metrics).** A collector reads its source (nfqlb, the
+  nftables kernel state, policy routes, or the nfqueue proc file) each time Prometheus
+  scrapes. There is no cached state to drift. If a read fails, the collector skips
+  only its own series for that scrape and increments
+  `_lb_collector_errors_total{collector="..."}` rather than failing the whole scrape.
+  So a missing data series plus a rising `collector_errors` rate means "could not
+  read", not "value is zero". The `collector` values are `nfqlb`, `nftables`, `route`,
+  and `nfqueue`. A fifth value, `nfqlb_busy`, counts scrapes that skipped the nfqlb read
+  because another scrape held the lock (normal with HA Prometheus or federation) — it is
+  kept separate so an alert on `nfqlb` read failures is not polluted by benign overlap.
+  If the `nfnetlink_queue` module is not loaded (so the proc file is absent) the nfqueue
+  read reports zero rather than counting an error; on supported platforms the module is
+  always loaded (Kind auto-loads it, OpenShift persists it), so this path is defensive.
+- **Counted where the event happens (the two `*_errors_total`).** A failed reconcile
+  config operation has no durable source to read later, so it is counted at the point
+  of failure. `_lb_route_config_errors_total` covers policy rule/route and target
+  activation failures (`route_config`) and nftables VIP set update failures
+  (`vip_config`); both reasons are pre-initialized to 0.
+
+### nftables drop-accounting chain
+
+`_lb_drops_total` is read from a dedicated prerouting chain at priority `filter+1`,
+kept separate from the forwarding path so counting never changes a verdict. It counts
+packets dropped by the no-flow and no-targets fwmarks (`fwmarkBase+0` / `fwmarkBase+1`).
+
+### Minimum scrape interval
+
+One scrape runs one `nfqlb flow-list` plus one `nfqlb show` per DistributionGroup
+(subprocess calls); the nftables, route, and nfqueue collectors add only bounded local
+reads. Subprocess cost grows with the number of DGs, so do not scrape faster than
+`--metrics-collect-timeout`; the default Prometheus 15s–30s interval is safe.
+
+### Why nfqueue drops are split by reason
+
+`_lb_nfqueue_dropped_total` carries a `reason` label with two values, kept separate
+rather than summed because they are different signals that call for different actions:
+
+- `reason="queue"` (kernel Qdrop) — the queue was full when a packet arrived. A
+  **saturation** signal; pair it with `_lb_nfqueue_items` to see how close the queue runs
+  to full, and raise `--qlength` if it climbs.
+- `reason="user"` (kernel Udrop) — the kernel could not hand a packet to userspace. A
+  **delivery error**, independent of queue fullness; a rising rate points at the userspace
+  reader, not the queue depth.
+
+Summing them would merge a saturation metric with an error metric and lose the ratio
+coverage an operator needs to tell the two situations apart.
+
+### nfqueue read requires group 0
+
+The nfqueue collector reads `/proc/net/netfilter/nfnetlink_queue`, which is mode
+`0440 root:root` — not world-readable. The LB runs `runAsNonRoot`, so the pod
+securityContext sets `supplementalGroups: [0]` to make the group-read bit apply. gid 0
+grants no capabilities and no uid change; `runAsNonRoot`/`readOnlyRootFilesystem` stay
+in force. Without it the read fails with EACCES and `_lb_nfqueue_*` is absent while
+`_lb_collector_errors_total{collector="nfqueue"}` climbs. If you deploy from a custom
+template or a hardened OpenShift SCC that strips the supplemental group, re-add it (or
+grant it in the SCC).
 
 ## References
 

@@ -28,17 +28,57 @@ import (
 
 var log = logf.Log.WithName("routing")
 
+// Config-error reason label values for ConfigErrorRecorder. Each maps to a distinct netlink
+// object the router manages for VIP source-based routing, so a failure points at a specific
+// diagnosis:
+//   - rule: policy-routing rule listing/add/delete (RuleListFiltered/RuleAdd/RuleDel) for the
+//     BIRD and blackhole tables. Listing failures are counted here too; they abort the reconcile
+//     pass, so leaving them uncounted would blind the counter in the case where nothing is programmed.
+//   - route: blackhole default route installation (RouteReplace) in the blackhole table.
+//
+// These live here rather than in internal/metrics/router (where the sidecar keeps its equivalent)
+// because they are consumed at the failure sites in this package, which cannot import that one:
+// internal/metrics/router imports internal/bird for the collector, so the reverse direction is an
+// import cycle. The metrics package references these, keeping a single definition.
+const (
+	ReasonRule  = "rule"
+	ReasonRoute = "route"
+)
+
+// ConfigErrorRecorder records failed netlink operations by reason (see the Reason* constants
+// above for the label values). Satisfied by *router.ConfigErrors from internal/metrics/router.
+//
+// Declared as an interface so this package stays free of a dependency on the metrics package,
+// matching how internal/controller/sidecar declares its own configErrorRecorder.
+type ConfigErrorRecorder interface {
+	Inc(reason string)
+}
+
+// recordConfigError increments rec for reason, tolerating a nil recorder.
+//
+// Both nil forms must be handled, which is why this exists rather than calling Inc directly:
+// a typed-nil *router.ConfigErrors is nil-safe through its own receiver check, but Config.ConfigErrors
+// left unset is a *bare-nil interface* with no receiver to dispatch on, and calling Inc on it
+// panics. Since ConfigErrors is an optional field on a general-purpose config struct, omitting it
+// must stay safe: a metrics counter is not worth crashing the routing path for.
+func recordConfigError(rec ConfigErrorRecorder, reason string) {
+	if rec == nil {
+		return
+	}
+	rec.Inc(reason)
+}
+
 // setPolicyRoutes creates source-based routing rules for VIPs.
 // Traffic from VIP addresses will use the BIRD routing table (tableID),
 // with a fallback to blackhole table (tableID+1) if no BGP routes exist.
 // Errors are accumulated best-effort (partial progress over rollback);
 // the next reconcile retries any failed operations.
-func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) error {
+func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int, rec ConfigErrorRecorder) error {
 	blackholeTableID := tableID + 1
 	blackholePriority := priority + 1
 
 	// Setup blackhole routes as fallback
-	if err := setupBlackholeRoutes(nl, blackholeTableID); err != nil {
+	if err := setupBlackholeRoutes(nl, blackholeTableID, rec); err != nil {
 		return err
 	}
 
@@ -49,6 +89,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) e
 		Table: tableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
+		recordConfigError(rec, ReasonRule)
 		return fmt.Errorf("failed to list BGP rules: %w", err)
 	}
 
@@ -57,6 +98,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) e
 		Table: blackholeTableID,
 	}, netlink.RT_FILTER_TABLE)
 	if err != nil {
+		recordConfigError(rec, ReasonRule)
 		return fmt.Errorf("failed to list blackhole rules: %w", err)
 	}
 
@@ -85,6 +127,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) e
 		if _, exists := vipMap[rule.Src.String()]; !exists {
 			log.V(1).Info("deleting BGP rule", "src", rule.Src.String())
 			if err := nl.RuleDel(&rule); err != nil {
+				recordConfigError(rec, ReasonRule)
 				errFinal = errors.Join(errFinal, err)
 			}
 		} else {
@@ -97,6 +140,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) e
 		if _, exists := vipMap[rule.Src.String()]; !exists {
 			log.V(1).Info("deleting blackhole rule", "src", rule.Src.String())
 			if err := nl.RuleDel(&rule); err != nil {
+				recordConfigError(rec, ReasonRule)
 				errFinal = errors.Join(errFinal, err)
 			}
 		} else {
@@ -112,6 +156,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) e
 		bgpRule.Src = ipNet
 		log.V(1).Info("adding BGP rule", "src", ipNet.String())
 		if err := nl.RuleAdd(bgpRule); err != nil {
+			recordConfigError(rec, ReasonRule)
 			errFinal = errors.Join(errFinal, err)
 		}
 	}
@@ -124,6 +169,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) e
 		blackholeRule.Src = ipNet
 		log.V(1).Info("adding blackhole rule", "src", ipNet.String())
 		if err := nl.RuleAdd(blackholeRule); err != nil {
+			recordConfigError(rec, ReasonRule)
 			errFinal = errors.Join(errFinal, err)
 		}
 	}
@@ -133,7 +179,7 @@ func setPolicyRoutes(nl abstractNetlink, vips []string, tableID, priority int) e
 
 // setupBlackholeRoutes adds blackhole default routes to the blackhole table.
 // These act as a fallback when no BGP routes are available in the main table.
-func setupBlackholeRoutes(nl abstractNetlink, blackholeTableID int) error {
+func setupBlackholeRoutes(nl abstractNetlink, blackholeTableID int, rec ConfigErrorRecorder) error {
 	var errFinal error
 
 	// IPv4 blackhole
@@ -144,6 +190,7 @@ func setupBlackholeRoutes(nl abstractNetlink, blackholeTableID int) error {
 		Type:  unix.RTN_BLACKHOLE,
 	}
 	if err := nl.RouteReplace(route4); err != nil {
+		recordConfigError(rec, ReasonRoute)
 		errFinal = errors.Join(errFinal, fmt.Errorf("failed to add IPv4 blackhole: %w", err))
 	}
 
@@ -155,6 +202,7 @@ func setupBlackholeRoutes(nl abstractNetlink, blackholeTableID int) error {
 		Type:  unix.RTN_BLACKHOLE,
 	}
 	if err := nl.RouteReplace(route6); err != nil {
+		recordConfigError(rec, ReasonRoute)
 		errFinal = errors.Join(errFinal, fmt.Errorf("failed to add IPv6 blackhole: %w", err))
 	}
 

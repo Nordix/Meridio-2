@@ -110,6 +110,16 @@ func TestParseDropRule_NotRecognized(t *testing.T) {
 	}}
 	_, _, ok = parseDropRule(rule2)
 	assert.False(t, ok)
+
+	// A Cmp(==, 4-byte) + Counter WITHOUT a preceding Meta(MARK) load is not a fwmark match:
+	// the 4 bytes could be an IPv4-address compare. Requires the documented Meta(MARK) -> Cmp
+	// layout (see parseDropRule).
+	rule3 := &nftables.Rule{Exprs: []expr.Any{
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(5000)},
+		&expr.Counter{Packets: 7},
+	}}
+	_, _, ok = parseDropRule(rule3)
+	assert.False(t, ok, "Cmp+Counter without Meta(MARK) must not parse as a drop rule")
 }
 
 // TestDropCounts_MapsFwmarksToReasons exercises the fwmark->reason mapping in DropCounts via a
@@ -159,8 +169,9 @@ func TestDropCounts_FwmarkCollision(t *testing.T) {
 	assert.NotContains(t, result, DropReasonNoTargets)
 }
 
-// TestDropCounts_DisabledChain verifies that a Manager with no drop chain (drop accounting
-// disabled) returns an empty map and no error — so the collector emits no drop series.
+// TestDropCounts_DisabledChain verifies the nil-chain safety guard: a Manager with no drop chain
+// returns an empty map and no error, so the collector emits no drop series. (Production always has
+// the chain; this pins the guard for the not-yet-set-up / bare-Manager case.)
 func TestDropCounts_DisabledChain(t *testing.T) {
 	m := &Manager{} // dropChain nil
 	got, err := m.DropCounts()

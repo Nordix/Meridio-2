@@ -277,8 +277,8 @@ func (r *DistributionGroupReconciler) createSlices(dg *meridio2v1alpha1.Distribu
 				Name: pwa.pod.Name,
 				UID:  uid,
 			},
-			Addresses: pwa.addresses,
-			Ready:     isPodReady(&pwa.pod),
+			Addresses:  pwa.addresses,
+			Conditions: endpointConditions(&pwa.pod),
 		}
 
 		if podToID != nil {

@@ -4,7 +4,9 @@ How to exercise the controller-manager's custom Prometheus collectors. This guid
 covers **local** testing (out-of-cluster `go run`, plain HTTP, `curl`) that needs no
 data-plane environment (Multus, real LB Pods, or a metrics-scraping Prometheus). For
 wiring a real in-cluster Prometheus/Grafana to a deployed component's secure metrics
-endpoint, see the component-agnostic [Scraping Meridio-2 Metrics with Prometheus](metrics-scraping.md).
+endpoint, see [Meridio-2 metrics](README.md), and
+[its controller-manager chapter](controller-manager.md) for this component
+specifically.
 
 The controller-manager exposes these custom metrics (all prefixed by
 `--metrics-prefix`, default `meridio_2`):

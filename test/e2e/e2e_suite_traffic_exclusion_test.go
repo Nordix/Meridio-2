@@ -137,7 +137,10 @@ var _ = Describe("Traffic Exclusion", Label("ipv4"), Serial, Ordered, func() {
 						Target struct {
 							Name string `json:"name"`
 						} `json:"target"`
-						Ready bool `json:"ready"`
+						Conditions struct {
+							Serving     bool `json:"serving"`
+							Terminating bool `json:"terminating"`
+						} `json:"conditions"`
 					} `json:"endpoints"`
 				} `json:"spec"`
 			} `json:"items"`
@@ -148,7 +151,8 @@ var _ = Describe("Traffic Exclusion", Label("ipv4"), Serial, Ordered, func() {
 		for _, slice := range result.Items {
 			for _, ep := range slice.Spec.Endpoints {
 				if ep.Target.Name == pod {
-					if ep.Ready {
+					// Ready is derived: serving and not terminating.
+					if ep.Conditions.Serving && !ep.Conditions.Terminating {
 						return "true"
 					}
 					return "false"

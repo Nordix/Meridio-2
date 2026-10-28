@@ -50,6 +50,11 @@ type Config struct {
 	RulePriority   int
 	LogParams      BirdLogParams
 	KernelScanTime int
+
+	// ConfigErrors counts failed netlink operations in the VIP routing path by reason.
+	// Optional: leaving it unset disables the counting (the routing path treats a nil recorder
+	// as a no-op), so callers with metrics disabled can simply omit it.
+	ConfigErrors ConfigErrorRecorder
 }
 
 type Bird struct {
@@ -58,6 +63,14 @@ type Bird struct {
 	running    bool
 	lastConfig string // last written config for skip-if-unchanged guard
 	mu         sync.Mutex
+}
+
+// birdClient returns a Client for this Bird's control socket. The Client is stateless (socket path
+// plus command runner, no lifecycle or lock), so it is built on demand rather than stored. This
+// keeps every Bird usable regardless of how it was constructed: the client derives only from
+// SocketPath, with no field that a constructor must populate first.
+func (b *Bird) birdClient() *Client {
+	return NewClient(b.SocketPath)
 }
 
 func New(cfg Config) (*Bird, error) {
@@ -149,7 +162,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	// Install policy routes first to minimize misrouting window.
 	// Blackhole fallback ensures VIP traffic is dropped rather than
 	// leaked before BGP routes are available.
-	if err := setPolicyRoutes(b.nl, vips, b.TableID, b.RulePriority); err != nil {
+	if err := setPolicyRoutes(b.nl, vips, b.TableID, b.RulePriority, b.ConfigErrors); err != nil {
 		return err
 	}
 
@@ -169,10 +182,10 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	}
 
 	if b.running {
-		cmd := exec.CommandContext(ctx, "birdc", "-s", b.SocketPath, "configure", `"`+b.ConfigFile+`"`)
-		out, err := cmd.CombinedOutput()
-		if err != nil && !errors.Is(err, context.Cause(ctx)) {
-			return fmt.Errorf("birdc configure failed: %w: %s", err, out)
+		// A cancellation-induced failure is tolerated: the caller's context going away is not a
+		// configuration problem, and the next reconcile retries.
+		if err := b.birdClient().Configure(ctx, b.ConfigFile); err != nil && !errors.Is(err, context.Cause(ctx)) {
+			return fmt.Errorf("birdc configure failed: %w", err)
 		}
 	}
 

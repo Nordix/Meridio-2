@@ -554,13 +554,13 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 				{
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(1)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			})
 
@@ -596,7 +596,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			})
 			fakeClient = newFakeClient(scheme, lbeps)
@@ -623,7 +623,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			})
 			fakeClient = newFakeClient(scheme, lbeps)
@@ -638,7 +638,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: nil, // no identifier
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			})
 
@@ -659,7 +659,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      false, // not ready
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: false, Terminating: false},
 				},
 			})
 
@@ -670,6 +670,32 @@ var _ = Describe("LoadBalancer Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// No targets should be activated
+			mockInstance := mockNfqlb.instances[distGroup.Name]
+			Expect(mockInstance.targets).To(BeEmpty())
+		})
+
+		It("should skip terminating endpoints even when still serving", func() {
+			// The discriminating case the conditions split exists to express:
+			// Serving=true with Terminating=true must NOT activate a target under
+			// the current policy (ready = serving && !terminating). This is also
+			// the exact case a future drain policy would flip, so it pins the
+			// second clause of the activation filter.
+			lbeps := newTestLBEPS(distGroup, []meridio2v1alpha1.LoadBalancerEndpoint{
+				{
+					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
+					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
+					Identifier: ptr.To(int32(0)),
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: true},
+				},
+			})
+
+			fakeClient = newFakeClient(scheme, lbeps)
+			controller.Client = fakeClient
+
+			err := controller.reconcileTargets(ctx, distGroup)
+			Expect(err).ToNot(HaveOccurred())
+
+			// No target should be activated for a terminating endpoint.
 			mockInstance := mockNfqlb.instances[distGroup.Name]
 			Expect(mockInstance.targets).To(BeEmpty())
 		})
@@ -703,7 +729,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 						{IP: "2001:db8:100::10", Family: meridio2v1alpha1.IPv6},
 					},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			})
 
@@ -726,7 +752,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			})
 
@@ -736,7 +762,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.2", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(1)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
 				s.Name = "other-gw-eps"
@@ -764,7 +790,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
 				s.Name = "slice-a"
@@ -775,7 +801,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 					Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
 					Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.99", Family: meridio2v1alpha1.IPv4}},
 					Identifier: ptr.To(int32(0)),
-					Ready:      true,
+					Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 				},
 			}, func(s *meridio2v1alpha1.LoadBalancerEndpointSlice) {
 				s.Name = "slice-b"
@@ -820,7 +846,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 				Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 				Identifier: ptr.To(int32(0)),
-				Ready:      true,
+				Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 			}})
 
 			l34route := &meridio2v1alpha1.L34Route{
@@ -897,7 +923,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 				Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
 				Addresses:  []meridio2v1alpha1.EndpointAddress{{IP: "10.0.0.1", Family: meridio2v1alpha1.IPv4}},
 				Identifier: ptr.To(int32(0)),
-				Ready:      true,
+				Conditions: meridio2v1alpha1.EndpointConditions{Serving: true, Terminating: false},
 			}})
 
 			l34route1 := &meridio2v1alpha1.L34Route{

@@ -61,16 +61,18 @@ func (m *Manager) VIPSetSize() (ipv4, ipv6 int, err error) {
 // metrics collector to expose <prefix>_lb_drops_total.
 //
 // The returned map is keyed by drop reason (DropReasonNoFlow / DropReasonNoTargets) and contains
-// an entry only for a reason whose drop rule actually exists. When drop accounting is disabled
-// (both fwmarks 0, the chain is never created) this returns an empty map (no error), so the
-// collector emits no drop series for a disabled feature rather than a misleading 0.
+// an entry only for a reason whose drop rule actually exists. If the drop-accounting chain is not
+// set up (nil, e.g. Setup has not run, or a bare Manager in tests) this returns an empty map (no
+// error), so the collector emits no drop series rather than a misleading 0. In production the
+// chain is always created (fwmarkBase >= 1 makes the nolb/notargets fwmarks non-zero), so the
+// nil-chain case is a safety guard, not a reachable "disabled" state.
 //
 // Each drop rule has the expr layout: Meta(MARK) -> Cmp(==fwmark) -> Counter -> Verdict(Drop).
 // The rule's fwmark (from the Cmp data) maps it to a reason; the Counter gives the packet total.
 func (m *Manager) DropCounts() (map[string]uint64, error) {
 	result := map[string]uint64{}
 	if m.dropChain == nil {
-		return result, nil // drop accounting disabled: chain not created
+		return result, nil // chain not set up: nothing to read (safety guard; see doc above)
 	}
 
 	rules, err := m.conn.GetRules(m.table, m.dropChain)
@@ -101,11 +103,18 @@ func (m *Manager) DropCounts() (map[string]uint64, error) {
 // drop-accounting rule. Returns ok=false if the rule does not have the expected
 // Cmp(mark)+Counter shape (e.g. an unrelated rule).
 func parseDropRule(rule *nftables.Rule) (fwmark uint32, packets uint64, ok bool) {
-	var haveMark, haveCounter bool
+	var haveMark, haveCounter, markLoaded bool
 	for _, e := range rule.Exprs {
 		switch ex := e.(type) {
+		case *expr.Meta:
+			if ex.Key == expr.MetaKeyMARK {
+				markLoaded = true // the next Cmp compares the packet mark
+			}
 		case *expr.Cmp:
-			if ex.Op == expr.CmpOpEq && len(ex.Data) == 4 {
+			// Only treat the Cmp as a fwmark match if it follows a Meta(MARK) load; a bare
+			// 4-byte Cmp could also be e.g. an IPv4-address compare. This keeps the parse in
+			// step with the documented layout: Meta(MARK) -> Cmp(==fwmark) -> Counter.
+			if markLoaded && ex.Op == expr.CmpOpEq && len(ex.Data) == 4 {
 				fwmark = binaryutil.NativeEndian.Uint32(ex.Data)
 				haveMark = true
 			}

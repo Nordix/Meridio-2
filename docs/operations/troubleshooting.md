@@ -261,15 +261,20 @@ Expected output shows BGP sessions in `Established` state:
 ```
 BIRD 3.3.2 ready.
 Name       Proto      Table      State  Since         Info
-VIP4       Static     master4    up     2026-03-29    
-VIP6       Static     master6    up     2026-03-29    
-NBR-gateway-router-v4 BGP        ---        up     09:02:51.101  Established   
-NBR-gateway-router-v6 BGP        ---        up     09:02:40.874  Established   
-device1    Device     ---        up     2026-03-29    
-kernel1    Kernel     master4    up     2026-03-29    
-kernel2    Kernel     master6    up     2026-03-29    
-bfd1       BFD        ---        up     2026-03-29    
+VIP4       Static     master4    up     1743238800    
+VIP6       Static     master6    up     1743238800    
+NBR-gateway-router-v4 BGP        ---        up     1743238971  Established   
+NBR-gateway-router-v6 BGP        ---        up     1743238960  Established   
+device1    Device     ---        up     1743238800    
+kernel1    Kernel     master4    up     1743238800    
+kernel2    Kernel     master6    up     1743238800    
+bfd1       BFD        ---        up     1743238800    
 ```
+
+> The `Since` column is Unix epoch seconds, not a clock time, because the
+> generated `bird.conf` sets `timeformat protocol "%s"` (needed for the
+> `bgp_session_uptime_seconds` metric). See
+> [router metrics](../development/metrics/router.md).
 
 If sessions are `DOWN` or `Active`, check:
 - GatewayRouter configuration (address, ASN, ports)
@@ -399,15 +404,28 @@ Example output:
 
 The first column is the queue number (0-3 matching the nftables `queue to 0-3` rule). If no queues are listed, NFQLB is not running or failed to bind to the queues.
 
+### nfqueue metrics missing (`_lb_nfqueue_*`)
+
+If `_lb_nfqueue_items` / `_lb_nfqueue_dropped_total` are absent from the metrics endpoint while `_lb_collector_errors_total{collector="nfqueue"}` keeps rising, the collector cannot read `/proc/net/netfilter/nfnetlink_queue`. That file is mode `0440 root:root`, and the LB runs as non-root, so it is read via the pod's `supplementalGroups: [0]`. Check the group is present:
+
+```bash
+kubectl get pod -n <ns> <sllbr-pod> -o jsonpath='{.spec.securityContext.supplementalGroups}'
+# Expected: [0]
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- id
+# Expected: groups=...,0
+```
+
+If the group is missing (custom deployment template, or a hardened OpenShift SCC that strips it), re-add `supplementalGroups: [0]` to the pod securityContext or grant it in the SCC. A separate case: on a kernel where the `nfnetlink_queue` module is not loaded the file is absent and the collector reports zero (no error) — supported platforms always load it (Kind auto-loads; OpenShift persists it via `/etc/modules-load.d`).
+
 ### Check NFQLB shared memory instances
 
 ```bash
-kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb show --shm=tshm-<dg-name>
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb show --shm=<dg-name>
 ```
 
 Example output:
 ```
-Shm: tshm-test-backend
+Shm: test-backend
   Fw: own=0
   Maglev: M=3191, N=32
    Lookup: 1 2 0 0 3 2 3 2 2 1 1 3 0 3 2 2 0 0 2 0 0 1 1 3 2...
@@ -415,12 +433,14 @@ Shm: tshm-test-backend
 ```
 
 ```
-Shm: tshm-test-backend-indirect
+Shm: test-backend-indirect
   Fw: own=0
   Maglev: M=3191, N=32
    Lookup: 1 2 0 0 3 2 3 2 2 1 1 3 0 3 2 2 0 0 2 0 0 1 1 3 2...
    Active: 6024(0) 6025(1) 6026(2) 6027(3)
 ```
+
+The shared-memory instance name is the DistributionGroup name (passed as `--shm`).
 
 - `M` is the Maglev hash table size (prime near `maxEndpoints × 100`), `N` is the max endpoints capacity
 - `Lookup` shows the Maglev hash table entries (target indices)
@@ -435,17 +455,17 @@ kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nfqlb flow-list
 Example output:
 ```json
 [{
-  "name": "tshm-test-backend-indirect-test-route-indirect",
+  "name": "test-route-indirect",
   "priority": 2,
   "protocols": [ "udp" ],
   "dests": [
     "::ffff:50.0.0.1/128"
   ],
   "matches_count": 289,
-  "user_ref": "tshm-test-backend-indirect"
+  "user_ref": "test-backend-indirect"
 },
 {
-  "name": "tshm-test-backend-test-route",
+  "name": "test-route",
   "priority": 1,
   "protocols": [ "tcp" ],
   "dests": [
@@ -456,11 +476,11 @@ Example output:
     "3000::1/128"
   ],
   "matches_count": 1923,
-  "user_ref": "tshm-test-backend"
+  "user_ref": "test-backend"
 }]
 ```
 
-Each flow corresponds to an L34Route. The `name` is `tshm-<dg-name>-<route-name>`, `user_ref` is the NFQLB shared memory instance (`tshm-<dg-name>`), `dests` are the VIPs from `destinationCIDRs` (IPv4 shown as IPv4-mapped IPv6), and `matches_count` tracks how many packets matched this flow.
+Each flow corresponds to an L34Route. The `name` is the L34Route name, `user_ref` is the NFQLB shared memory instance (the DistributionGroup name), `dests` are the VIPs from `destinationCIDRs` (IPv4 shown as IPv4-mapped IPv6), and `matches_count` tracks how many packets matched this flow.
 
 ### Check fwmark routing to targets
 
@@ -615,7 +635,7 @@ Each LoadBalancerEndpointSlice has:
 Dual-stack endpoints are co-located in a single entry (no per-family split). Each endpoint should have:
 - `spec.endpoints[].target` — Pod name and UID
 - `spec.endpoints[].addresses` — list of IPs with family annotation (e.g., `[{ip: "10.0.0.5", family: "IPv4"}, {ip: "fd00::5", family: "IPv6"}]`)
-- `spec.endpoints[].ready` — `true` if the Pod is Ready
+- `spec.endpoints[].conditions.serving` / `spec.endpoints[].conditions.terminating` — the endpoint's state (the Pod's readiness, and whether it is being deleted). An endpoint is ready when `serving` is `true` and `terminating` is `false`.
 - `spec.endpoints[].identifier` — Maglev slot index (e.g., `5`). This is the identifier used by the LB controller to activate targets in the NFQLB shared memory instance
 
 If LoadBalancerEndpointSlices are missing:
