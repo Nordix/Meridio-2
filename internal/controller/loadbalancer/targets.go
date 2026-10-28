@@ -61,7 +61,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		if metav1.IsControlledBy(&sliceList.Items[i], distGroup) {
 			ownedSlices = append(ownedSlices, sliceList.Items[i])
 		} else {
-			log.Info("Ignoring LoadBalancerEndpointSlice not owned by DistributionGroup",
+			log.V(1).Info("Ignoring LoadBalancerEndpointSlice not owned by DistributionGroup",
 				"slice", sliceList.Items[i].Name, "distGroup", distGroup.Name)
 		}
 	}
@@ -170,7 +170,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		return errFinal
 	}
 
-	log.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
+	log.V(1).Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
 	return nil
 }
 

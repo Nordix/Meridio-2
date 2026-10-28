@@ -108,7 +108,7 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	// Update tracked flows with only successful ones
 	c.flows[distGroup.Name] = successfulFlows
 
-	log.Info("Reconciled flows", "distGroup", distGroup.Name, "count", len(successfulFlows))
+	log.V(1).Info("Reconciled flows", "distGroup", distGroup.Name, "count", len(successfulFlows))
 	return errFinal
 }
 
@@ -157,7 +157,7 @@ func (c *Controller) listMatchingL34Routes(ctx context.Context, distGroup *merid
 		var dg meridio2v1alpha1.DistributionGroup
 		if err := c.Get(ctx, client.ObjectKey{Name: dgName, Namespace: c.GatewayNamespace}, &dg); err != nil {
 			if apierrors.IsNotFound(err) {
-				log.Info("Skipping L34Route: DistributionGroup not found", "route", route.Name, "distributionGroup", dgName)
+				log.V(1).Info("Skipping L34Route: DistributionGroup not found", "route", route.Name, "distributionGroup", dgName)
 				continue
 			}
 			return nil, err
