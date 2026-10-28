@@ -21,12 +21,12 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/nfqlb"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // reconcileNFQLBInstance creates or retrieves the NFQLB service for a DistributionGroup.
 func (c *Controller) reconcileNFQLBInstance(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -60,7 +60,7 @@ func (c *Controller) reconcileNFQLBInstance(ctx context.Context, distGroup *meri
 	c.instances[distGroup.Name] = service
 	c.targets[distGroup.Name] = make(map[int]struct{})
 
-	logr.Info("Created NFQLB service", "distGroup", distGroup.Name, "maxTargets", n)
+	log.Info("Created NFQLB service", "distGroup", distGroup.Name, "maxTargets", n)
 
 	return nil
 }

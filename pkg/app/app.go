@@ -58,7 +58,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/httpsec"
-	"github.com/nordix/meridio-2/internal/common/log"
+	logServer "github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/prerequisites"
 	"github.com/nordix/meridio-2/internal/controller/distributiongroup"
@@ -103,7 +103,7 @@ func NewCommand(additional ...ControllerSetup) *cobra.Command {
 			cfg.BindEnv(cmd.Flags())
 
 			// Parse initial log level
-			initialLevel, err := log.ParseLevel(cfg.LogLevel)
+			initialLevel, err := logServer.ParseLevel(cfg.LogLevel)
 			if err != nil {
 				return fmt.Errorf("invalid --log-level: %w", err)
 			}
@@ -119,7 +119,7 @@ func NewCommand(additional ...ControllerSetup) *cobra.Command {
 			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
 
 			// Start dynamic log level server (non-blocking, non-fatal)
-			log.StartDynamicLevelServer(cmd.Context(), cfg.LogLevelAPI, atomicLevel, ctrl.Log)
+			logServer.StartDynamicLevelServer(cmd.Context(), cfg.LogLevelAPI, atomicLevel, ctrl.Log)
 
 			return nil
 		},
@@ -444,10 +444,10 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 // after the gate passed — reintroducing the partial snapshot the gate intends to prevent. Such
 // a collector should weigh adding a watch so its types are covered by the gate too.
 func registerMetricsCollectors(mgr ctrl.Manager, cfg *config.ManagerConfig) error {
-	logger := ctrl.Log.WithName("metrics")
+	log := ctrl.Log.WithName("metrics")
 
 	if !commonmetrics.Enabled(cfg.MetricsAddr) {
-		logger.Info("Custom metrics collectors not registered (metrics disabled)",
+		log.Info("Custom metrics collectors not registered (metrics disabled)",
 			"metricsBindAddress", cfg.MetricsAddr)
 		return nil
 	}
@@ -466,7 +466,7 @@ func registerMetricsCollectors(mgr ctrl.Manager, cfg *config.ManagerConfig) erro
 		return fmt.Errorf("register DistributionGroupCollector: %w", err)
 	}
 
-	logger.Info("Registered custom metrics collectors",
+	log.Info("Registered custom metrics collectors",
 		"collectors", []string{"GatewayCollector", "DistributionGroupCollector"},
 		"metricsPrefix", cfg.MetricsPrefix,
 		"collectTimeout", cfg.MetricsCollectTimeout)

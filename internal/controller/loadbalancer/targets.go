@@ -24,7 +24,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
@@ -32,7 +32,7 @@ import (
 
 // reconcileTargets synchronizes NFQLB targets from LoadBalancerEndpointSlices.
 func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1alpha1.DistributionGroup) error {
-	logr := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -61,7 +61,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		if metav1.IsControlledBy(&sliceList.Items[i], distGroup) {
 			ownedSlices = append(ownedSlices, sliceList.Items[i])
 		} else {
-			logr.Info("Ignoring LoadBalancerEndpointSlice not owned by DistributionGroup",
+			log.V(1).Info("Ignoring LoadBalancerEndpointSlice not owned by DistributionGroup",
 				"slice", sliceList.Items[i].Name, "distGroup", distGroup.Name)
 		}
 	}
@@ -91,13 +91,13 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 				continue
 			}
 			if endpoint.Identifier == nil {
-				logr.V(1).Info("Endpoint missing identifier", "target", endpoint.Target.Name, "addresses", endpoint.Addresses)
+				log.V(1).Info("Endpoint missing identifier", "target", endpoint.Target.Name, "addresses", endpoint.Addresses)
 				continue
 			}
 
 			identifier := int(*endpoint.Identifier)
 			if existingIPs, exists := newTargets[identifier]; exists {
-				logr.V(1).Info("Duplicate identifier across slices (transient expected during reconciliation)",
+				log.V(1).Info("Duplicate identifier across slices (transient expected during reconciliation)",
 					"identifier", identifier, "existingIPs", existingIPs,
 					"ignoredTarget", endpoint.Target.Name, "ignoredSlice", lbeps.Name)
 				continue
@@ -116,11 +116,11 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	for identifier := range currentTargets {
 		if _, exists := newTargets[identifier]; !exists {
 			if err := service.DeleteTarget(ctx, identifier); err != nil {
-				logr.Error(err, "Failed to deactivate target", "identifier", identifier)
+				log.Error(err, "Failed to deactivate target", "identifier", identifier)
 				errFinal = errors.Join(errFinal, err)
 				failedDeletes[identifier] = struct{}{}
 			} else {
-				logr.Info("Deactivated target", "distGroup", distGroup.Name, "identifier", identifier)
+				log.Info("Deactivated target", "distGroup", distGroup.Name, "identifier", identifier)
 			}
 		}
 	}
@@ -133,12 +133,12 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		// "IPs changed" triggers when IPv4/IPv6 slices are processed in different order)
 		slices.Sort(ips)
 		if err := service.AddTarget(ctx, ips, identifier); err != nil {
-			logr.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
+			log.Error(err, "Failed to activate target", "identifier", identifier, "ips", ips)
 			c.ConfigErrors.Inc(lbmetrics.ReasonRouteConfig)
 			errFinal = errors.Join(errFinal, err)
 		} else {
 			anyTargetReady = true
-			logr.Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
+			log.Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
 		}
 	}
 
@@ -146,11 +146,11 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 	// successfully activated (avoids blackhole when all AddTarget calls fail).
 	if anyTargetReady {
 		if err := c.Readiness.Set(distGroup.Name); err != nil {
-			logr.Error(err, "Failed to create readiness file", "distGroup", distGroup.Name)
+			log.Error(err, "Failed to create readiness file", "distGroup", distGroup.Name)
 		}
 	} else {
 		if err := c.Readiness.Remove(distGroup.Name); err != nil {
-			logr.Error(err, "Failed to remove readiness file", "distGroup", distGroup.Name)
+			log.Error(err, "Failed to remove readiness file", "distGroup", distGroup.Name)
 		}
 	}
 
@@ -170,7 +170,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		return errFinal
 	}
 
-	logr.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
+	log.V(1).Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
 	return nil
 }
 
