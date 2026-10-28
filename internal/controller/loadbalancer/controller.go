@@ -187,7 +187,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	log.Info("Reconciling DistributionGroup", "distGroup", distGroup.Name)
+	log.V(1).Info("Reconciling DistributionGroup", "distGroup", distGroup.Name)
 
 	// Reconcile NFQLB instance
 	if err := c.reconcileNFQLBInstance(ctx, distGroup); err != nil {
