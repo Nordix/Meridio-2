@@ -720,6 +720,8 @@ The `stateless-load-balancer` binary accepts the following flags:
 | `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | `""` | Directory containing the metrics server TLS certificate |
 | `--metrics-cert-name` | `MERIDIO_METRICS_CERT_NAME` | `tls.crt` | Filename of the metrics server certificate |
 | `--metrics-cert-key` | `MERIDIO_METRICS_CERT_KEY` | `tls.key` | Filename of the metrics server private key |
+| `--metrics-prefix` | `MERIDIO_METRICS_PREFIX` | `meridio_2` | Prefix for custom metric names. Lowercase letter first, then lowercase letters/digits/underscores; max 10 chars. |
+| `--metrics-collect-timeout` | `MERIDIO_METRICS_COLLECT_TIMEOUT` | `5s` | Time limit for the nfqlb reads (flow-list/show) during one scrape. Only the nfqlb collector uses it. Keep below Prometheus's `scrape_timeout` (default 10s). |
 | `--enable-http2` | `MERIDIO_ENABLE_HTTP2` | `false` | Enable HTTP/2 for metrics and webhook servers |
 | `--cache-sync-timeout` | `MERIDIO_CACHE_SYNC_TIMEOUT` | `2m` | Time limit for the initial informer cache sync. Raise for large deployments — see [Scale Tuning](../operations/scale-tuning.md). `0` falls back to the controller-runtime default (2m). |
 | `--kube-api-qps` | `MERIDIO_KUBE_API_QPS` | `-1` (disabled) | Sustained client-side request rate towards the API server. Passed through to client-go's [`rest.Config.QPS`](https://pkg.go.dev/k8s.io/client-go/rest#Config). Values `<= 0` disable client-side rate limiting, relying on server-side API Priority and Fairness. Not a remedy for a slow cache sync — see [Scale Tuning](../operations/scale-tuning.md). |
