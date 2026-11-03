@@ -201,7 +201,7 @@ func (m *Manager) createDropAccountingChain() error {
 		Table:    m.table,
 		Type:     nftables.ChainTypeFilter,
 		Hooknum:  nftables.ChainHookPrerouting,
-		Priority: nftables.ChainPriorityRef(*nftables.ChainPriorityFilter + 1),
+		Priority: new(*nftables.ChainPriorityFilter + 1),
 	})
 
 	// No-flow drop: packet matched a VIP but no flow selector matched in nfqlb

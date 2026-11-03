@@ -119,7 +119,7 @@ func newL34Route(name, ns, gatewayName, dgName string) *meridio2v1alpha1.L34Rout
 			BackendRefs: []gatewayv1.BackendRef{
 				{
 					BackendObjectReference: gatewayv1.BackendObjectReference{
-						Group: ptr(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
+						Group: new(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
 						Kind:  ptr(gatewayv1.Kind("DistributionGroup")),
 						Name:  gatewayv1.ObjectName(dgName),
 					},
@@ -132,7 +132,8 @@ func newL34Route(name, ns, gatewayName, dgName string) *meridio2v1alpha1.L34Rout
 	}
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 // --- listMatchingDGs tests ---
 
@@ -672,7 +673,7 @@ func TestBackendRefMatchesDG(t *testing.T) {
 
 	matching := gatewayv1.BackendRef{
 		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Group: ptr(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
+			Group: new(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
 			Kind:  ptr(gatewayv1.Kind("DistributionGroup")),
 			Name:  "dg-1",
 		},

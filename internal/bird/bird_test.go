@@ -614,8 +614,9 @@ func normalizeWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+//go:fix inline
 func uint16Ptr(i uint16) *uint16 {
-	return &i
+	return new(i)
 }
 
 func TestGenerateConfig_Deterministic(t *testing.T) {

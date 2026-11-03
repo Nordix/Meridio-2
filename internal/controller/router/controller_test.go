@@ -149,8 +149,9 @@ func setupReconciler(objects ...client.Object) (*RouterReconciler, client.Client
 	}, fakeClient
 }
 
+//go:fix inline
 func ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 func TestReconciler_Reconcile(t *testing.T) {
