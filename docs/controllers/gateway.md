@@ -594,6 +594,86 @@ spec:
 - Maximum: `1m` (values above are rejected at startup)
 - Only waits for certs that are actually needed based on other flags
 
+**`--health-probe-bind-address`**:
+- Address the health/readiness probe endpoint binds to
+- Default: `:8081`
+
+**`--log-level`**:
+- Log level: `debug`, `info`, `warn`, `error`
+- Default: `info`
+
+**`--log-level-api`**:
+- Address for the dynamic log level HTTP endpoint (e.g., `127.0.0.1:9901`)
+- Default: empty (feature disabled)
+
+**`--enable-http2`**:
+- Enable HTTP/2 for the metrics and webhook servers
+- Default: `false`
+
+#### Leader Election
+
+The controller-manager supports leader election so that only one instance is active
+at a time. The tuning flags map directly onto controller-runtime's leader-election
+options.
+
+**`--leader-elect`**:
+- Enable leader election for the controller manager
+- Default: `false`
+
+**`--leader-elect-lease-duration`**:
+- Duration non-leader candidates wait to force-acquire leadership
+- Default: `15s`
+
+**`--leader-elect-renew-deadline`**:
+- Duration the acting leader retries refreshing leadership before giving up
+- Default: `10s`
+
+**`--leader-elect-retry-period`**:
+- Duration between each leader election retry
+- Default: `2s`
+
+**`--leader-elect-release-on-cancel`**:
+- Release the leader lease on graceful shutdown for faster failover
+- Default: `true`
+
+#### Webhook Server
+
+**`--enable-webhooks`**:
+- Enable the validating/defaulting webhook server
+- Default: `true`
+- Set to `false` for local testing without webhook certificates
+
+**`--webhook-port`**:
+- Port the webhook server binds to
+- Default: `9443`
+
+**`--webhook-cert-path`**:
+- Directory that contains the webhook server certificate
+- Default: empty (controller-runtime's default location)
+
+**`--webhook-cert-name`**:
+- Filename of the webhook server certificate
+- Default: `tls.crt`
+
+**`--webhook-cert-key`**:
+- Filename of the webhook server private key
+- Default: `tls.key`
+
+#### Metrics Certificate Filenames
+
+The metrics endpoint flags (`--metrics-bind-address`, `--metrics-secure`,
+`--metrics-cert-path`, `--metrics-prefix`, `--metrics-collect-timeout`) are documented
+under [controller-manager metrics](../development/metrics/controller-manager.md). The
+certificate filename flags are:
+
+**`--metrics-cert-name`**:
+- Filename of the metrics server certificate
+- Default: `tls.crt`
+
+**`--metrics-cert-key`**:
+- Filename of the metrics server private key
+- Default: `tls.key`
+
 ### Environment Variables
 All flags can be set via `MERIDIO_*` environment variables (e.g., `MERIDIO_NAMESPACE`).
 
