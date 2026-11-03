@@ -329,13 +329,17 @@ Contiguous packing: ranges are sized by actual `maxTargets` per DG (not a fixed 
 ### Example
 
 ```
-DG-1 (maxTargets=32):  offset=5000, fwmarks 5000–5031
-DG-2 (maxTargets=100): offset=5032, fwmarks 5032–5131
-DG-3 (maxTargets=32):  offset=5132, fwmarks 5132–5163
+DG-1 (maxTargets=32):  offset=5002, fwmarks 5002–5033
+DG-2 (maxTargets=100): offset=5034, fwmarks 5034–5133
+DG-3 (maxTargets=32):  offset=5134, fwmarks 5134–5165
 
-If DG-2 is deleted: offset range 5032–5131 becomes available
-New DG-4 (maxTargets=50): offset=5032, fwmarks 5032–5081 (reuses freed space)
+If DG-2 is deleted: offset range 5034–5133 becomes available
+New DG-4 (maxTargets=50): offset=5034, fwmarks 5034–5083 (reuses freed space)
 ```
+
+(Allocation starts at `fwmarkBase+2` = 5002; `fwmarkBase+0`/`+1` = 5000/5001 are
+reserved for the nolb/notargets drop-accounting marks and are never used as
+instance offsets.)
 
 ## Target Management
 
@@ -723,12 +727,15 @@ The `stateless-load-balancer` binary accepts the following flags:
 
 ### NFQLB Internal Defaults
 
-The following NFQLB parameters are compiled-in defaults (not currently exposed as CLI flags):
+The following NFQLB parameters are compiled-in defaults. Most are not exposed as
+CLI flags; the exception is the fwmark base, which is configurable via
+`--fwmark-base` / `MERIDIO_FWMARK_BASE`.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | Queue length | `1024` | Netfilter queue packet buffer length |
-| Starting offset | `5000` | Starting fwmark offset to avoid collisions with existing routing tables |
+| Fwmark base | `5000` | Base fwmark (`--fwmark-base`). Layout: `+0`=no-flow drop, `+1`=no-targets drop, `+2..`=per-target marks |
+| Starting offset | `5002` | First fwmark used for instance/target allocation = `fwmarkBase+2` (`startingOffset()`) |
 | Max targets (nfqlb internal) | `100` | nfqlb package default; overridden by `DefaultMaglevMaxEndpoints` (102) from DG API |
 | Maglev M multiplier | `100` | Maglev hash table size = maxTargets × 100 |
 | Max offset | `100000` | Upper bound for fwmark allocation range |
