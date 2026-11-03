@@ -348,7 +348,7 @@ All flags support environment variable overrides following the precedence: flags
 
 ## Known Limitations and Future Work
 
-### BIRD Process Lifecycle (MVP gaps)
+### BIRD Process Lifecycle (known gaps)
 
 - **No error propagation**: ~~`Bird.Run()` goroutine logs errors but doesn't signal the main process.~~ Resolved: the router controller uses an errgroup to run BIRD and the monitor goroutine. If either fails, the errgroup cancels the context and the router process exits.
 

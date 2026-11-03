@@ -376,7 +376,7 @@ verticalScaling:
 - `enforceResources=true`: Always enforce resources from GatewayConfiguration (updates Deployment template → triggers Pod recreation via RollingUpdate)
 - Switching from `true` to `false`: Last enforced values are preserved, external tool takes over from there
 
-**Current MVP Implementation:**
+**Current Implementation:**
 - Updates `Deployment.spec.template.spec.containers[].resources` directly
 - Triggers Pod recreation via RollingUpdate when resources change
 - Works on all Kubernetes versions (no feature gates required)
@@ -1267,7 +1267,7 @@ EnforceResources = true (with feature gate enabled):
 
 **RBAC requirements:**
 ```yaml
-# Current (Deployment-only MVP)
+# Current (Deployment-only)
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
@@ -1280,7 +1280,7 @@ EnforceResources = true (with feature gate enabled):
 
 Note: Kubernetes RBAC does not support field-level restrictions. The `pods/patch` verb grants permission to modify **any** Pod field, not just resources. This is a security concern.
 
-**Decision:** Defer to future PR after MVP is stable and tested. The RBAC security concern and added complexity outweigh the benefit of avoiding Pod recreation for resource changes.
+**Decision:** Defer to a future PR once the current implementation is stable and tested. The RBAC security concern and added complexity outweigh the benefit of avoiding Pod recreation for resource changes.
 
 ### Ready Condition Based on Deployment State (LOW PRIORITY)
 - Implement optional `Ready` condition (Extended conformance)
