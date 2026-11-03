@@ -227,6 +227,10 @@ This tolerance is essential for idempotent reconciliation and makes the controll
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` | Metrics endpoint (0 = disabled) |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | HTTPS metrics |
 | `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | (empty) | Metrics TLS cert directory |
+| `--metrics-cert-name` | `MERIDIO_METRICS_CERT_NAME` | `tls.crt` | Filename of the metrics server certificate |
+| `--metrics-cert-key` | `MERIDIO_METRICS_CERT_KEY` | `tls.key` | Filename of the metrics server private key |
+| `--metrics-prefix` | `MERIDIO_METRICS_PREFIX` | `meridio_2` | Prefix for custom metric names. Lowercase letter first, then lowercase letters/digits/underscores; max 10 chars. |
+| `--metrics-collect-timeout` | `MERIDIO_METRICS_COLLECT_TIMEOUT` | `5s` | Max time a single scrape waits for the informer cache initial sync before reporting a collection error. Keep below Prometheus's `scrape_timeout` (default 10s). |
 | `--enable-http2` | `MERIDIO_ENABLE_HTTP2` | `false` | HTTP/2 for metrics |
 
 Precedence: CLI flags > Environment variables > Defaults
