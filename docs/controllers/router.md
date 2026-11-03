@@ -88,9 +88,13 @@ BIRD runs as a child process of the router binary, started via `exec.CommandCont
 - Mutex protects concurrent access to config writes and the `running` flag
 
 **Logging**:
-- BIRD logs to a configurable file path via `--bird-log-file` flag (default: `/var/log/bird/bird.log`)
-- The config template conditionally emits `log "<path>" all;` when a log file is set
-- `log stderr all;` is always present as baseline
+- BIRD logging is driven by the `--bird-log` flag (env `MERIDIO_BIRD_LOG`), which
+  accepts one or more composite log specs (`stderr:`, `file:`, `fixed:`, `syslog:`,
+  `udp:`). The LB deployment template sets a rotating file sink:
+  `file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all`.
+- The config template emits one `log ...;` line per configured spec (via the
+  `LogParams` list). There is no hardcoded baseline — if no spec is configured, no
+  `log` line is emitted.
 - The `Bird` struct takes a `bird.Config` struct: `bird.New(bird.Config{...})`
 
 **Interface**: `BirdInterface` allows mocking in tests (config generation, monitoring) without filesystem or process dependencies.
@@ -366,14 +370,25 @@ The monitoring goroutine sets per-IP-family Pod readiness gate conditions based 
   2. Per-IP-family gate — `ipv4-connectivity=True` required for IPv4 next-hops, `ipv6-connectivity=True` for IPv6
   If a gate is not declared for a specific IP family (e.g., IPv4-only Gateway), the Pod is included for that family (gate not applicable).
 
-### Metrics and Route Monitoring (post-MVP)
+### Metrics and Route Monitoring
 
-Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
+The router container exposes Prometheus metrics via the controller-runtime metrics
+server when `--metrics-bind-address` is set (off by default). Names are prefixed with
+`--metrics-prefix` (default `meridio_2`) and carry a `gateway` label. The
+`RouterCollector` reads BIRD at scrape time and exposes:
+
+- `<prefix>_bgp_session_up` (labels: `gateway`, `gateway_router`) — BGP session state
+- `<prefix>_bgp_session_uptime_seconds` (labels: `gateway`, `gateway_router`) — session uptime
+- `<prefix>_bfd_session_up` (labels: `gateway`, `neighbor`, `interface`) — BFD session state
+- `<prefix>_router_route_config_errors_total` (labels: `gateway`, `reason` = `route`/`rule`) —
+  push-style counter of policy rule/route configuration failures
+
+See [router metrics](../development/metrics/router.md) for how to enable and scrape them.
+
+Some Meridio v1 observability remains unimplemented here:
 
 - **Route count monitoring**: Periodic `birdc show route count` to track total routes in BIRD tables. Meridio v1 logs route count changes and rate-limits the output (see `stats.go`).
-- **GatewayRouter metrics**: Per-GatewayRouter up/down state exposed via OpenTelemetry. Includes per-IP-family connectivity status. (In Meridio v1 these were called "gateway metrics" — the resource was renamed to GatewayRouter in Meridio-2 to avoid ambiguity with Gateway API's Gateway.)
 - **Memory monitoring**: `birdc show memory` for BIRD memory usage tracking.
-- These should be exposed as Prometheus metrics via the controller-runtime metrics server (already wired but unused).
 
 ### Feature Parity with Meridio v1
 
@@ -390,7 +405,7 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 | BIRD log monitoring | ✅ | ⚠️ | File-based logging added; no stderr parsing or structured re-emission |
 | Connectivity → health signal | ✅ | ❌ | Meridio-1 signals NSP; this controller only logs |
 | Error propagation | ✅ | ✅ | errgroup cancels context on BIRD/monitor failure |
-| Metrics | ✅ | ❌ | Meridio-1 has gateway metrics |
+| Metrics | ✅ | ⚠️ | BGP/BFD session + route-config-error Prometheus metrics implemented; route-count and memory monitoring still missing |
 | Config generation method | `fmt.Sprintf` | `text/template` | Migrated for maintainability and auth template composition |
 
 ## Testing
