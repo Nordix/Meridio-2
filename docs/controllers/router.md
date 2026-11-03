@@ -223,7 +223,7 @@ No GatewayRouter configuration is required to enable this — acceptance of non-
 
 ### BGP Authentication (TCP-AO)
 
-The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support.
+The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support. For the operational procedure of rotating keys without dropping the session, see [TCP-AO key rotation](../operations/tcp-ao-key-rotation.md).
 
 **Configuration**: Authentication is configured per GatewayRouter via `spec.bgp.authentication`:
 
