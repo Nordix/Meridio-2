@@ -206,7 +206,7 @@ Both errnos are returned by the kernel's netlink address management (`inet_rtm_n
 
 Note: the kernel uses `EADDRNOTAVAIL` ("Cannot assign requested address") rather than `ENOENT` for "address not on this interface" in the delete path. The `ip` CLI surfaces this as `RTNETLINK answers: Cannot assign requested address`.
 
-This tolerance is essential for idempotent reconciliation and makes the controller restart-safe for VIP operations (see [Restart Recovery](#known-limitations-restart-recovery)).
+This tolerance is essential for idempotent reconciliation and makes the controller restart-safe for VIP operations (see [Restart Recovery](#restart-recovery)).
 
 ## Configuration
 
