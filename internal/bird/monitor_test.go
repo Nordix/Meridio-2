@@ -23,8 +23,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"k8s.io/utils/ptr"
 )
 
 func TestParseProtocolOutput(t *testing.T) {
@@ -237,8 +235,8 @@ NBR-gw-a1-router-v4 BGP        ---        up     08:25:11.859  Established
     Input filter:   REJECT
     Output filter:  REJECT
     Routes:         0 imported, 0 exported, 0 preferred`,
-			wantImported:    ptr.To(1),
-			wantExported:    ptr.To(1),
+			wantImported:    new(1),
+			wantExported:    new(1),
 			wantEstablished: nil,
 		},
 		{
@@ -251,9 +249,9 @@ NBR-gw1    BGP        ---        up     1759518307  Established
     Input filter:   gateway_routes
     Output filter:  announced_routes
     Routes:         3 imported, 2 exported, 3 preferred`,
-			wantImported:    ptr.To(3),
-			wantExported:    ptr.To(2),
-			wantEstablished: ptr.To(int64(1759518307)),
+			wantImported:    new(3),
+			wantExported:    new(2),
+			wantEstablished: new(int64(1759518307)),
 		},
 		{
 			// A BGP summary line with no detail block (e.g. session not up):
@@ -264,7 +262,7 @@ Name       Proto      Table      State  Since         Info
 NBR-gw1    BGP        ---        start  1759518307  Connect`,
 			wantImported:    nil,
 			wantExported:    nil,
-			wantEstablished: ptr.To(int64(1759518307)),
+			wantEstablished: new(int64(1759518307)),
 		},
 		{
 			// Synthetic: a Static protocol block carrying a Routes: line (real
@@ -341,8 +339,8 @@ bfd1       BFD        ---        up     06:34:36.059`
 		if result[0].Name != "NBR-gw-a1-router-v4" {
 			t.Fatalf("Name = %s, want NBR-gw-a1-router-v4", result[0].Name)
 		}
-		assertIntPtr(t, "RoutesImported", result[0].RoutesImported, ptr.To(1))
-		assertIntPtr(t, "RoutesExported", result[0].RoutesExported, ptr.To(1))
+		assertIntPtr(t, "RoutesImported", result[0].RoutesImported, new(1))
+		assertIntPtr(t, "RoutesExported", result[0].RoutesExported, new(1))
 	})
 
 	t.Run("two adjacent BGP blocks, counts not bleeding across", func(t *testing.T) {
@@ -362,10 +360,10 @@ NBR-gw2    BGP        ---        up     1759518400  Established
 		if len(result) != 2 {
 			t.Fatalf("expected 2 protocols, got %d", len(result))
 		}
-		assertIntPtr(t, "gw1 RoutesImported", result[0].RoutesImported, ptr.To(2))
-		assertIntPtr(t, "gw1 RoutesExported", result[0].RoutesExported, ptr.To(3))
-		assertIntPtr(t, "gw2 RoutesImported", result[1].RoutesImported, ptr.To(5))
-		assertIntPtr(t, "gw2 RoutesExported", result[1].RoutesExported, ptr.To(7))
+		assertIntPtr(t, "gw1 RoutesImported", result[0].RoutesImported, new(2))
+		assertIntPtr(t, "gw1 RoutesExported", result[0].RoutesExported, new(3))
+		assertIntPtr(t, "gw2 RoutesImported", result[1].RoutesImported, new(5))
+		assertIntPtr(t, "gw2 RoutesExported", result[1].RoutesExported, new(7))
 	})
 
 	t.Run("adjacent summary lines with no detail blocks", func(t *testing.T) {
@@ -399,8 +397,8 @@ NBR-gw1    BGP        ---        up     1759518307  Established
 		if len(result) != 1 {
 			t.Fatalf("expected 1 protocol, got %d", len(result))
 		}
-		assertIntPtr(t, "RoutesImported", result[0].RoutesImported, ptr.To(9))
-		assertIntPtr(t, "RoutesExported", result[0].RoutesExported, ptr.To(4))
+		assertIntPtr(t, "RoutesImported", result[0].RoutesImported, new(9))
+		assertIntPtr(t, "RoutesExported", result[0].RoutesExported, new(4))
 	})
 }
 

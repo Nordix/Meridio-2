@@ -138,7 +138,7 @@ func TestDeploymentNeedsUpdate(t *testing.T) {
 				Annotations: map[string]string{"key": "value"},
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: ptr(int32(2)),
+				Replicas: new(int32(2)),
 			},
 		}
 		desired := existing.DeepCopy()
@@ -148,10 +148,10 @@ func TestDeploymentNeedsUpdate(t *testing.T) {
 
 	t.Run("SpecChanged", func(t *testing.T) {
 		existing := &appsv1.Deployment{
-			Spec: appsv1.DeploymentSpec{Replicas: ptr(int32(2))},
+			Spec: appsv1.DeploymentSpec{Replicas: new(int32(2))},
 		}
 		desired := &appsv1.Deployment{
-			Spec: appsv1.DeploymentSpec{Replicas: ptr(int32(3))},
+			Spec: appsv1.DeploymentSpec{Replicas: new(int32(3))},
 		}
 
 		assert.True(t, deploymentNeedsUpdate(existing, desired))
@@ -212,10 +212,6 @@ func TestMergeMaps(t *testing.T) {
 	})
 }
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func TestReconcileLBDeployment(t *testing.T) {
 	template := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -223,7 +219,7 @@ func TestReconcileLBDeployment(t *testing.T) {
 			Labels: map[string]string{"template-label": "template-value"},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr(int32(1)),
+			Replicas: new(int32(1)),
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "placeholder"}},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "placeholder"}},
@@ -281,13 +277,13 @@ func TestReconcileLBDeployment(t *testing.T) {
 						Kind:               kindGateway,
 						Name:               gw.Name,
 						UID:                gw.UID,
-						Controller:         ptr(true),
-						BlockOwnerDeletion: ptr(true),
+						Controller:         new(true),
+						BlockOwnerDeletion: new(true),
 					},
 				},
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: ptr(int32(1)),
+				Replicas: new(int32(1)),
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"app": lbDeploymentPrefix + gw.Name},
 				},
@@ -324,13 +320,13 @@ func TestReconcileLBDeployment(t *testing.T) {
 						Kind:               kindGateway,
 						Name:               "other-gateway",
 						UID:                "other-uid",
-						Controller:         ptr(true),
-						BlockOwnerDeletion: ptr(true),
+						Controller:         new(true),
+						BlockOwnerDeletion: new(true),
 					},
 				},
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: ptr(int32(1)),
+				Replicas: new(int32(1)),
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"app": deploymentName},
 				},
@@ -790,7 +786,7 @@ func TestApplyGatewayConfiguration(t *testing.T) {
 	})
 
 	t.Run("Update_EnforceReplicasTrue", func(t *testing.T) {
-		deployment := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Replicas: ptr(int32(5))}}
+		deployment := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Replicas: new(int32(5))}}
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				HorizontalScaling: meridio2v1alpha1.HorizontalScaling{Replicas: 3, EnforceReplicas: true},
@@ -803,7 +799,7 @@ func TestApplyGatewayConfiguration(t *testing.T) {
 	})
 
 	t.Run("Update_EnforceReplicasFalse_DefersToHPA", func(t *testing.T) {
-		deployment := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Replicas: ptr(int32(5))}}
+		deployment := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Replicas: new(int32(5))}}
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				HorizontalScaling: meridio2v1alpha1.HorizontalScaling{Replicas: 3, EnforceReplicas: false},
