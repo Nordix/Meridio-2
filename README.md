@@ -145,7 +145,7 @@ it fits:
 - Kubernetes 1.31+ (CEL CIDR/IP validation used in CRD rules requires 1.31+)
 - cert-manager (for webhook certificates)
 - Multus CNI for secondary networking
-- CNI plugins (MACVLAN, SBR, etc.)
+- CNI plugins (MACVLAN, and optionally tuning/dummy)
 - Whereabouts IPAM for IP allocation
   
 ## Documentation
