@@ -181,20 +181,18 @@ it fits:
 * [ADR-002: Rename NetworkSubnet to InternalSubnet](docs/architecture/adr-002-rename-networksubnet-to-internalsubnet.md)
 * [ADR-003: Defer CRD status population](docs/architecture/adr-003-defer-crd-status-population.md)
 
-# Quick start guide
+## Getting started
 
-## Installing cert-manager
-
-The operator uses webhooks for validation, which require TLS certificates managed by cert-manager:
+The fastest way to a working Meridio-2 -- with a secondary network, an IPAM, and
+a simulated external BGP peer all wired up inside [kind](https://kind.sigs.k8s.io/)
+-- is to reuse the end-to-end test harness:
 
 ```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
-
-# Wait for cert-manager to be ready
-kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager
-kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager-webhook
-kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment/cert-manager-cainjector
+kind create cluster --config test/e2e/kind-cluster/kind.yaml
+make -C test/e2e cluster
+make -C test/e2e bgp
 ```
 
-## Install in kind
-## Demo
+See [docs/INSTALL.md](docs/INSTALL.md) for the full walkthrough, host
+prerequisites, how to explore the example topology, and the control-plane-only
+install path for contributors.
