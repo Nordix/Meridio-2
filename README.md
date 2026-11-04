@@ -167,6 +167,7 @@ it fits:
 * [TCP-AO key rotation](docs/operations/tcp-ao-key-rotation.md)
 
 ### Development
+* [Contributing](docs/development/contributing.md)
 * [Testing](docs/development/testing.md)
 * [Metrics](docs/development/metrics/README.md)
 * [Webhook testing](docs/development/webhook-testing.md)
