@@ -60,7 +60,7 @@ func (m *mockingBird) Run(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockingBird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
+func (m *mockingBird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, auth map[string]bird.ResolvedAuth) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.configureVIPs = vips
@@ -520,10 +520,10 @@ func TestGetVIPs_Deterministic(t *testing.T) {
 	}
 }
 
-func TestGetTcpAoSecret(t *testing.T) {
+func TestGetSecretValue(t *testing.T) {
 	t.Run("SecretNotFound", func(t *testing.T) {
 		reconciler, _ := setupReconciler()
-		_, err := reconciler.getTcpAoSecret(context.Background(), testNamespace, "nonexistent", "password")
+		_, err := reconciler.getSecretValue(context.Background(), testNamespace, "nonexistent", "password")
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get secret")
@@ -534,7 +534,7 @@ func TestGetTcpAoSecret(t *testing.T) {
 			"other-key": []byte("value"),
 		})
 		reconciler, _ := setupReconciler(secret)
-		_, err := reconciler.getTcpAoSecret(context.Background(), testNamespace, "my-secret", "password")
+		_, err := reconciler.getSecretValue(context.Background(), testNamespace, "my-secret", "password")
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "key password not found in secret")
@@ -545,13 +545,14 @@ func TestGetTcpAoSecret(t *testing.T) {
 			"password": []byte("s3cr3t"),
 		})
 		reconciler, _ := setupReconciler(secret)
-		value, err := reconciler.getTcpAoSecret(context.Background(), testNamespace, "my-secret", "password")
+		value, err := reconciler.getSecretValue(context.Background(), testNamespace, "my-secret", "password")
 
 		assert.NoError(t, err)
 		assert.Equal(t, "s3cr3t", value)
 	})
 }
 
+//nolint:staticcheck // SA1019: subtests exercise the deprecated MD5 mechanism.
 func TestResolvePasswords(t *testing.T) {
 	gwRef := gatewayapiv1.ParentReference{
 		Name:      gatewayapiv1.ObjectName(testGatewayName),
@@ -599,8 +600,8 @@ func TestResolvePasswords(t *testing.T) {
 
 		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router1, router2})
 		assert.True(t, ok)
-		assert.Equal(t, "password-a", result["router1"][1])
-		assert.Equal(t, "password-b", result["router2"][2])
+		assert.Equal(t, "password-a", result["router1"].TcpAoPasswords[1])
+		assert.Equal(t, "password-b", result["router2"].TcpAoPasswords[2])
 	})
 
 	t.Run("RouterWithoutAuth_Skipped", func(t *testing.T) {
@@ -620,6 +621,41 @@ func TestResolvePasswords(t *testing.T) {
 			{SendId: 1, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "key1"},
 			{SendId: 2, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "key2-missing"},
 		})
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router1")
+	})
+
+	// MD5 (RFC2385) is deprecated; covered here for the alternate union member.
+	t.Run("Md5_Success", func(t *testing.T) {
+		secret := newSecret("md5-secret", map[string][]byte{
+			"pw": []byte("md5-password"),
+		})
+		router := newGatewayRouterWithMd5("router1", gwRef, "md5-secret", "pw")
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.True(t, ok)
+		assert.Equal(t, "md5-password", result["router1"].Md5Password)
+		assert.Nil(t, result["router1"].TcpAoPasswords)
+	})
+
+	t.Run("Md5_SecretNotFound_SkipsRouter", func(t *testing.T) {
+		router := newGatewayRouterWithMd5("router1", gwRef, "missing-secret", "pw")
+		reconciler, _ := setupReconciler(router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router1")
+	})
+
+	t.Run("Md5_EmptySecretValue_SkipsRouter", func(t *testing.T) {
+		secret := newSecret("md5-secret", map[string][]byte{
+			"pw": []byte(""),
+		})
+		router := newGatewayRouterWithMd5("router1", gwRef, "md5-secret", "pw")
 		reconciler, _ := setupReconciler(secret, router)
 
 		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
@@ -649,4 +685,48 @@ func newGatewayRouterWithAuth(name string, gatewayRef gatewayapiv1.ParentReferen
 		},
 	}
 	return router
+}
+
+// newGatewayRouterWithMd5 builds a GatewayRouter using the deprecated MD5
+// (RFC2385) authentication mechanism.
+//
+//nolint:staticcheck // SA1019: this helper builds the deprecated MD5 mechanism.
+func newGatewayRouterWithMd5(name string, gatewayRef gatewayapiv1.ParentReference, secretName, secretKey string) *meridio2v1alpha1.GatewayRouter {
+	router := newGatewayRouter(name, gatewayRef)
+	router.Spec.BGP = &meridio2v1alpha1.BgpSpec{
+		Authentication: &meridio2v1alpha1.BgpAuthentication{
+			Type: meridio2v1alpha1.BgpAuthTypeMd5,
+			Md5: &meridio2v1alpha1.BgpMd5Spec{
+				SecretName: secretName,
+				SecretKey:  secretKey,
+			},
+		},
+	}
+	return router
+}
+
+// TestAuthReferencesSecret covers the Secret-watch matching across both the
+// TCP-AO and the deprecated MD5 authentication mechanisms.
+//
+//nolint:staticcheck // SA1019: this test exercises the deprecated MD5 mechanism.
+func TestAuthReferencesSecret(t *testing.T) {
+	tcpAo := &meridio2v1alpha1.BgpAuthentication{
+		Type: meridio2v1alpha1.BgpAuthTypeTcpAo,
+		TcpAo: &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, SecretName: "ao-a", SecretKey: "k"},
+				{SendId: 2, SecretName: "ao-b", SecretKey: "k"},
+			},
+		},
+	}
+	md5 := &meridio2v1alpha1.BgpAuthentication{
+		Type: meridio2v1alpha1.BgpAuthTypeMd5,
+		Md5:  &meridio2v1alpha1.BgpMd5Spec{SecretName: "md5-secret", SecretKey: "k"},
+	}
+
+	assert.True(t, authReferencesSecret(tcpAo, "ao-a"))
+	assert.True(t, authReferencesSecret(tcpAo, "ao-b"))
+	assert.False(t, authReferencesSecret(tcpAo, "md5-secret"))
+	assert.True(t, authReferencesSecret(md5, "md5-secret"))
+	assert.False(t, authReferencesSecret(md5, "ao-a"))
 }

@@ -861,6 +861,40 @@ func TestTcpAoConfig(t *testing.T) {
 	})
 }
 
+// TestMd5Config covers the deprecated BGP MD5 (RFC2385) rendering helper.
+//
+//nolint:staticcheck // SA1019: this test exercises the deprecated MD5 mechanism.
+func TestMd5Config(t *testing.T) {
+	t.Run("nil spec returns empty", func(t *testing.T) {
+		if got := md5Config(nil, "pw"); got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("missing password returns empty", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
+		if got := md5Config(spec, ""); got != "" {
+			t.Errorf("expected empty when password unresolved, got %q", got)
+		}
+	})
+
+	t.Run("renders password line", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
+		got := md5Config(spec, "s3cr3t")
+		if got != `password "s3cr3t";` {
+			t.Errorf("unexpected rendering: %q", got)
+		}
+	})
+
+	t.Run("escapes special characters", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
+		got := md5Config(spec, `a"b\c`)
+		if got != `password "a\"b\\c";` {
+			t.Errorf("unexpected escaping: %q", got)
+		}
+	})
+}
+
 func TestGenerateConfigWithTcpAo(t *testing.T) {
 	b, err := New(testConfig)
 	if err != nil {
@@ -888,9 +922,9 @@ func TestGenerateConfigWithTcpAo(t *testing.T) {
 			},
 		},
 	}
-	passwords := map[string]map[uint8]string{"gw-ao": {5: "mypassword"}}
+	auth := map[string]ResolvedAuth{"gw-ao": {TcpAoPasswords: map[uint8]string{5: "mypassword"}}}
 
-	conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, passwords)
+	conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, auth)
 	if err != nil {
 		t.Fatalf("generateConfig() error = %v", err)
 	}
@@ -909,5 +943,52 @@ func TestGenerateConfigWithTcpAo(t *testing.T) {
 	}
 	if !strings.Contains(conf, "algorithm hmac sha256;") {
 		t.Error("missing algorithm in generated config")
+	}
+}
+
+// TestGenerateConfigWithMd5 covers the deprecated BGP MD5 (RFC2385) rendering
+// path end-to-end: a GatewayRouter using MD5 produces a single password line in
+// its BGP protocol block, with the resolved key escaped.
+//
+//nolint:staticcheck // SA1019: this test exercises the deprecated MD5 mechanism.
+func TestGenerateConfigWithMd5(t *testing.T) {
+	b, err := New(testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := &meridio2v1alpha1.GatewayRouter{
+		ObjectMeta: metav1.ObjectMeta{Name: "gw-md5"},
+		Spec: meridio2v1alpha1.GatewayRouterSpec{
+			Interface: "eth0",
+			Address:   "10.0.0.1",
+			BGP: &meridio2v1alpha1.BgpSpec{
+				RemoteASN:  65000,
+				LocalASN:   65001,
+				HoldTime:   "240s",
+				LocalPort:  uint16Ptr(179),
+				RemotePort: uint16Ptr(179),
+				Authentication: &meridio2v1alpha1.BgpAuthentication{
+					Type: meridio2v1alpha1.BgpAuthTypeMd5,
+					Md5: &meridio2v1alpha1.BgpMd5Spec{
+						SecretName: "bgp-secret",
+						SecretKey:  "key",
+					},
+				},
+			},
+		},
+	}
+	auth := map[string]ResolvedAuth{"gw-md5": {Md5Password: "mypassword"}}
+
+	conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{router}, auth)
+	if err != nil {
+		t.Fatalf("generateConfig() error = %v", err)
+	}
+
+	if !strings.Contains(conf, `password "mypassword";`) {
+		t.Error("missing MD5 password line in generated config")
+	}
+	// MD5 and TCP-AO are mutually exclusive; the TCP-AO block must be absent.
+	if strings.Contains(conf, "authentication ao;") {
+		t.Error("unexpected TCP-AO block in MD5-only config")
 	}
 }

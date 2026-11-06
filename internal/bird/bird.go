@@ -35,10 +35,24 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
+// ResolvedAuth carries the Secret-resolved BGP authentication material for a
+// single GatewayRouter. Exactly one mechanism is populated, matching the
+// router's authentication type; the other field is zero.
+type ResolvedAuth struct {
+	// TcpAoPasswords maps each TCP-AO key's Send_ID to its resolved master key.
+	TcpAoPasswords map[uint8]string
+
+	// Md5Password is the resolved MD5 key.
+	//
+	// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism superseded by
+	// TCP-AO (RFC5925). Populated only for routers using MD5 authentication.
+	Md5Password string
+}
+
 // BirdInterface defines the interface for BIRD operations
 type BirdInterface interface {
 	Run(ctx context.Context) error
-	Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error
+	Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, auth map[string]ResolvedAuth) error
 	Monitor(ctx context.Context, interval time.Duration) (<-chan MonitorStatus, error)
 }
 
@@ -154,7 +168,7 @@ func vipsToCidr(vips []string) []string {
 	return cidrs
 }
 
-func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) error {
+func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2v1alpha1.GatewayRouter, auth map[string]ResolvedAuth) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	vips = vipsToCidr(vips)
@@ -166,7 +180,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 		return err
 	}
 
-	conf, err := b.generateConfig(vips, routers, passwords)
+	conf, err := b.generateConfig(vips, routers, auth)
 	if err != nil {
 		return err
 	}
@@ -196,7 +210,7 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 	return nil
 }
 
-func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter, passwords map[string]map[uint8]string) (string, error) {
+func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.GatewayRouter, auth map[string]ResolvedAuth) (string, error) {
 	data := birdConfigData{KernelTableID: b.TableID, KernelScanTime: b.KernelScanTime, LogParams: b.LogParams}
 
 	for _, vip := range vips {
@@ -228,7 +242,7 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 				bfdParams[r.Spec.Interface] = r.Spec.Static.BFD
 			}
 		case meridio2v1alpha1.RoutingProtocolBGP, "":
-			rd, err := toBGPRouterData(r, passwords[r.Name])
+			rd, err := toBGPRouterData(r, auth[r.Name])
 			if err != nil {
 				return "", err
 			}
