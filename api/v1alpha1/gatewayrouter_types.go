@@ -109,9 +109,35 @@ type BgpSpec struct {
 	// +optional
 	LocalPort *uint16 `json:"localPort,omitempty"`
 
-	// BGP authentication with TCP Authentication Option (RFC5925).
+	// BGP authentication. The mechanism is selected by the type discriminator.
 	// +optional
-	Authentication *BgpTcpAoSpec `json:"authentication,omitempty"`
+	Authentication *BgpAuthentication `json:"authentication,omitempty"`
+}
+
+// BgpAuthType selects the BGP authentication mechanism.
+// +enum
+type BgpAuthType string
+
+const (
+	// BgpAuthTypeTcpAo selects TCP Authentication Option (RFC5925).
+	BgpAuthTypeTcpAo BgpAuthType = "TCP-AO"
+)
+
+// BgpAuthentication is a discriminated union selecting a BGP authentication
+// mechanism. The Type field names the mechanism, and exactly one matching
+// per-mechanism field is populated. Additional mechanisms can be added as new
+// Type enum values together with their own per-mechanism field without
+// breaking existing objects.
+// +kubebuilder:validation:XValidation:rule="self.type != 'TCP-AO' || has(self.tcpAo)",message="tcpAo is required when type is TCP-AO"
+type BgpAuthentication struct {
+	// Type selects the BGP authentication mechanism.
+	// +kubebuilder:validation:Enum=TCP-AO
+	// +required
+	Type BgpAuthType `json:"type"`
+
+	// TcpAo configures TCP Authentication Option (RFC5925). Required when type is TCP-AO.
+	// +optional
+	TcpAo *BgpTcpAoSpec `json:"tcpAo,omitempty"`
 }
 
 // +enum
