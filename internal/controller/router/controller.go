@@ -104,7 +104,7 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		vips = nil
 	}
 
-	log.Info("Reconciling router", "vips", vips, "gatewayRouters", len(gatewayRouters))
+	log.V(1).Info("Reconciling router", "vips", vips, "gatewayRouters", len(gatewayRouters))
 
 	if err := r.Bird.Configure(ctx, vips, gatewayRouters, passwords); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to configure BIRD: %w", err)

@@ -80,8 +80,8 @@ type DistributionGroupReconciler struct {
 
 // Reconcile manages LoadBalancerEndpointSlices for a DistributionGroup
 func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-	log.Info("reconciling DistributionGroup", "name", req.Name, "namespace", req.Namespace)
+	log := logf.FromContext(ctx).WithValues("distributiongroup", req.NamespacedName)
+	log.V(1).Info("reconciling DistributionGroup")
 
 	// 1. Fetch DistributionGroup
 	var dg meridio2v1alpha1.DistributionGroup
@@ -103,7 +103,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to list matching pods")
 		return ctrl.Result{}, err
 	}
-	log.Info("matching pods", "count", len(pods))
+	log.V(1).Info("matching pods", "count", len(pods))
 
 	// 4. If no Pods, delete all owned EndpointSlices and update status
 	if len(pods) == 0 {
@@ -127,7 +127,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to list referenced gateways")
 		return ctrl.Result{}, err
 	}
-	log.Info("found referenced gateways", "count", len(allGateways))
+	log.V(1).Info("found referenced gateways", "count", len(allGateways))
 
 	// 6. Filter Gateways by Accepted condition (only process Gateways controlled by us)
 	var acceptedGateways []gatewayv1.Gateway
@@ -136,7 +136,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			acceptedGateways = append(acceptedGateways, gw)
 		}
 	}
-	log.Info("found accepted gateways", "count", len(acceptedGateways))
+	log.V(1).Info("found accepted gateways", "count", len(acceptedGateways))
 
 	// 7. Enforce single-Gateway restriction
 	if len(acceptedGateways) > 1 {
@@ -158,7 +158,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to get network contexts")
 		return ctrl.Result{}, err
 	}
-	log.Info("extracted network contexts", "gatewayCount", len(gwContexts))
+	log.V(1).Info("extracted network contexts", "gatewayCount", len(gwContexts))
 
 	// 9. List existing LoadBalancerEndpointSlices owned by this DG
 	existingSlices, err := r.listOwnedSlices(ctx, &dg)

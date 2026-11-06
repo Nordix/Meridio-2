@@ -21,7 +21,7 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -127,7 +127,7 @@ func getGatewayFromGatewayAPIParentRef(ctx context.Context, c client.Client, ref
 // getNetworkContexts extracts network context from GatewayConfigurations
 // Returns map: subnet CIDR → attachment type (currently only NAD)
 func (r *DistributionGroupReconciler) getNetworkContexts(ctx context.Context, gateways []gatewayv1.Gateway) ([]gatewayNetworkContext, error) {
-	logger := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	result := make([]gatewayNetworkContext, 0, len(gateways))
 
 	for _, gw := range gateways {
@@ -149,7 +149,7 @@ func (r *DistributionGroupReconciler) getNetworkContexts(ctx context.Context, ga
 		for _, subnet := range gwConfig.Spec.InternalSubnets {
 			normalized, err := normalizeCIDR(subnet.CIDR)
 			if err != nil {
-				logger.Info("Skipping invalid CIDR in GatewayConfiguration", "gateway", gw.Name, "gwconfig", gwConfig.Name, "cidr", subnet.CIDR, "error", err)
+				log.Info("Skipping invalid CIDR in GatewayConfiguration", "gateway", gw.Name, "gwconfig", gwConfig.Name, "cidr", subnet.CIDR, "error", err)
 				continue
 			}
 			networks[normalized] = subnet.AttachmentType
