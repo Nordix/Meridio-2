@@ -89,9 +89,9 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, fmt.Errorf("failed to get gateway routers: %w", err)
 	}
 
-	passwords, ok := r.resolvePasswords(ctx, gatewayRouters)
+	resolvedAuth, ok := r.resolvePasswords(ctx, gatewayRouters)
 	if !ok {
-		log.Info("TCP-AO secret resolution incomplete, retaining current BIRD config")
+		log.Info("BGP authentication secret resolution incomplete, retaining current BIRD config")
 		return ctrl.Result{}, nil
 	}
 
@@ -106,7 +106,7 @@ func (r *RouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	log.Info("Reconciling router", "vips", vips, "gatewayRouters", len(gatewayRouters))
 
-	if err := r.Bird.Configure(ctx, vips, gatewayRouters, passwords); err != nil {
+	if err := r.Bird.Configure(ctx, vips, gatewayRouters, resolvedAuth); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to configure BIRD: %w", err)
 	}
 
@@ -209,23 +209,42 @@ func (r *RouterReconciler) secretEnqueue(ctx context.Context, obj client.Object)
 	}
 	for i := range list.Items {
 		gwr := &list.Items[i]
-		if gwr.Spec.BGP == nil || gwr.Spec.BGP.Authentication == nil || gwr.Spec.BGP.Authentication.TcpAo == nil {
+		if gwr.Spec.BGP == nil || gwr.Spec.BGP.Authentication == nil {
 			continue
 		}
-		for _, key := range gwr.Spec.BGP.Authentication.TcpAo.Keychain {
-			if key.SecretName == secret.GetName() {
-				ref := gwr.Spec.GatewayRef
-				ns := gwr.Namespace
-				if ref.Namespace != nil {
-					ns = string(*ref.Namespace)
-				}
-				if string(ref.Name) == r.GatewayName && ns == r.GatewayNamespace {
-					return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: r.GatewayName, Namespace: r.GatewayNamespace}}}
-				}
-			}
+		auth := gwr.Spec.BGP.Authentication
+		if !authReferencesSecret(auth, secret.GetName()) {
+			continue
+		}
+		ref := gwr.Spec.GatewayRef
+		ns := gwr.Namespace
+		if ref.Namespace != nil {
+			ns = string(*ref.Namespace)
+		}
+		if string(ref.Name) == r.GatewayName && ns == r.GatewayNamespace {
+			return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: r.GatewayName, Namespace: r.GatewayNamespace}}}
 		}
 	}
 	return nil
+}
+
+// authReferencesSecret reports whether the BGP authentication config references
+// a Secret by the given name, across all supported mechanisms.
+func authReferencesSecret(auth *meridio2v1alpha1.BgpAuthentication, secretName string) bool {
+	if auth.TcpAo != nil {
+		for _, key := range auth.TcpAo.Keychain {
+			if key.SecretName == secretName {
+				return true
+			}
+		}
+	}
+	// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism superseded by
+	// TCP-AO (RFC5925).
+	//nolint:staticcheck // SA1019: this code implements the deprecated MD5 mechanism.
+	if auth.Md5 != nil && auth.Md5.SecretName == secretName {
+		return true
+	}
+	return false
 }
 
 // watchLBReadinessDir watches the LB readiness directory and sends a GenericEvent
@@ -258,7 +277,10 @@ func (r *RouterReconciler) watchLBReadinessDir(ctx context.Context, ch chan<- ev
 	return nil
 }
 
-func (r *RouterReconciler) getTcpAoSecret(ctx context.Context, namespace, name, key string) (string, error) {
+// getSecretValue reads a single value from a Kubernetes Secret. It is
+// authentication-mechanism-neutral: it is used for both TCP-AO master keys and
+// MD5 keys.
+func (r *RouterReconciler) getSecretValue(ctx context.Context, namespace, name, key string) (string, error) {
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, secret)
 	if err != nil {
@@ -273,29 +295,50 @@ func (r *RouterReconciler) getTcpAoSecret(ctx context.Context, namespace, name, 
 	return string(value), nil
 }
 
-func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meridio2v1alpha1.GatewayRouter) (map[string]map[uint8]string, bool) {
-	result := make(map[string]map[uint8]string)
+// resolvePasswords resolves the Secret-backed authentication material for each
+// GatewayRouter. The returned map is keyed by router name. A router whose
+// Secret references cannot be fully resolved is omitted and allResolved is set
+// to false, so the caller can retain the previous BIRD config unchanged.
+//
+//nolint:staticcheck // SA1019: this function implements the deprecated MD5 mechanism.
+func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meridio2v1alpha1.GatewayRouter) (map[string]bird.ResolvedAuth, bool) {
+	result := make(map[string]bird.ResolvedAuth)
 	allResolved := true
 	for _, router := range routers {
-		if router.Spec.BGP == nil || router.Spec.BGP.Authentication == nil || router.Spec.BGP.Authentication.TcpAo == nil {
+		if router.Spec.BGP == nil || router.Spec.BGP.Authentication == nil {
 			continue
 		}
-		passwords := make(map[uint8]string)
-		failed := false
-		for _, key := range router.Spec.BGP.Authentication.TcpAo.Keychain {
-			password, err := r.getTcpAoSecret(ctx, router.Namespace, key.SecretName, key.SecretKey)
-			if err != nil {
-				logf.FromContext(ctx).Info("Failed to fetch TCP-AO secret",
-					"router", router.Name, "secretName", key.SecretName, "secretKey", key.SecretKey, "reason", err)
-				failed = true
-				break
+		auth := router.Spec.BGP.Authentication
+		switch {
+		case auth.TcpAo != nil:
+			passwords := make(map[uint8]string)
+			failed := false
+			for _, key := range auth.TcpAo.Keychain {
+				password, err := r.getSecretValue(ctx, router.Namespace, key.SecretName, key.SecretKey)
+				if err != nil {
+					logf.FromContext(ctx).Info("Failed to fetch TCP-AO secret",
+						"router", router.Name, "secretName", key.SecretName, "secretKey", key.SecretKey, "reason", err)
+					failed = true
+					break
+				}
+				passwords[key.SendId] = password
 			}
-			passwords[key.SendId] = password
-		}
-		if failed {
-			allResolved = false
-		} else {
-			result[router.Name] = passwords
+			if failed {
+				allResolved = false
+			} else {
+				result[router.Name] = bird.ResolvedAuth{TcpAoPasswords: passwords}
+			}
+		case auth.Md5 != nil:
+			// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism superseded
+			// by TCP-AO (RFC5925). Resolved only for peers that cannot use TCP-AO.
+			password, err := r.getSecretValue(ctx, router.Namespace, auth.Md5.SecretName, auth.Md5.SecretKey)
+			if err != nil {
+				logf.FromContext(ctx).Info("Failed to fetch MD5 secret",
+					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey, "reason", err)
+				allResolved = false
+			} else {
+				result[router.Name] = bird.ResolvedAuth{Md5Password: password}
+			}
 		}
 	}
 
