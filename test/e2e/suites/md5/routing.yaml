@@ -1,0 +1,105 @@
+---
+# Secret containing the MD5 key (deprecated RFC2385)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bgp-md5-secret
+type: Opaque
+stringData:
+  md5-key: "my-secure-md5-key-string"
+---
+# gw-md1 router (VLAN 1400, ASN 64523)
+# Uses the deprecated MD5 (RFC2385) BGP authentication mechanism.
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-md1-router-v4
+spec:
+  gatewayRef:
+    name: gw-md1
+  interface: "vlan-1400"
+  address: "169.254.80.150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64523
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    authentication:
+      type: MD5
+      md5:
+        secretName: bgp-md5-secret
+        secretKey: md5-key
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-md1
+spec:
+  parentRefs:
+  - name: gw-md1
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-md1
+  destinationCIDRs:
+  - "80.0.0.1/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100
+---
+# gw-md2 router (VLAN 1500, ASN 64524)
+# Uses the deprecated MD5 (RFC2385) BGP authentication mechanism.
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-md2-router-v4
+spec:
+  gatewayRef:
+    name: gw-md2
+  interface: "vlan-1500"
+  address: "169.254.81.150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64524
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    authentication:
+      type: MD5
+      md5:
+        secretName: bgp-md5-secret
+        secretKey: md5-key
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-md2
+spec:
+  parentRefs:
+  - name: gw-md2
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-md2
+  destinationCIDRs:
+  - "80.0.0.2/32"
+  protocols:
+  - TCP
+  - UDP
+  destinationPorts:
+  - "5000-5001"
+  priority: 100

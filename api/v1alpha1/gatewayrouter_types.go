@@ -121,6 +121,13 @@ type BgpAuthType string
 const (
 	// BgpAuthTypeTcpAo selects TCP Authentication Option (RFC5925).
 	BgpAuthTypeTcpAo BgpAuthType = "TCP-AO"
+
+	// BgpAuthTypeMd5 selects TCP MD5 Signature Option (RFC2385).
+	//
+	// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism with no key
+	// rotation and known security shortcomings. It is superseded by TCP-AO
+	// (RFC5925). Use TCP-AO unless a remote BGP peer cannot support it.
+	BgpAuthTypeMd5 BgpAuthType = "MD5"
 )
 
 // BgpAuthentication is a discriminated union selecting a BGP authentication
@@ -129,15 +136,47 @@ const (
 // Type enum values together with their own per-mechanism field without
 // breaking existing objects.
 // +kubebuilder:validation:XValidation:rule="self.type != 'TCP-AO' || has(self.tcpAo)",message="tcpAo is required when type is TCP-AO"
+// +kubebuilder:validation:XValidation:rule="self.type == 'TCP-AO' || !has(self.tcpAo)",message="tcpAo is only allowed when type is TCP-AO"
+// +kubebuilder:validation:XValidation:rule="self.type != 'MD5' || has(self.md5)",message="md5 is required when type is MD5"
+// +kubebuilder:validation:XValidation:rule="self.type == 'MD5' || !has(self.md5)",message="md5 is only allowed when type is MD5"
 type BgpAuthentication struct {
 	// Type selects the BGP authentication mechanism.
-	// +kubebuilder:validation:Enum=TCP-AO
+	//
+	// MD5 is deprecated: it is a weak, legacy mechanism (RFC2385) with no key
+	// rotation, kept only for interoperability with BGP peers that cannot
+	// support TCP-AO (RFC5925). Prefer TCP-AO.
+	// +kubebuilder:validation:Enum=TCP-AO;MD5
 	// +required
 	Type BgpAuthType `json:"type"`
 
 	// TcpAo configures TCP Authentication Option (RFC5925). Required when type is TCP-AO.
 	// +optional
 	TcpAo *BgpTcpAoSpec `json:"tcpAo,omitempty"`
+
+	// Md5 configures TCP MD5 Signature Option (RFC2385). Required when type is MD5.
+	//
+	// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism with no key
+	// rotation and known security shortcomings. It is superseded by TCP-AO
+	// (RFC5925) and is provided only for interoperability with BGP peers that
+	// cannot support TCP-AO. Prefer TCP-AO for all new deployments.
+	// +optional
+	Md5 *BgpMd5Spec `json:"md5,omitempty"`
+}
+
+// BgpMd5Spec defines the parameters to configure TCP MD5 Signature Option (RFC2385).
+//
+// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism with no key rotation
+// and known security shortcomings. It is superseded by TCP-AO (RFC5925) and is
+// provided only for interoperability with BGP peers that cannot support TCP-AO.
+// Prefer TCP-AO for all new deployments.
+type BgpMd5Spec struct {
+	// SecretName is the name of the Kubernetes Secret containing the MD5 key.
+	// +kubebuilder:validation:MinLength=1
+	SecretName string `json:"secretName"`
+
+	// SecretKey is the key in the Secret's data section containing the MD5 key value.
+	// +kubebuilder:validation:MinLength=1
+	SecretKey string `json:"secretKey"`
 }
 
 // +enum

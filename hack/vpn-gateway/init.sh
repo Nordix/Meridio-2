@@ -81,6 +81,16 @@ ip link add link eth0 name vlan13 type vlan id 1300
 ip link set vlan13 up
 ip addr add 169.254.70.150/24 dev vlan13
 
+# VLAN 1400 — md5 gw-md1 (deprecated RFC2385)
+ip link add link eth0 name vlan14 type vlan id 1400
+ip link set vlan14 up
+ip addr add 169.254.80.150/24 dev vlan14
+
+# VLAN 1500 — md5 gw-md2 (deprecated RFC2385)
+ip link add link eth0 name vlan15 type vlan id 1500
+ip link set vlan15 up
+ip addr add 169.254.81.150/24 dev vlan15
+
 ethtool -K eth0 tx off
 
 echo "VPN Gateway ready"

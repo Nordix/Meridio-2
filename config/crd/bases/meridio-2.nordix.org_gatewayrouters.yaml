@@ -57,6 +57,29 @@ spec:
                     description: BGP authentication. The mechanism is selected by
                       the type discriminator.
                     properties:
+                      md5:
+                        description: |-
+                          Md5 configures TCP MD5 Signature Option (RFC2385). Required when type is MD5.
+
+                          Deprecated: MD5 (RFC2385) is a weak, legacy mechanism with no key
+                          rotation and known security shortcomings. It is superseded by TCP-AO
+                          (RFC5925) and is provided only for interoperability with BGP peers that
+                          cannot support TCP-AO. Prefer TCP-AO for all new deployments.
+                        properties:
+                          secretKey:
+                            description: SecretKey is the key in the Secret's data
+                              section containing the MD5 key value.
+                            minLength: 1
+                            type: string
+                          secretName:
+                            description: SecretName is the name of the Kubernetes
+                              Secret containing the MD5 key.
+                            minLength: 1
+                            type: string
+                        required:
+                        - secretKey
+                        - secretName
+                        type: object
                       tcpAo:
                         description: TcpAo configures TCP Authentication Option (RFC5925).
                           Required when type is TCP-AO.
@@ -131,9 +154,15 @@ spec:
                         - keychain
                         type: object
                       type:
-                        description: Type selects the BGP authentication mechanism.
+                        description: |-
+                          Type selects the BGP authentication mechanism.
+
+                          MD5 is deprecated: it is a weak, legacy mechanism (RFC2385) with no key
+                          rotation, kept only for interoperability with BGP peers that cannot
+                          support TCP-AO (RFC5925). Prefer TCP-AO.
                         enum:
                         - TCP-AO
+                        - MD5
                         type: string
                     required:
                     - type
@@ -141,6 +170,12 @@ spec:
                     x-kubernetes-validations:
                     - message: tcpAo is required when type is TCP-AO
                       rule: self.type != 'TCP-AO' || has(self.tcpAo)
+                    - message: tcpAo is only allowed when type is TCP-AO
+                      rule: self.type == 'TCP-AO' || !has(self.tcpAo)
+                    - message: md5 is required when type is MD5
+                      rule: self.type != 'MD5' || has(self.md5)
+                    - message: md5 is only allowed when type is MD5
+                      rule: self.type == 'MD5' || !has(self.md5)
                   bfd:
                     description: BFD monitoring of BGP session.
                     properties:

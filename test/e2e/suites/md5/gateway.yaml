@@ -1,0 +1,88 @@
+---
+# Gateway MD1 on VLAN 1400 with MD5 (deprecated RFC2385)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-md1
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-md1
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-md1
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-md5
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-1400
+      namespace: e2e-md5
+      interface: vlan-1400
+  - type: NAD
+    nad:
+      name: app-net-md
+      namespace: e2e-md5
+      interface: net-md
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.80.0/24"
+  horizontalScaling:
+    replicas: 2
+---
+# Gateway MD2 on VLAN 1500 with MD5 (deprecated RFC2385)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-md2
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-md2
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-md2
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-md5
+      interface: dummy
+  - type: NAD
+    nad:
+      name: vlan-1500
+      namespace: e2e-md5
+      interface: vlan-1500
+  - type: NAD
+    nad:
+      name: app-net-md
+      namespace: e2e-md5
+      interface: net-md
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "169.111.80.0/24"
+  horizontalScaling:
+    replicas: 2

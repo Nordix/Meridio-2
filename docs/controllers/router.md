@@ -290,6 +290,28 @@ This means there can be a **delay** between modifying authentication configurati
 
 **RBAC**: The router controller requires `get`/`list`/`watch` on Secrets in its namespace (configured in `config/rbac/lb-serviceaccount.yaml`). Because controller-runtime's informer-based cache requires `list`+`watch`, this grants read access to **all** Secrets in the namespace — not just those referenced by keychains. Scope the deployment namespace to limit exposure.
 
+### BGP Authentication (MD5) — DEPRECATED
+
+> **Deprecated.** MD5 ([RFC 2385](https://datatracker.ietf.org/doc/html/rfc2385)) is a weak, legacy mechanism with known cryptographic shortcomings and **no key rotation**. It is superseded by TCP-AO (RFC 5925). Use MD5 only when a remote BGP peer cannot support TCP-AO, and prefer TCP-AO for all new deployments.
+
+MD5 is the second member of the `spec.bgp.authentication` discriminated union. It is selected with `type: MD5` and configured with a single Secret reference (there is no keychain and no key ID):
+
+```yaml
+spec:
+  bgp:
+    authentication:
+      type: MD5
+      md5:
+        secretName: bgp-md5-key
+        secretKey: key
+```
+
+**Secret management**: The MD5 key is stored in a Kubernetes Secret, referenced by name and key. Unlike TCP-AO, MD5 supports only a single key and offers **no hitless rotation**: changing the key necessarily breaks and re-establishes the BGP session, and both peers must be updated together.
+
+**BIRD config generation**: For a router using MD5, the controller renders a single `password "..."` line in the BGP protocol block, with the key taken from the referenced Secret and escaped. If the Secret is missing or unreadable, the reconciler **retains the previous BIRD configuration unchanged** (the same semantics as TCP-AO) and logs the unresolved reference at info level.
+
+**Mutual exclusivity**: The union allows exactly one mechanism per GatewayRouter. CEL validation rejects objects that set `tcpAo` with `type: MD5`, or `md5` with `type: TCP-AO`, or that omit the field matching the declared `type`.
+
 ### BGP and BFD Monitoring
 
 A separate goroutine polls `birdc show protocols all "NBR-*"` and `birdc show bfd sessions` at 1-second intervals:
@@ -382,7 +404,7 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 | Feature | Meridio-1 | This Controller | Notes |
 |---|---|---|---|
 | BGP config generation | ✅ | ✅ | Dual-stack, BFD, custom ports |
-| BGP authentication (TCP-MD5) | ✅ | ❌ | (RFC 2385) Superseded by TCP-AO |
+| BGP authentication (TCP-MD5) | ✅ | ⚠️ | (RFC 2385) Supported but DEPRECATED; prefer TCP-AO |
 | BGP authentication (TCP-AO) | ❌ | ✅ | RFC 5925, key rotation via Secrets |
 | Static routing protocol | ✅ | ✅ | Default route with optional BFD supervision |
 | BIRD process lifecycle | ✅ | ✅ | Graceful shutdown via SIGTERM, file-based logging |
@@ -399,6 +421,6 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 
 ### Unit Tests
 
-- `internal/controller/router/controller_test.go`: Reconciler logic (gateway filtering, GatewayRouter matching, VIP extraction, address type filtering, enqueue mapper, configure error propagation, TCP-AO secret resolution and password map building)
-- `internal/bird/bird_test.go`: Config generation (base, VIPs, routers, full reference config comparison, static routing with/without BFD, BFD interface params first-alphabetically-wins, TCP-AO authentication block generation with key rotation)
+- `internal/controller/router/controller_test.go`: Reconciler logic (gateway filtering, GatewayRouter matching, VIP extraction, address type filtering, enqueue mapper, configure error propagation, TCP-AO and (deprecated) MD5 secret resolution and resolved-auth map building, Secret-watch matching across both mechanisms)
+- `internal/bird/bird_test.go`: Config generation (base, VIPs, routers, full reference config comparison, static routing with/without BFD, BFD interface params first-alphabetically-wins, TCP-AO authentication block generation with key rotation, (deprecated) MD5 password line generation)
 - `internal/bird/monitor_test.go`: Protocol output parsing, BFD session output parsing, connectivity detection, status formatting, monitor channel lifecycle
