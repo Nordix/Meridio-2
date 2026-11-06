@@ -238,19 +238,21 @@ spec:
     localASN: 64512
     remoteASN: 4200000000
     authentication:
-      keychain:
-        - sendId: 1
-          recvId: 1
-          algorithm: hmac sha256
-          secretName: bgp-tcp-ao-keys
-          secretKey: key1
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-tcp-ao-keys
-          secretKey: key2
-      currentKeyId: 1
-      nextKeyId: 2
+      type: TCP-AO
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-tcp-ao-keys
+            secretKey: key1
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-tcp-ao-keys
+            secretKey: key2
+        currentKeyId: 1
+        nextKeyId: 2
 ```
 
 **Secret management**: Master keys are stored in Kubernetes Secrets. Each keychain entry references a Secret by name and key:
