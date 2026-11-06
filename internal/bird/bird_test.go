@@ -877,9 +877,12 @@ func TestGenerateConfigWithTcpAo(t *testing.T) {
 				HoldTime:   "240s",
 				LocalPort:  uint16Ptr(179),
 				RemotePort: uint16Ptr(179),
-				Authentication: &meridio2v1alpha1.BgpTcpAoSpec{
-					Keychain: []meridio2v1alpha1.TcpAoKeyChain{
-						{SendId: 5, RecvId: 7, Algorithm: "hmac sha256", SecretName: "bgp-secret", SecretKey: "key"},
+				Authentication: &meridio2v1alpha1.BgpAuthentication{
+					Type: meridio2v1alpha1.BgpAuthTypeTcpAo,
+					TcpAo: &meridio2v1alpha1.BgpTcpAoSpec{
+						Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+							{SendId: 5, RecvId: 7, Algorithm: "hmac sha256", SecretName: "bgp-secret", SecretKey: "key"},
+						},
 					},
 				},
 			},
