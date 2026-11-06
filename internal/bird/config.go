@@ -296,7 +296,12 @@ func toBGPRouterData(router *meridio2v1alpha1.GatewayRouter, passwords map[uint8
 	if isIPv6(router.Spec.Address) {
 		ipFamily = ipFamilyIPv6
 	}
-	tcpAo := tcpAoConfig(router.Spec.BGP.Authentication, passwords)
+	// tcpAoConfig tolerates a nil spec; guard only the Authentication wrapper.
+	var tcpAoSpec *meridio2v1alpha1.BgpTcpAoSpec
+	if router.Spec.BGP.Authentication != nil {
+		tcpAoSpec = router.Spec.BGP.Authentication.TcpAo
+	}
+	tcpAo := tcpAoConfig(tcpAoSpec, passwords)
 
 	return bgpRouterData{
 		Name:       router.Name,
