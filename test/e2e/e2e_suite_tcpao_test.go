@@ -271,7 +271,7 @@ var _ = Describe("E2E TCP-AO Test Suite", Label("ipv4"), func() {
 					cmd = exec.Command("kubectl", "patch",
 						"gatewayrouter.meridio-2.nordix.org/gw-t1-router-v4",
 						"-n", suite.namespace, "--type=merge",
-						"-p", `{"spec":{"bgp":{"authentication":{"currentKeyId":2}}}}`)
+						"-p", `{"spec":{"bgp":{"authentication":{"tcpAo":{"currentKeyId":2}}}}}`)
 					_, err = utils.Run(cmd)
 					Expect(err).NotTo(HaveOccurred())
 
