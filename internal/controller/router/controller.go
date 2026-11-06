@@ -209,10 +209,10 @@ func (r *RouterReconciler) secretEnqueue(ctx context.Context, obj client.Object)
 	}
 	for i := range list.Items {
 		gwr := &list.Items[i]
-		if gwr.Spec.BGP == nil || gwr.Spec.BGP.Authentication == nil {
+		if gwr.Spec.BGP == nil || gwr.Spec.BGP.Authentication == nil || gwr.Spec.BGP.Authentication.TcpAo == nil {
 			continue
 		}
-		for _, key := range gwr.Spec.BGP.Authentication.Keychain {
+		for _, key := range gwr.Spec.BGP.Authentication.TcpAo.Keychain {
 			if key.SecretName == secret.GetName() {
 				ref := gwr.Spec.GatewayRef
 				ns := gwr.Namespace
@@ -277,12 +277,12 @@ func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meri
 	result := make(map[string]map[uint8]string)
 	allResolved := true
 	for _, router := range routers {
-		if router.Spec.BGP == nil || router.Spec.BGP.Authentication == nil {
+		if router.Spec.BGP == nil || router.Spec.BGP.Authentication == nil || router.Spec.BGP.Authentication.TcpAo == nil {
 			continue
 		}
 		passwords := make(map[uint8]string)
 		failed := false
-		for _, key := range router.Spec.BGP.Authentication.Keychain {
+		for _, key := range router.Spec.BGP.Authentication.TcpAo.Keychain {
 			password, err := r.getTcpAoSecret(ctx, router.Namespace, key.SecretName, key.SecretKey)
 			if err != nil {
 				logf.FromContext(ctx).Info("Failed to fetch TCP-AO secret",

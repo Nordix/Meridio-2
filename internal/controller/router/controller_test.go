@@ -641,8 +641,11 @@ func newSecret(name string, data map[string][]byte) *corev1.Secret {
 func newGatewayRouterWithAuth(name string, gatewayRef gatewayapiv1.ParentReference, keychain []meridio2v1alpha1.TcpAoKeyChain) *meridio2v1alpha1.GatewayRouter {
 	router := newGatewayRouter(name, gatewayRef)
 	router.Spec.BGP = &meridio2v1alpha1.BgpSpec{
-		Authentication: &meridio2v1alpha1.BgpTcpAoSpec{
-			Keychain: keychain,
+		Authentication: &meridio2v1alpha1.BgpAuthentication{
+			Type: meridio2v1alpha1.BgpAuthTypeTcpAo,
+			TcpAo: &meridio2v1alpha1.BgpTcpAoSpec{
+				Keychain: keychain,
+			},
 		},
 	}
 	return router
