@@ -26,7 +26,8 @@ GatewayRouter (cluster-scoped per Gateway namespace)
 ├── spec.interface → network interface name
 ├── spec.protocol → BGP or Static
 ├── spec.bgp → BGP session parameters (ASN, ports, hold time, BFD)
-├── spec.bgp.authentication → TCP-AO keychain (references Secrets)
+├── spec.bgp.authentication → BGP authentication union (type discriminator)
+├── spec.bgp.authentication.tcpAo → TCP-AO keychain (references Secrets)
 └── spec.static → Static routing parameters (BFD supervision)
 
 Secret (same namespace as GatewayRouter)
@@ -221,7 +222,7 @@ No GatewayRouter configuration is required to enable this — acceptance of non-
 
 The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support.
 
-**Configuration**: Authentication is configured per GatewayRouter via `spec.bgp.authentication`:
+**Configuration**: Authentication is configured per GatewayRouter via `spec.bgp.authentication`, a discriminated union. The required `type` field selects the mechanism and names the matching per-mechanism field: `type: TCPAO` selects TCP-AO and requires the `tcpAo` field below it. This shape keeps the API open for adding further mechanisms (e.g. BGP MD5, RFC2385) later as a new `type` enum value plus its own per-mechanism field, without breaking existing objects or requiring a new API version. Today TCPAO is the only defined mechanism.
 
 ```yaml
 apiVersion: meridio-2.nordix.org/v1alpha1
@@ -238,19 +239,21 @@ spec:
     localASN: 64512
     remoteASN: 4200000000
     authentication:
-      keychain:
-        - sendId: 1
-          recvId: 1
-          algorithm: hmac sha256
-          secretName: bgp-tcp-ao-keys
-          secretKey: key1
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-tcp-ao-keys
-          secretKey: key2
-      currentKeyId: 1
-      nextKeyId: 2
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-tcp-ao-keys
+            secretKey: key1
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-tcp-ao-keys
+            secretKey: key2
+        currentKeyId: 1
+        nextKeyId: 2
 ```
 
 **Secret management**: Master keys are stored in Kubernetes Secrets. Each keychain entry references a Secret by name and key:
