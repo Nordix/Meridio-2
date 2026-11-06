@@ -27,18 +27,20 @@ spec:
     remotePort: 10179
     holdTime: 24s
     authentication:
-      keychain:
-        - sendId: 1
-          recvId: 1
-          algorithm: hmac sha256
-          secretName: bgp-tcpao-secret
-          secretKey: master-key-1
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-tcpao-secret
-          secretKey: master-key-2
-      currentKeyId: 1
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-tcpao-secret
+            secretKey: master-key-1
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-tcpao-secret
+            secretKey: master-key-2
+        currentKeyId: 1
     bfd:
       minTx: 300ms
       minRx: 300ms
@@ -82,18 +84,20 @@ spec:
     remotePort: 10179
     holdTime: 24s
     authentication:
-      keychain:
-        - sendId: 1
-          recvId: 1
-          algorithm: hmac sha256
-          secretName: bgp-tcpao-secret
-          secretKey: master-key-1
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-tcpao-secret
-          secretKey: master-key-2
-      currentKeyId: 1
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-tcpao-secret
+            secretKey: master-key-1
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-tcpao-secret
+            secretKey: master-key-2
+        currentKeyId: 1
     bfd:
       minTx: 300ms
       minRx: 300ms

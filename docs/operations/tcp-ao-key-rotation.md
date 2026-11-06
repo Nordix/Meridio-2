@@ -14,20 +14,22 @@ TCP-AO uses key IDs to coordinate which key is active between peers:
 - **CurrentKeyId**: The key currently preferred for sending. Maps to BIRD's `preferred` key attribute.
 - **NextKeyId**: The key the peer should transition to next. Maps to BIRD's `rnext id`. This signals the remote end which key it should start using for sending.
 
-The GatewayRouter CRD exposes these via `spec.bgp.authentication`:
+The GatewayRouter CRD exposes these under `spec.bgp.authentication`, a discriminated union whose required `type` discriminator selects the mechanism. For TCP-AO, set `type: TCPAO` and configure the keychain under the matching `tcpAo` field:
 
 ```yaml
 spec:
   bgp:
     authentication:
-      keychain:
-        - sendId: <0-255>
-          recvId: <0-255>
-          algorithm: <mac-algorithm>
-          secretName: <secret-name>
-          secretKey: <key-in-secret>
-      currentKeyId: <sendId of the active key>
-      nextKeyId: <sendId the peer should transition to>
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: <0-255>
+            recvId: <0-255>
+            algorithm: <mac-algorithm>
+            secretName: <secret-name>
+            secretKey: <key-in-secret>
+        currentKeyId: <sendId of the active key>
+        nextKeyId: <sendId the peer should transition to>
 ```
 
 ## Secret Management
@@ -82,18 +84,20 @@ Add key ID 2 to the GatewayRouter keychain (keep the current key active):
 spec:
   bgp:
     authentication:
-      keychain:
-        - sendId: 1
-          recvId: 1
-          algorithm: hmac sha256
-          secretName: bgp-auth-keys
-          secretKey: key1
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-auth-keys
-          secretKey: key2
-      currentKeyId: 1
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key1
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key2
+        currentKeyId: 1
 ```
 
 On the remote BGP peer, add key ID 2 with the same master key value. Both sides must accept the new key for receiving before either side starts sending with it.
@@ -106,19 +110,21 @@ Once both sides have the new key installed, signal that the peer should transiti
 spec:
   bgp:
     authentication:
-      keychain:
-        - sendId: 1
-          recvId: 1
-          algorithm: hmac sha256
-          secretName: bgp-auth-keys
-          secretKey: key1
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-auth-keys
-          secretKey: key2
-      currentKeyId: 1
-      nextKeyId: 2
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key1
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key2
+        currentKeyId: 1
+        nextKeyId: 2
 ```
 
 This sets `rnext id 2` in the BIRD configuration, signaling the remote peer that it should start sending with key 2.
@@ -131,18 +137,20 @@ After confirming the remote peer has acknowledged the transition (e.g., by obser
 spec:
   bgp:
     authentication:
-      keychain:
-        - sendId: 1
-          recvId: 1
-          algorithm: hmac sha256
-          secretName: bgp-auth-keys
-          secretKey: key1
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-auth-keys
-          secretKey: key2
-      currentKeyId: 2
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key1
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key2
+        currentKeyId: 2
 ```
 
 Coordinate with the remote peer to also switch its active sending key to ID 2.
@@ -155,13 +163,15 @@ Once both sides are sending and receiving exclusively with key 2, remove the old
 spec:
   bgp:
     authentication:
-      keychain:
-        - sendId: 2
-          recvId: 2
-          algorithm: hmac sha256
-          secretName: bgp-auth-keys
-          secretKey: key2
-      currentKeyId: 2
+      type: TCPAO
+      tcpAo:
+        keychain:
+          - sendId: 2
+            recvId: 2
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key2
+        currentKeyId: 2
 ```
 
 Remove key 1 from the Secret as well:
