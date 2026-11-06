@@ -267,4 +267,61 @@ spec:
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "remoteASN")
 	})
+
+	t.Run("BGP authentication without type rejected", func(t *testing.T) {
+		// The type discriminator is required: an authentication block that
+		// only carries a per-mechanism field must be rejected.
+		obj := fromYAML(t, `
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: auth-no-type
+  namespace: default
+spec:
+  gatewayRef:
+    name: test-gateway
+  interface: ext-vlan
+  address: "169.254.100.1"
+  protocol: BGP
+  bgp:
+    remoteASN: 65000
+    localASN: 65001
+    authentication:
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key1
+`)
+		err := k8sClient.Create(ctx, obj)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "spec.bgp.authentication.type")
+	})
+
+	t.Run("BGP authentication type TCPAO without tcpAo rejected", func(t *testing.T) {
+		// The union's presence rule: tcpAo must be set when type is TCPAO.
+		obj := fromYAML(t, `
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: auth-tcpao-no-tcpao
+  namespace: default
+spec:
+  gatewayRef:
+    name: test-gateway
+  interface: ext-vlan
+  address: "169.254.100.1"
+  protocol: BGP
+  bgp:
+    remoteASN: 65000
+    localASN: 65001
+    authentication:
+      type: TCPAO
+`)
+		err := k8sClient.Create(ctx, obj)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "tcpAo must be set if and only if type is TCPAO")
+	})
 }

@@ -109,9 +109,51 @@ type BgpSpec struct {
 	// +optional
 	LocalPort *uint16 `json:"localPort,omitempty"`
 
-	// BGP authentication with TCP Authentication Option (RFC5925).
+	// BGP authentication. The mechanism is selected by the type discriminator.
 	// +optional
-	Authentication *BgpTcpAoSpec `json:"authentication,omitempty"`
+	Authentication *BgpAuthentication `json:"authentication,omitempty"`
+}
+
+// BgpAuthType selects the BGP authentication mechanism.
+// +enum
+type BgpAuthType string
+
+const (
+	// BgpAuthTypeTcpAo selects TCP Authentication Option (RFC5925).
+	BgpAuthTypeTcpAo BgpAuthType = "TCPAO"
+)
+
+// BgpAuthentication is a discriminated union selecting a BGP authentication
+// mechanism. The Type field names the mechanism, and exactly one matching
+// per-mechanism field is populated. Additional mechanisms can be added as a
+// backward-compatible, incremental CRD extension without a new API version or
+// a conversion webhook.
+//
+// Extensibility contract. To add a new mechanism (e.g. BGP MD5, RFC2385):
+//  1. Add a new value to the BgpAuthType enum (both the Go const and the
+//     +kubebuilder:validation:Enum marker on Type).
+//  2. Add a new optional per-mechanism field for it (like TcpAo), with
+//     +optional and omitempty.
+//  3. Add a presence rule so the matching field is set if and only if Type
+//     names that mechanism, mirroring the existing TCPAO rule below.
+//  4. Add an exclusivity rule so no non-matching per-mechanism field is set.
+//     With a single member there is nothing to exclude, so no exclusivity
+//     rule exists yet; the second member is what makes one necessary. The
+//     iff presence rules together already enforce exclusivity, but an explicit
+//     rule keeps the intent visible and the message specific. (Compare
+//     GatewayRouterSpec, which pairs its bgp/static presence rules with an
+//     explicit "bgp and static are mutually exclusive" rule.)
+//
+// +kubebuilder:validation:XValidation:rule="(self.type == 'TCPAO') == has(self.tcpAo)",message="tcpAo must be set if and only if type is TCPAO"
+type BgpAuthentication struct {
+	// Type selects the BGP authentication mechanism.
+	// +kubebuilder:validation:Enum=TCPAO
+	// +required
+	Type BgpAuthType `json:"type"`
+
+	// TcpAo configures TCP Authentication Option (RFC5925). Required when type is TCPAO.
+	// +optional
+	TcpAo *BgpTcpAoSpec `json:"tcpAo,omitempty"`
 }
 
 // +enum
