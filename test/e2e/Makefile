@@ -28,7 +28,7 @@ MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
 # Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao bfd-detection
+SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao md5 bfd-detection
 SUITES_DS ?= dual-stack-simple shared-appnetwork-ds
 SUITES_IPV6 ?= separate-appnetwork-v6
 
@@ -391,6 +391,33 @@ test-tcp-ao: ## Run e2e tests for tcp-ao suite.
 undeploy-tcp-ao: ## Undeploy tcp-ao topology.
 	@NS=e2e-tcp-ao; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-tcp-ao --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
+##@ Suite: MD5 (deprecated RFC2385)
+################################################################################
+
+# Deprecated: MD5 (RFC2385) is a weak, legacy BGP authentication mechanism with
+# no key rotation, superseded by TCP-AO (RFC5925). This suite guards the
+# deprecated MD5 path. gw-md1 peers on VLAN 1400 (ASN 64523) and gw-md2 on VLAN
+# 1500 (ASN 64524); the simulated DCGW (vpn-gateway) matches with a `password`
+# line per peer (see hack/vpn-gateway/bird-gw.conf).
+
+.PHONY: md5
+md5: deploy-md5 test-md5 ## Deploy and test MD5 suite (deprecated).
+
+.PHONY: deploy-md5
+deploy-md5: cluster ## Deploy md5 topology (deprecated).
+	$(call deploy-suite,e2e-md5,$(shell pwd)/suites/md5,md5,sllbr-gw-md1 sllbr-gw-md2)
+
+.PHONY: test-md5
+test-md5: ## Run e2e tests for md5 suite (deprecated).
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="MD5" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-md5
+undeploy-md5: ## Undeploy md5 topology (deprecated).
+	@NS=e2e-md5; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-md5 --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################
