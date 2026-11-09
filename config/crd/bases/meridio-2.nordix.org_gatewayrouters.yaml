@@ -57,6 +57,29 @@ spec:
                     description: BGP authentication. The mechanism is selected by
                       the type discriminator.
                     properties:
+                      md5:
+                        description: |-
+                          Md5 configures TCP MD5 Signature Option (RFC2385). Required when type is MD5.
+
+                          Deprecated: MD5 (RFC2385) is a weak, legacy mechanism with no key
+                          rotation and known security shortcomings. It is superseded by TCP-AO
+                          (RFC5925) and is provided only for interoperability with BGP peers that
+                          cannot support TCP-AO. Prefer TCP-AO for all new deployments.
+                        properties:
+                          secretKey:
+                            description: SecretKey is the key in the Secret's data
+                              section containing the MD5 key value.
+                            minLength: 1
+                            type: string
+                          secretName:
+                            description: SecretName is the name of the Kubernetes
+                              Secret containing the MD5 key.
+                            minLength: 1
+                            type: string
+                        required:
+                        - secretKey
+                        - secretName
+                        type: object
                       tcpAo:
                         description: TcpAo configures TCP Authentication Option (RFC5925).
                           Required when type is TCPAO.
@@ -134,6 +157,7 @@ spec:
                         description: Type selects the BGP authentication mechanism.
                         enum:
                         - TCPAO
+                        - MD5
                         type: string
                     required:
                     - type
@@ -141,6 +165,8 @@ spec:
                     x-kubernetes-validations:
                     - message: tcpAo must be set if and only if type is TCPAO
                       rule: (self.type == 'TCPAO') == has(self.tcpAo)
+                    - message: md5 must be set if and only if type is MD5
+                      rule: (self.type == 'MD5') == has(self.md5)
                   bfd:
                     description: BFD monitoring of BGP session.
                     properties:

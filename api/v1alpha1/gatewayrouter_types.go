@@ -121,7 +121,16 @@ type BgpAuthType string
 const (
 	// BgpAuthTypeTcpAo selects TCP Authentication Option (RFC5925).
 	BgpAuthTypeTcpAo BgpAuthType = "TCPAO"
+
+	// BgpAuthTypeMd5 selects TCP MD5 Signature Option (RFC2385).
+	//
+	// Deprecated: see BgpAuthentication.Md5.
+	BgpAuthTypeMd5 BgpAuthType = "MD5"
 )
+
+// Exactly one per-mechanism field is populated, matching Type; the
+// per-mechanism iff validation rules enforce this invariant and, with the
+// enum closed to the defined mechanisms, their mutual exclusivity.
 
 // BgpAuthentication is a discriminated union selecting a BGP authentication
 // mechanism. The Type field names the mechanism, and exactly one matching
@@ -129,31 +138,39 @@ const (
 // backward-compatible, incremental CRD extension without a new API version or
 // a conversion webhook.
 //
-// Extensibility contract. To add a new mechanism (e.g. BGP MD5, RFC2385):
-//  1. Add a new value to the BgpAuthType enum (both the Go const and the
-//     +kubebuilder:validation:Enum marker on Type).
-//  2. Add a new optional per-mechanism field for it (like TcpAo), with
-//     +optional and omitempty.
-//  3. Add a presence rule so the matching field is set if and only if Type
-//     names that mechanism, mirroring the existing TCPAO rule below.
-//  4. Add an exclusivity rule so no non-matching per-mechanism field is set.
-//     With a single member there is nothing to exclude, so no exclusivity
-//     rule exists yet; the second member is what makes one necessary. The
-//     iff presence rules together already enforce exclusivity, but an explicit
-//     rule keeps the intent visible and the message specific. (Compare
-//     GatewayRouterSpec, which pairs its bgp/static presence rules with an
-//     explicit "bgp and static are mutually exclusive" rule.)
-//
 // +kubebuilder:validation:XValidation:rule="(self.type == 'TCPAO') == has(self.tcpAo)",message="tcpAo must be set if and only if type is TCPAO"
+// +kubebuilder:validation:XValidation:rule="(self.type == 'MD5') == has(self.md5)",message="md5 must be set if and only if type is MD5"
 type BgpAuthentication struct {
 	// Type selects the BGP authentication mechanism.
-	// +kubebuilder:validation:Enum=TCPAO
+	// +kubebuilder:validation:Enum=TCPAO;MD5
 	// +required
 	Type BgpAuthType `json:"type"`
 
 	// TcpAo configures TCP Authentication Option (RFC5925). Required when type is TCPAO.
 	// +optional
 	TcpAo *BgpTcpAoSpec `json:"tcpAo,omitempty"`
+
+	// Md5 configures TCP MD5 Signature Option (RFC2385). Required when type is MD5.
+	//
+	// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism with no key
+	// rotation and known security shortcomings. It is superseded by TCP-AO
+	// (RFC5925) and is provided only for interoperability with BGP peers that
+	// cannot support TCP-AO. Prefer TCP-AO for all new deployments.
+	// +optional
+	Md5 *BgpMd5Spec `json:"md5,omitempty"`
+}
+
+// BgpMd5Spec defines the parameters to configure TCP MD5 Signature Option (RFC2385).
+//
+// Deprecated: see BgpAuthentication.Md5.
+type BgpMd5Spec struct {
+	// SecretName is the name of the Kubernetes Secret containing the MD5 key.
+	// +kubebuilder:validation:MinLength=1
+	SecretName string `json:"secretName"`
+
+	// SecretKey is the key in the Secret's data section containing the MD5 key value.
+	// +kubebuilder:validation:MinLength=1
+	SecretKey string `json:"secretKey"`
 }
 
 // +enum

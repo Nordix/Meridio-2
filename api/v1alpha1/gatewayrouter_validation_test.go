@@ -324,4 +324,95 @@ spec:
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "tcpAo must be set if and only if type is TCPAO")
 	})
+
+	// The following subtests exercise the second union member, the deprecated
+	// MD5 (RFC2385) mechanism, and its iff presence rule. They mirror the
+	// TCPAO subtests above.
+
+	t.Run("BGP authentication type MD5 without md5 rejected", func(t *testing.T) {
+		// The union's presence rule: md5 must be set when type is MD5.
+		obj := fromYAML(t, `
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: auth-md5-no-md5
+  namespace: default
+spec:
+  gatewayRef:
+    name: test-gateway
+  interface: ext-vlan
+  address: "169.254.100.1"
+  protocol: BGP
+  bgp:
+    remoteASN: 65000
+    localASN: 65001
+    authentication:
+      type: MD5
+`)
+		err := k8sClient.Create(ctx, obj)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "md5 must be set if and only if type is MD5")
+	})
+
+	t.Run("BGP authentication md5 with type TCPAO rejected", func(t *testing.T) {
+		// Exclusivity (the reverse half of the MD5 iff rule): md5 must not be
+		// set unless type is MD5.
+		obj := fromYAML(t, `
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: auth-md5-with-tcpao
+  namespace: default
+spec:
+  gatewayRef:
+    name: test-gateway
+  interface: ext-vlan
+  address: "169.254.100.1"
+  protocol: BGP
+  bgp:
+    remoteASN: 65000
+    localASN: 65001
+    authentication:
+      type: TCPAO
+      md5:
+        secretName: bgp-md5-key
+        secretKey: key
+`)
+		err := k8sClient.Create(ctx, obj)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "md5 must be set if and only if type is MD5")
+	})
+
+	t.Run("BGP authentication tcpAo with type MD5 rejected", func(t *testing.T) {
+		// Exclusivity (the reverse half of the TCPAO iff rule): tcpAo must not
+		// be set unless type is TCPAO.
+		obj := fromYAML(t, `
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: auth-tcpao-with-md5
+  namespace: default
+spec:
+  gatewayRef:
+    name: test-gateway
+  interface: ext-vlan
+  address: "169.254.100.1"
+  protocol: BGP
+  bgp:
+    remoteASN: 65000
+    localASN: 65001
+    authentication:
+      type: MD5
+      tcpAo:
+        keychain:
+          - sendId: 1
+            recvId: 1
+            algorithm: hmac sha256
+            secretName: bgp-auth-keys
+            secretKey: key1
+`)
+		err := k8sClient.Create(ctx, obj)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "tcpAo must be set if and only if type is TCPAO")
+	})
 }
