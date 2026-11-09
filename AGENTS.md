@@ -213,7 +213,7 @@ kubectl logs -n <project>-system deployment/<project>-controller-manager -c mana
 **Implementation rules:**
 - **Idempotent reconciliation**: Safe to run multiple times
 - **Re-fetch before updates**: `r.Get(ctx, req.NamespacedName, obj)` before `r.Update` to avoid conflicts
-- **Structured logging**: `log := log.FromContext(ctx); log.Info("msg", "key", val)`
+- **Structured logging**: `log := log.FromContext(ctx); log.Info("msg", "key", val)`. See [docs/development/logging-conventions.md](docs/development/logging-conventions.md) for level/verbosity and naming conventions.
 - **Owner references**: Enable automatic garbage collection (`SetControllerReference`)
 - **Watch secondary resources**: Use `.Owns()` or `.Watches()`, not just `RequeueAfter`
 - **Finalizers**: Clean up external resources (buckets, VMs, DNS entries)

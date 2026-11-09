@@ -344,7 +344,7 @@ func (c *Controller) isOwnedByPod(enc *meridio2v1alpha1.EndpointNetworkConfigura
 
 // recoverState initializes allocator and managedVIPs, restoring from persisted
 // mapping and kernel state. Logs warnings on partial recovery but continues.
-func (c *Controller) recoverState(log logr.Logger) {
+func (c *Controller) recoverState(logger logr.Logger) {
 	c.tableIDs = newTableIDAllocator(c.MinTableID, c.MaxTableID)
 	c.managedVIPs = make(map[string]map[string]struct{})
 
@@ -355,15 +355,15 @@ func (c *Controller) recoverState(log logr.Logger) {
 
 	// Load persisted table ID mapping
 	if err := loadMapping(c.tableIDs, c.mappingFile); err != nil {
-		log.Error(err, "failed to load table ID mapping, starting fresh")
+		logger.Error(err, "failed to load table ID mapping, starting fresh")
 	} else if len(c.tableIDs.snapshot()) > 0 {
-		log.Info("loaded table ID mapping from file", "gateways", len(c.tableIDs.snapshot()))
+		logger.Info("loaded table ID mapping from file", "gateways", len(c.tableIDs.snapshot()))
 	}
 
 	// Scan kernel for existing VIPs
 	scannedVIPs, err := scanManagedVIPs(c.nl)
 	if err != nil {
-		log.Error(err, "failed to scan existing VIPs, starting fresh")
+		logger.Error(err, "failed to scan existing VIPs, starting fresh")
 		return
 	}
 	c.managedVIPs = scannedVIPs
@@ -372,7 +372,7 @@ func (c *Controller) recoverState(log logr.Logger) {
 		totalVIPs += len(vips)
 	}
 	if totalVIPs > 0 {
-		log.Info("scanned existing VIPs from kernel", "interfaces", len(scannedVIPs), "vips", totalVIPs)
+		logger.Info("scanned existing VIPs from kernel", "interfaces", len(scannedVIPs), "vips", totalVIPs)
 	}
 }
 

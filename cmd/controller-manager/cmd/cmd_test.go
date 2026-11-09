@@ -17,31 +17,11 @@ limitations under the License.
 package cmd
 
 import (
-	"os"
+	"testing"
 
-	"github.com/spf13/cobra"
+	"github.com/nordix/meridio-2/internal/common/cmdtest"
 )
 
-// Execute runs the root command
-func Execute() {
-	// Cobra prints the error to stderr itself; we only set the exit code.
-	if err := getRootCmd().Execute(); err != nil {
-		os.Exit(1)
-	}
-}
-
-func getRootCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:   "network-sidecar",
-		Short: "Network sidecar for Meridio-2",
-		Long:  `Configures VIP addresses and source-based routing based on EndpointNetworkConfiguration`,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-	}
-
-	rootCmd.AddCommand(newCmdRun())
-	rootCmd.AddCommand(newVersionCmd())
-
-	return rootCmd
+func TestRootCmdErrorGoesToStderrOnly(t *testing.T) {
+	cmdtest.AssertErrorGoesToStderrOnly(t, NewRootCmd())
 }

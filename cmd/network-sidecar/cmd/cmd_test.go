@@ -17,30 +17,11 @@ limitations under the License.
 package cmd
 
 import (
-	"os"
+	"testing"
 
-	"github.com/spf13/cobra"
+	"github.com/nordix/meridio-2/internal/common/cmdtest"
 )
 
-func Execute() {
-	// Cobra prints the error to stderr itself; we only set the exit code.
-	if err := getRootCmd().Execute(); err != nil {
-		os.Exit(1)
-	}
-}
-
-func getRootCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:   "stateless-load-balancer",
-		Short: "Stateless Load Balancer for Meridio-2",
-		Long:  `Manages NFQLB instances and nftables rules for traffic distribution`,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-	}
-
-	rootCmd.AddCommand(newCmdRun())
-	rootCmd.AddCommand(newVersionCmd())
-
-	return rootCmd
+func TestRootCmdErrorGoesToStderrOnly(t *testing.T) {
+	cmdtest.AssertErrorGoesToStderrOnly(t, NewRootCmd())
 }

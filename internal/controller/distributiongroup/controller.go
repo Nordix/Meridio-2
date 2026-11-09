@@ -80,7 +80,7 @@ type DistributionGroupReconciler struct {
 
 // Reconcile manages LoadBalancerEndpointSlices for a DistributionGroup
 func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx).WithValues("distributiongroup", req.NamespacedName)
+	log := logf.FromContext(ctx)
 	log.V(1).Info("reconciling DistributionGroup")
 
 	// 1. Fetch DistributionGroup

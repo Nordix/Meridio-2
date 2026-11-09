@@ -138,7 +138,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 			errFinal = errors.Join(errFinal, err)
 		} else {
 			anyTargetReady = true
-			log.Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
+			log.V(1).Info("Activated target", "distGroup", distGroup.Name, "identifier", identifier, "ips", ips)
 		}
 	}
 
@@ -170,7 +170,7 @@ func (c *Controller) reconcileTargets(ctx context.Context, distGroup *meridio2v1
 		return errFinal
 	}
 
-	log.V(1).Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
+	log.Info("Reconciled targets", "distGroup", distGroup.Name, "count", len(newTargets))
 	return nil
 }
 

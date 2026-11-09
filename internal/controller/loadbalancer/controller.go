@@ -382,7 +382,7 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 
 	// Clean up readiness directory on startup
 	if !c.Readiness.Enabled() {
-		logf.Log.Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), no readiness files will be written")
+		logf.Log.WithName("setup").Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), no readiness files will be written")
 	}
 	if err := c.Readiness.Cleanup(); err != nil {
 		return fmt.Errorf("failed to cleanup readiness directory: %w", err)

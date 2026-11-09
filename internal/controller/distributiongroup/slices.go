@@ -103,7 +103,7 @@ func (r *DistributionGroupReconciler) calculateDesiredSlices(ctx context.Context
 		// Scrape all IPs for each Pod across this Gateway's networks
 		podsWithAddrs := r.scrapePodsForGateway(pods, gwContext)
 		if len(podsWithAddrs) == 0 {
-			log.V(1).Info("Skipping Gateway as no Pods in DistributionGroup have matching IP addresses", "distributionGroup", dg.Name, "gateway", gwContext.gateway.Name)
+			log.V(1).Info("Skipping Gateway as no Pods in DistributionGroup have matching IP addresses", "distGroup", dg.Name, "gateway", gwContext.gateway.Name)
 			continue
 		}
 
