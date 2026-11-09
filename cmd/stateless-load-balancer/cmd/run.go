@@ -40,7 +40,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/nordix/meridio-2/internal/common/config"
 	"github.com/nordix/meridio-2/internal/common/httpsec"
-	"github.com/nordix/meridio-2/internal/common/log"
+	logServer "github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
@@ -69,7 +69,7 @@ func init() {
 	utilruntime.Must(gatewayv1.Install(scheme))
 }
 
-func newCmdRun() *cobra.Command {
+func NewRunCmd() *cobra.Command {
 	cfg := &config.LoadBalancerConfig{}
 
 	cmd := &cobra.Command{
@@ -80,7 +80,7 @@ func newCmdRun() *cobra.Command {
 			cfg.BindEnv(cmd.Flags())
 
 			// Parse initial log level
-			initialLevel, err := log.ParseLevel(cfg.LogLevel)
+			initialLevel, err := logServer.ParseLevel(cfg.LogLevel)
 			if err != nil {
 				return fmt.Errorf("invalid --log-level: %w", err)
 			}
@@ -96,7 +96,7 @@ func newCmdRun() *cobra.Command {
 			ctrl.SetLogger(ctrlzap.New(ctrlzap.UseFlagOptions(&zapOpts)))
 
 			// Start dynamic log level server (non-blocking, non-fatal)
-			log.StartDynamicLevelServer(cmd.Context(), cfg.LogLevelAPI, atomicLevel, ctrl.Log)
+			logServer.StartDynamicLevelServer(cmd.Context(), cfg.LogLevelAPI, atomicLevel, ctrl.Log)
 
 			return nil
 		},

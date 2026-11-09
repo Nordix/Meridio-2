@@ -59,7 +59,7 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 
 	// Handle empty L34Route list — no routes means no flows needed
 	if len(newFlows) == 0 {
-		log.Info("No L34Routes found, deleting existing flows for distributionGroup", "distGroup", distGroup.Name)
+		log.V(1).Info("No L34Routes found, deleting existing flows for distributionGroup", "distGroup", distGroup.Name)
 		if err := c.deleteAllFlows(ctx, instance, distGroup.Name); err != nil {
 			// NOTE: not propagated for retry on purpose. deleteAllFlows clears the
 			// tracked flows map unconditionally (even for entries it failed to delete),
@@ -95,7 +95,7 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 			log.Error(err, "Failed to set flow", "flow", flowName)
 			errFinal = errors.Join(errFinal, fmt.Errorf("failed to set flow %s: %w", flowName, err))
 		} else {
-			log.Info("Configured flow", "distGroup", distGroup.Name, "flow", flowName)
+			log.V(1).Info("Configured flow", "distGroup", distGroup.Name, "flow", flowName)
 			successfulFlows[flowName] = route
 		}
 	}
@@ -108,7 +108,7 @@ func (c *Controller) reconcileFlows(ctx context.Context, distGroup *meridio2v1al
 	// Update tracked flows with only successful ones
 	c.flows[distGroup.Name] = successfulFlows
 
-	log.V(1).Info("Reconciled flows", "distGroup", distGroup.Name, "count", len(successfulFlows))
+	log.Info("Reconciled flows", "distGroup", distGroup.Name, "count", len(successfulFlows))
 	return errFinal
 }
 
@@ -157,7 +157,7 @@ func (c *Controller) listMatchingL34Routes(ctx context.Context, distGroup *merid
 		var dg meridio2v1alpha1.DistributionGroup
 		if err := c.Get(ctx, client.ObjectKey{Name: dgName, Namespace: c.GatewayNamespace}, &dg); err != nil {
 			if apierrors.IsNotFound(err) {
-				log.V(1).Info("Skipping L34Route: DistributionGroup not found", "route", route.Name, "distributionGroup", dgName)
+				log.V(1).Info("Skipping L34Route: DistributionGroup not found", "route", route.Name, "distGroup", dgName)
 				continue
 			}
 			return nil, err

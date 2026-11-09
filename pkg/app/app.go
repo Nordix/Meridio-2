@@ -444,10 +444,10 @@ func registerBuiltinControllers(mgr ctrl.Manager, cfg *config.ManagerConfig) err
 // after the gate passed — reintroducing the partial snapshot the gate intends to prevent. Such
 // a collector should weigh adding a watch so its types are covered by the gate too.
 func registerMetricsCollectors(mgr ctrl.Manager, cfg *config.ManagerConfig) error {
-	log := ctrl.Log.WithName("metrics")
+	metricsLog := ctrl.Log.WithName("metrics")
 
 	if !commonmetrics.Enabled(cfg.MetricsAddr) {
-		log.Info("Custom metrics collectors not registered (metrics disabled)",
+		metricsLog.Info("Custom metrics collectors not registered (metrics disabled)",
 			"metricsBindAddress", cfg.MetricsAddr)
 		return nil
 	}
@@ -466,7 +466,7 @@ func registerMetricsCollectors(mgr ctrl.Manager, cfg *config.ManagerConfig) erro
 		return fmt.Errorf("register DistributionGroupCollector: %w", err)
 	}
 
-	log.Info("Registered custom metrics collectors",
+	metricsLog.Info("Registered custom metrics collectors",
 		"collectors", []string{"GatewayCollector", "DistributionGroupCollector"},
 		"metricsPrefix", cfg.MetricsPrefix,
 		"collectTimeout", cfg.MetricsCollectTimeout)
