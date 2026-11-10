@@ -197,11 +197,15 @@ spec:
                   It is interpreted by the implementation as the set of VIPs exposed by the Gateway.
                   The destination CIDRs should not have overlaps.
                   Each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
+
+                  A set, so that Server-Side Apply can merge entries from multiple field managers.
                 items:
                   maxLength: 64
                   type: string
                 maxItems: 100
+                minItems: 1
                 type: array
+                x-kubernetes-list-type: set
                 x-kubernetes-validations:
                 - message: each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
                   rule: self.all(c, isCIDR(c) && (cidr(c).prefixLength() == 32 ||
@@ -219,11 +223,14 @@ spec:
                   plane, which may be smaller than MaxItems here. Downstream checks (such
                   as a validating webhook or post-admission validation) may reject port
                   sets that would exceed the data-plane capacity.
+
+                  A set, so that Server-Side Apply can merge entries from multiple field managers.
                 items:
                   maxLength: 11
                   type: string
                 maxItems: 1000
                 type: array
+                x-kubernetes-list-type: set
                 x-kubernetes-validations:
                 - message: each destinationPort must be a single port, a port range,
                     or 'any'

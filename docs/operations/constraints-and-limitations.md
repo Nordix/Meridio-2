@@ -24,6 +24,16 @@ Each VIP (defined in `L34Route.spec.destinationCIDRs`) must belong to exactly on
 
 LB Pods and application Pods must share the same L2 broadcast domain on the internal secondary network. The LB controller forwards traffic to application Pods by routing directly to their secondary network IPs via next-hop, which requires L2 adjacency. Routed (L3) secondary networks between LB and application Pods are not supported.
 
+### Sharing an L34Route between multiple Server-Side Apply writers *(architectural constraint)*
+
+`L34Route.spec.destinationCIDRs` and `spec.destinationPorts` are sets (`x-kubernetes-list-type: set`), so several Server-Side Apply field managers can each own their own entries in the same L34Route. Update, merge patch, client-side `kubectl apply` and a single SSA owner still replace the whole list. Duplicate values are rejected in both fields. This only changes how writes are merged. The LB interprets an L34Route as before, whichever writers contributed to it: one route is one flow.
+
+All other spec fields (`parentRefs`, `backendRefs`, `priority`, `protocols`, `sourceCIDRs`, `sourcePorts`, `byteMatches`) remain atomic lists or scalars, each owned as a whole. See the Kubernetes Server-Side Apply documentation on [merge strategy](https://kubernetes.io/docs/reference/using-api/server-side-apply/#merge-strategy), [field management](https://kubernetes.io/docs/reference/using-api/server-side-apply/#field-management) and [conflicts](https://kubernetes.io/docs/reference/using-api/server-side-apply/#conflicts) for the rules that apply to them. Applied values are compared with the stored object, which includes fields the API server defaulted, such as `parentRefs[].group`, `parentRefs[].kind` and `backendRefs[].weight`.
+
+`destinationCIDRs` requires at least one entry, so the last writer cannot release its final CIDR by applying (the request fails with `422 spec.destinationCIDRs: Required value`). The last writer should delete the L34Route instead, with `Preconditions{UID, ResourceVersion}` so it does not remove entries another writer added in the meantime. If the delete fails with `409 Conflict`, retry the release apply.
+
+A writer cannot remove another manager's entries by applying, even with `force`. That requires an Update or a patch.
+
 ## Gateway Controller
 
 ### In-place Pod vertical scaling not implemented

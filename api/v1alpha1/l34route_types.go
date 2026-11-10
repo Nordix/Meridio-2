@@ -76,6 +76,10 @@ type L34RouteSpec struct {
 	// It is interpreted by the implementation as the set of VIPs exposed by the Gateway.
 	// The destination CIDRs should not have overlaps.
 	// Each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR
+	//
+	// A set, so that Server-Side Apply can merge entries from multiple field managers.
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=100
 	// +kubebuilder:validation:items:MaxLength=64
 	// +kubebuilder:validation:XValidation:message="each destinationCIDR must be an IPv4/32 or IPv6/128 CIDR",rule="self.all(c, isCIDR(c) && (cidr(c).prefixLength() == 32 || cidr(c).prefixLength() == 128))"
@@ -119,7 +123,10 @@ type L34RouteSpec struct {
 	// plane, which may be smaller than MaxItems here. Downstream checks (such
 	// as a validating webhook or post-admission validation) may reject port
 	// sets that would exceed the data-plane capacity.
+	//
+	// A set, so that Server-Side Apply can merge entries from multiple field managers.
 	// +optional
+	// +listType=set
 	// +kubebuilder:validation:MaxItems=1000
 	// +kubebuilder:validation:items:MaxLength=11
 	// +kubebuilder:validation:XValidation:message="each destinationPort must be a single port, a port range, or 'any'",rule="self.all(port, port == 'any' || (port.matches('^\\\\d+$') && int(port) >= 0 && int(port) <= 65535) || (port.matches('^\\\\d+-\\\\d+$') && int(port.split('-')[0]) >= 0 && int(port.split('-')[0]) <= 65535 && int(port.split('-')[1]) >= 0 && int(port.split('-')[1]) <= 65535 && int(port.split('-')[0]) <= int(port.split('-')[1])))"
