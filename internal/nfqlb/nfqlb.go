@@ -121,7 +121,7 @@ func (nfqlb *NFQueueLoadBalancer) startingOffset() int {
 func (nfqlb *NFQueueLoadBalancer) Start(ctx context.Context) error {
 	// Clean up stale policy rules/routes from a previous instance (container restart)
 	if err := CleanupStaleRules(nfqlb.startingOffset()); err != nil {
-		nfqlb.logger.Error(err, "failed to cleanup stale rules at startup")
+		nfqlb.logger.Info("failed to cleanup stale rules at startup", "error", err)
 	}
 
 	nfqlb.running.Store(true)
