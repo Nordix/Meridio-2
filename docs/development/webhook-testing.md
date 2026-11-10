@@ -189,7 +189,9 @@ EOF
 
 Expected error: `overlapping CIDR`
 
-#### 5. Overlapping Destination CIDRs - Identical (should fail - webhook validation)
+#### 5. Overlapping Destination CIDRs - Same IPv6 Address, Different Spelling (should fail - webhook validation)
+
+`destinationCIDRs` is a set, so the API server already rejects identical strings with `Duplicate value`. The set check compares strings, though, so two spellings of the same IPv6 address pass the schema and are caught by the webhook's overlap check.
 
 ```bash
 kubectl apply -f - <<EOF
@@ -207,8 +209,8 @@ spec:
       group: meridio-2.nordix.org
       kind: DistributionGroup
   destinationCIDRs:
-    - "192.168.1.1/32"
-    - "192.168.1.1/32"
+    - "2001:db8::1/128"
+    - "2001:0db8:0:0:0:0:0:1/128"
   protocols:
     - TCP
   priority: 1

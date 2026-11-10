@@ -18,8 +18,6 @@ package v1alpha1_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,54 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 )
-
-func setupEnvTest(t *testing.T) client.Client {
-	t.Helper()
-	logf.SetLogger(zap.New(zap.WriteTo(os.Stderr), zap.UseDevMode(true)))
-
-	testEnv := &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
-	if dir := getFirstFoundEnvTestBinaryDir(); dir != "" {
-		testEnv.BinaryAssetsDirectory = dir
-	}
-
-	cfg, err := testEnv.Start()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = testEnv.Stop() })
-
-	require.NoError(t, meridio2v1alpha1.AddToScheme(scheme.Scheme))
-	require.NoError(t, gatewayapiv1.Install(scheme.Scheme))
-
-	k8sClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	require.NoError(t, err)
-
-	return k8sClient
-}
-
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}
 
 // baseRouter returns a minimal valid GatewayRouter skeleton. Callers customize
 // the returned object (protocol, bgp, static, address, etc.) before creating it.
@@ -100,7 +54,7 @@ func fromYAML(t *testing.T, raw string) *unstructured.Unstructured {
 }
 
 func TestGatewayRouterCRDValidation(t *testing.T) {
-	k8sClient := setupEnvTest(t)
+	k8sClient := setupEnvTest(t, &meridio2v1alpha1.GatewayRouter{})
 	ctx := context.Background()
 
 	t.Run("valid BGP router accepted", func(t *testing.T) {
