@@ -91,7 +91,7 @@ func (r *Reconciler) resolveGatewayConnections(ctx context.Context, pod *corev1.
 	for _, gw := range gatewayMap {
 		conn, err := r.buildGatewayConnection(ctx, pod, gw)
 		if err != nil {
-			logf.FromContext(ctx).Error(err, "skipping gateway", "gateway", gw.gw.Name)
+			logf.FromContext(ctx).Info("skipping gateway", "gateway", gw.gw.Name, "error", err)
 			continue
 		}
 		if conn != nil {

@@ -355,7 +355,7 @@ func (c *Controller) recoverState(logger logr.Logger) {
 
 	// Load persisted table ID mapping
 	if err := loadMapping(c.tableIDs, c.mappingFile); err != nil {
-		logger.Error(err, "failed to load table ID mapping, starting fresh")
+		logger.Info("failed to load table ID mapping, starting fresh", "error", err)
 	} else if len(c.tableIDs.snapshot()) > 0 {
 		logger.Info("loaded table ID mapping from file", "gateways", len(c.tableIDs.snapshot()))
 	}
@@ -363,7 +363,7 @@ func (c *Controller) recoverState(logger logr.Logger) {
 	// Scan kernel for existing VIPs
 	scannedVIPs, err := scanManagedVIPs(c.nl)
 	if err != nil {
-		logger.Error(err, "failed to scan existing VIPs, starting fresh")
+		logger.Info("failed to scan existing VIPs, starting fresh", "error", err)
 		return
 	}
 	c.managedVIPs = scannedVIPs

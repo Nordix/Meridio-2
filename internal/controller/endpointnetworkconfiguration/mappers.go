@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -87,6 +88,8 @@ func (r *Reconciler) mapGatewayConfigToPods(ctx context.Context, obj client.Obje
 
 	var gwList gatewayv1.GatewayList
 	if err := r.List(ctx, &gwList, client.InNamespace(gwConfig.Namespace)); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list Gateways for GatewayConfiguration, enqueuing no Pods",
+			"gatewayConfig", client.ObjectKeyFromObject(gwConfig), "error", err)
 		return nil
 	}
 
@@ -142,6 +145,7 @@ func (r *Reconciler) podsForGatewayKeys(ctx context.Context, gwKeys []client.Obj
 	// Find L34Routes referencing these Gateways → collect DG keys from backendRefs
 	var routeList meridio2v1alpha1.L34RouteList
 	if err := r.List(ctx, &routeList, listOpts...); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list L34Routes, enqueuing no Pods", "error", err)
 		return nil
 	}
 
@@ -164,6 +168,7 @@ func (r *Reconciler) podsForGatewayKeys(ctx context.Context, gwKeys []client.Obj
 	// Find DGs with direct parentRefs to these Gateways
 	var dgList meridio2v1alpha1.DistributionGroupList
 	if err := r.List(ctx, &dgList, listOpts...); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list DistributionGroups, enqueuing no Pods", "error", err)
 		return nil
 	}
 
@@ -216,11 +221,15 @@ func (r *Reconciler) podsForSelector(ctx context.Context, ns string, ls *metav1.
 	}
 	selector, err := metav1.LabelSelectorAsSelector(ls)
 	if err != nil {
+		logf.FromContext(ctx).V(1).Info("Skipping selector: invalid label selector, enqueuing no Pods",
+			"namespace", ns, "error", err)
 		return nil
 	}
 
 	var podList corev1.PodList
 	if err := r.List(ctx, &podList, client.InNamespace(ns), client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list Pods for selector, enqueuing no Pods",
+			"namespace", ns, "error", err)
 		return nil
 	}
 
