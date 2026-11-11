@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/expr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netns"
@@ -234,4 +235,71 @@ func TestIntegration_DropCounts_Disabled(t *testing.T) {
 	counts, err := mgr.DropCounts()
 	require.NoError(t, err)
 	assert.Empty(t, counts)
+}
+
+// TestIntegration_PrimaryEgressGuardChain verifies the forward-hook guard against a real kernel:
+// filter type, forward hook, accept policy, and a single oif-match counter drop rule.
+func TestIntegration_PrimaryEgressGuardChain(t *testing.T) {
+	conn := newTestConn(t)
+	const primaryIfindex = 1 // lo always exists in a fresh netns
+	mgr := &Manager{
+		tableName:      sharedTableName,
+		queueNum:       0,
+		queueTotal:     1,
+		primaryIfindex: primaryIfindex,
+		conn:           conn,
+	}
+	require.NoError(t, mgr.Setup())
+
+	chains, err := conn.ListChains()
+	require.NoError(t, err)
+
+	var guard *nftables.Chain
+	for _, c := range chains {
+		if c.Name == primaryGuardChainName {
+			guard = c
+			break
+		}
+	}
+	require.NotNil(t, guard, "primary-egress-guard chain should exist")
+	assert.Equal(t, nftables.ChainTypeFilter, guard.Type)
+	assert.Equal(t, *nftables.ChainHookForward, *guard.Hooknum)
+	assert.Equal(t, *nftables.ChainPriorityFilter, *guard.Priority)
+	require.NotNil(t, guard.Policy)
+	assert.Equal(t, nftables.ChainPolicyAccept, *guard.Policy, "policy drop would break all other traffic")
+
+	rules, err := conn.GetRules(mgr.table, mgr.primaryGuard)
+	require.NoError(t, err)
+	require.Len(t, rules, 1, "guard chain should have a single rule")
+
+	var haveOif, haveDrop bool
+	for _, e := range rules[0].Exprs {
+		switch ex := e.(type) {
+		case *expr.Meta:
+			haveOif = haveOif || ex.Key == expr.MetaKeyOIF
+		case *expr.Verdict:
+			haveDrop = haveDrop || ex.Kind == expr.VerdictDrop
+		}
+	}
+	assert.True(t, haveOif, "rule should match on meta oif")
+	assert.True(t, haveDrop, "rule should drop")
+}
+
+// TestIntegration_PrimaryEgressGuardChain_Disabled verifies that no forward chain is installed
+// when the primary interface was not resolved (ifindex 0).
+func TestIntegration_PrimaryEgressGuardChain_Disabled(t *testing.T) {
+	conn := newTestConn(t)
+	mgr := &Manager{
+		tableName:  sharedTableName,
+		queueNum:   0,
+		queueTotal: 1,
+		conn:       conn,
+	}
+	require.NoError(t, mgr.Setup())
+
+	chains, err := conn.ListChains()
+	require.NoError(t, err)
+	for _, c := range chains {
+		assert.NotEqual(t, primaryGuardChainName, c.Name, "guard chain must not exist when ifindex is 0")
+	}
 }

@@ -40,6 +40,8 @@ const (
 
 	// containerRouter is the router container's name in the LB Deployment template
 	containerRouter = "router"
+	// containerLoadBalancer is the loadbalancer container's name in the LB Deployment template
+	containerLoadBalancer = "loadbalancer"
 
 	// Labels
 	labelManagedBy = "app.kubernetes.io/managed-by"

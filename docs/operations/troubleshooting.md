@@ -366,6 +366,12 @@ table inet meridio-lb {
 		ip6 daddr @ipv6-vips counter packets 0 bytes 0 queue to 0-3
 	}
 
+	chain drop-accounting {
+		type filter hook prerouting priority filter + 1; policy accept;
+		meta mark 0x00001388 counter packets 0 bytes 0 drop
+		meta mark 0x00001389 counter packets 0 bytes 0 drop
+	}
+
 	chain output {
 		type filter hook output priority filter; policy accept;
 		meta l4proto icmp ip daddr @ipv4-vips counter packets 0 bytes 0 queue to 0-3
@@ -377,15 +383,34 @@ table inet meridio-lb {
 		meta mark != 0x00000000/8 ip daddr != @ipv4-vips ip saddr != @ipv4-vips icmp type destination-unreachable icmp code frag-needed @th,192,32 @ipv4-vips counter packets 0 bytes 0 ip saddr set @th,192,32 meta mark set 0x00000000
 		meta mark != 0x00000000/8 ip6 daddr != @ipv6-vips ip6 saddr != @ipv6-vips icmpv6 type packet-too-big @th,256,128 @ipv6-vips counter packets 0 bytes 0 ip6 saddr set @th,256,128 meta mark set 0x00000000
 	}
+
+	chain primary-egress-guard {
+		type filter hook forward priority filter; policy accept;
+		oif "eth0" counter packets 0 bytes 0 drop
+	}
 }
 ```
 
 - `ipv4-vips` / `ipv6-vips` sets contain VIPs from L34Route `destinationCIDRs`
 - `prerouting` chain queues VIP-destined traffic to nfqueue 0-3 for NFQLB processing
+- `drop-accounting` chain counts and drops packets NFQLB returned with a drop-reason fwmark: `fwmarkBase+0` (no flow matched) and `fwmarkBase+1` (flow matched but no active targets), i.e. `0x1388`/`0x1389` with the default `--fwmark-base=5000`
 - `output` chain queues locally-originated ICMP/ICMPv6 to VIPs — primarily needed for generating ICMP Fragmentation Needed / Packet Too Big replies back to endpoints when forwarded packets hit MTU limits on the external network
 - Packet/byte counters help verify traffic is reaching the LB
+- `primary-egress-guard` chain (`meta oif <ifindex> counter drop` on the forward hook) drops forwarded packets that would leak out the primary interface. See [Primary egress guard drops](#primary-egress-guard-drops)
 
 Note: `nft` requires `NET_ADMIN` and `allowPrivilegeEscalation: true` as explained. Alternatively, use nsenter instead.
+
+### Primary egress guard drops
+
+The `primary-egress-guard` chain counts forwarded packets that fell through to the main table's default route and would have left via the primary (default CNI) interface:
+
+```bash
+kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nft list chain inet meridio-lb primary-egress-guard
+```
+
+- Occasional hits are expected during transients (LB startup, target or VIP churn), before policy routes and VIP sets have converged.
+- A steadily growing counter points to a persistent fault. Check that each active target has its fwmark policy route (see [Check policy routing rules](#check-policy-routing-rules)), and that the VIP is in `ipv4-vips`/`ipv6-vips`.
+- If the chain is missing, the guard is disabled. Look for `primary-egress-guard` errors in the `loadbalancer` container log (`POD_IP` unset or not found on any interface).
 
 ### Check nfqueue status
 

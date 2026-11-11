@@ -168,8 +168,10 @@ func (r *GatewayReconciler) reconcileDeploymentSpec(base, template *appsv1.Deplo
 		}
 		applyGatewayConfiguration(desired, gwConfig, templateNADAnnotation, base == nil)
 	}
-	// Inject downward API env vars for router Pod identity (POD_NAME, POD_NAMESPACE, POD_UID) - after applying GatewayConfiguration in case it changes the container spec
-	injectRouterPodIdentityEnvVars(desired)
+	// Allow injection of env vars after applying GatewayConfiguration in case it has changed
+	// the container spec. This ensures the downward API env vars are always present.
+	injectRouterPodIdentityEnvVars(desired) // Inject downward API env vars for router Pod identity (POD_NAME, POD_NAMESPACE, POD_UID)
+	injectLoadBalancerPodIPEnvVar(desired)  // Inject POD_IP into the loadbalancer container (primary egress guard)
 
 	return desired
 }
@@ -600,5 +602,31 @@ func injectRouterPodIdentityEnvVars(deployment *appsv1.Deployment) {
 			}
 			break
 		}
+	}
+}
+
+// injectLoadBalancerPodIPEnvVar finds the loadbalancer container and ensures the POD_IP downward
+// API env var (status.podIP) is set. The LB uses it to identify the Pod's primary interface for
+// the nftables primary egress guard.
+func injectLoadBalancerPodIPEnvVar(deployment *appsv1.Deployment) {
+	for i := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[i]
+		if container.Name != containerLoadBalancer {
+			continue
+		}
+		for j := range container.Env {
+			if container.Env[j].Name == "POD_IP" {
+				return
+			}
+		}
+		container.Env = append(container.Env, corev1.EnvVar{
+			Name: "POD_IP",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "status.podIP",
+				},
+			},
+		})
+		return
 	}
 }

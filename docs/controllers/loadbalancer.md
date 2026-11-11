@@ -486,7 +486,7 @@ While `exec.Command` passes args directly without a shell (no shell injection po
 
 ## nftables Rules
 
-The nftables manager (`internal/nftables/manager.go`) creates and maintains packet filtering rules that steer VIP-destined traffic into the nfqueue for NFQLB processing.
+The nftables manager (`internal/nftables/manager.go`) creates and maintains packet filtering rules that steer VIP-destined traffic into the nfqueue for NFQLB processing, and guard forwarded traffic against leaking to the primary network.
 
 ### Table Structure
 
@@ -500,6 +500,7 @@ table inet meridio-lb {
     chain prerouting { ... }
     chain output { ... }
     chain snat-local { ... }
+    chain primary-egress-guard { ... }
 }
 ```
 
@@ -511,6 +512,7 @@ table inet meridio-lb {
 | Chain | `prerouting` | Queues incoming VIP traffic to nfqueue |
 | Chain | `output` | Queues locally-originated ICMP/ICMPv6 replies to VIPs |
 | Chain | `snat-local` | Rewrites PMTU ICMP source addresses |
+| Chain | `primary-egress-guard` | Counts and drops forwarded traffic egressing on the primary interface |
 
 ### Prerouting Chain
 
@@ -589,6 +591,23 @@ chain snat-local {
 
 **Action**: Overwrites the IP source address with the encapsulated destination (the VIP), then resets the packet mark to 0 to prevent policy-routing interference from target fwmark rules.
 
+### Primary Egress Guard Chain (primary-egress-guard)
+
+Defense-in-depth safety net. Nothing in the LB legitimately forwards toward the primary (default CNI) network: VIP traffic goes to targets on secondary networks and return traffic leaves via the external secondary network. A forwarded packet that would egress on the primary interface fell through to the main table's default route, for example because a target's fwmark policy route is missing or stale, or because the VIP is not (yet) in the VIP sets. Instead of leaking silently, it is counted and dropped:
+
+```
+chain primary-egress-guard {
+    type filter hook forward priority filter; policy accept;
+    meta oif <primary-ifindex> counter drop
+}
+```
+
+- The chain is on the data path of all load-balanced traffic, so the rule is a single ifindex compare (`meta oif`) with no ingress qualifier.
+- Policy is `accept`; a `policy drop` chain in the shared table would break all other traffic.
+- The primary interface is the link holding the Pod IP (`POD_IP` from `status.podIP`), resolved once at startup. The gateway controller injects `POD_IP` into the `loadbalancer` container if the template lacks it.
+- Best-effort: if `POD_IP` is unset or does not resolve to an interface, an error is logged and the chain is not created. LB startup is not blocked.
+- Locally generated traffic does not traverse the forward hook and is not covered (VIP-sourced local traffic is handled by the router's blackhole policy rules, see [Router Controller: Policy Routing](router.md#policy-routing)).
+
 ### VIP Set Management
 
 VIPs are extracted from `Gateway.status.addresses` (only entries with `type: IPAddress`). The `SetVIPs()` method:
@@ -604,7 +623,7 @@ IPs without a prefix length are normalized to `/32` (IPv4) or `/128` (IPv6). The
 
 | Operation | Effect |
 |-----------|--------|
-| `Setup()` | Creates table, sets, and all three chains with rules |
+| `Setup()` | Creates table, sets, and all chains with rules (`primary-egress-guard` only when the primary ifindex is known) |
 | `SetVIPs(cidrs)` | Atomically replaces VIP set elements |
 | `Cleanup()` | Deletes the entire table (removes all rules/sets) |
 
@@ -705,6 +724,7 @@ The `stateless-load-balancer` binary accepts the following flags:
 |------|---------|---------|-------------|
 | `--gateway-name` | `MERIDIO_GATEWAY_NAME` | *(required)* | Name of the Gateway this load balancer belongs to |
 | `--gateway-namespace` | `MERIDIO_GATEWAY_NAMESPACE` | *(required)* | Namespace of the Gateway |
+| `--pod-ip` | `POD_IP` | *(empty)* | Pod IP (downward API `status.podIP`). Identifies the primary interface for the primary egress guard. Empty disables the guard. |
 | `--nfqueue` | `MERIDIO_NFQUEUE` | `"0:3"` | Netfilter queue range used by NFQLB |
 | `--readiness-dir` | `MERIDIO_READINESS_DIR` | `/var/run/meridio` | Directory where LB readiness files are written. Empty string disables readiness signaling. |
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8081` | Address the health/ready probe endpoint binds to |
@@ -849,7 +869,7 @@ Expected: One `fwmark <N> lookup <N>` rule per active target. Each table contain
 kubectl exec -n <ns> <sllbr-pod> -c loadbalancer -- nft list ruleset
 ```
 
-Expected: `ipv4-vips` and `ipv6-vips` sets contain VIPs from all L34Routes. Prerouting chain queues VIP traffic to nfqueue.
+Expected: `ipv4-vips` and `ipv6-vips` sets contain VIPs from all L34Routes. Prerouting chain queues VIP traffic to nfqueue. The `primary-egress-guard` chain is present with the primary interface's ifindex.
 
 #### 5. Check readiness files
 

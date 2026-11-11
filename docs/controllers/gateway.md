@@ -177,6 +177,12 @@ The controller injects Gateway identity into LB pod containers via environment v
 - Applied to both `loadbalancer` and `router` containers
 - LoadBalancer and Router controllers use these to identify which Gateway they serve
 
+**Pod identity injection:**
+
+The controller also ensures these downward API env vars are present, even if a custom template omits them:
+- `router` container: `POD_NAME`, `POD_NAMESPACE`, `POD_UID` (readiness gate management)
+- `loadbalancer` container: `POD_IP` (`status.podIP`), used to identify the primary interface for the [primary egress guard](loadbalancer.md#primary-egress-guard-chain-primary-egress-guard)
+
 **Label and annotation management:**
 
 The controller applies labels/annotations in three layers with specific precedence:

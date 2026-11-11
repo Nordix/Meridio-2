@@ -32,6 +32,7 @@ const (
 	outputChainName         = "output"
 	pmtudChainName          = "snat-local"
 	dropAccountingChainName = "drop-accounting"
+	primaryGuardChainName   = "primary-egress-guard"
 	ipv4VIPSetName          = "ipv4-vips"
 	ipv6VIPSetName          = "ipv6-vips"
 )
@@ -43,11 +44,13 @@ type Manager struct {
 	queueTotal      uint16
 	nolbFwmark      uint32
 	notargetsFwmark uint32
+	primaryIfindex  uint32
 	table           *nftables.Table
 	preChain        *nftables.Chain
 	outputChain     *nftables.Chain
 	pmtudChain      *nftables.Chain
 	dropChain       *nftables.Chain
+	primaryGuard    *nftables.Chain
 	ipv4Set         *nftables.Set
 	ipv6Set         *nftables.Set
 	ipv4PreRule     *nftables.Rule
@@ -61,13 +64,18 @@ const sharedTableName = "meridio-lb" // Shared table for all DistributionGroups
 
 // NewManager creates a new nftables manager.
 // Uses a single shared table for all DistributionGroups.
-func NewManager(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (*Manager, error) {
+//
+// primaryIfindex is the ifindex of the LB Pod's primary (default CNI) network interface.
+// Forwarded packets egressing on it are counted and dropped (see createPrimaryEgressGuardChain).
+// 0 disables the guard.
+func NewManager(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark, primaryIfindex uint32) (*Manager, error) {
 	return &Manager{
 		tableName:       sharedTableName,
 		queueNum:        queueNum,
 		queueTotal:      queueTotal,
 		nolbFwmark:      nolbFwmark,
 		notargetsFwmark: notargetsFwmark,
+		primaryIfindex:  primaryIfindex,
 		conn:            &nftables.Conn{},
 	}, nil
 }
@@ -90,6 +98,9 @@ func (m *Manager) Setup() error {
 		return err
 	}
 	if err := m.createPMTUDChain(); err != nil {
+		return err
+	}
+	if err := m.createPrimaryEgressGuardChain(); err != nil {
 		return err
 	}
 	return nil
@@ -233,6 +244,53 @@ func (m *Manager) createDropAccountingChain() error {
 	}
 
 	return m.conn.Flush()
+}
+
+// createPrimaryEgressGuardChain creates a forward-hook safety net that counts and drops
+// forwarded packets egressing on the LB Pod's primary interface (#286). Nothing in the LB
+// legitimately forwards toward the primary network: VIP traffic goes to targets on secondary
+// networks and return traffic leaves via the external secondary network. A packet hitting this
+// rule fell through to the main table's default route, e.g. because a target's fwmark policy
+// route is missing or the VIP is not (yet) in the VIP sets. Occasional hits are expected during
+// transients such as startup or target/VIP churn; a steadily growing counter points to a
+// persistent fault.
+//
+// The chain is on the data path of all load-balanced traffic, so the rule is a single 4-byte
+// ifindex compare (meta oif) with no ingress qualifier. Policy is accept: a policy drop chain in
+// this shared table would break all other traffic.
+func (m *Manager) createPrimaryEgressGuardChain() error {
+	if m.primaryIfindex == 0 {
+		return nil // Guard disabled (primary interface not resolved)
+	}
+
+	policy := nftables.ChainPolicyAccept
+	m.primaryGuard = m.conn.AddChain(&nftables.Chain{
+		Name:     primaryGuardChainName,
+		Table:    m.table,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookForward,
+		Priority: nftables.ChainPriorityFilter,
+		Policy:   &policy,
+	})
+
+	// meta oif <primary> counter drop
+	m.conn.AddRule(&nftables.Rule{
+		Table: m.table,
+		Chain: m.primaryGuard,
+		Exprs: buildPrimaryEgressDropExprs(m.primaryIfindex),
+	})
+
+	return m.conn.Flush()
+}
+
+// buildPrimaryEgressDropExprs builds the expressions for: meta oif <primaryIfindex> counter drop.
+func buildPrimaryEgressDropExprs(primaryIfindex uint32) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyOIF, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(primaryIfindex)},
+		&expr.Counter{},
+		&expr.Verdict{Kind: expr.VerdictDrop},
+	}
 }
 
 func (m *Manager) createOutputChain() error {

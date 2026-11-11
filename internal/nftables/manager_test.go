@@ -29,10 +29,24 @@ import (
 )
 
 func TestNewManager(t *testing.T) {
-	mgr, err := NewManager(0, 4, uint32(nfqlb.DefaultFwmarkBase), uint32(nfqlb.DefaultFwmarkBase+1))
+	mgr, err := NewManager(0, 4, uint32(nfqlb.DefaultFwmarkBase), uint32(nfqlb.DefaultFwmarkBase+1), 1)
 	assert.NoError(t, err)
 	assert.NotNil(t, mgr)
 	assert.Equal(t, "meridio-lb", mgr.tableName)
+	assert.Equal(t, uint32(1), mgr.primaryIfindex)
+}
+
+func TestBuildPrimaryEgressDropExprs(t *testing.T) {
+	exprs := buildPrimaryEgressDropExprs(7)
+
+	require.Len(t, exprs, 4, "primary egress guard rule should have 4 expressions")
+	assertMeta(t, exprs[0], expr.MetaKeyOIF)
+	assertCmpEq(t, exprs[1], binaryutil.NativeEndian.PutUint32(7))
+	_, ok := exprs[2].(*expr.Counter)
+	assert.True(t, ok, "expr[2] should be Counter")
+	v, ok := exprs[3].(*expr.Verdict)
+	require.True(t, ok, "expr[3] should be Verdict")
+	assert.Equal(t, expr.VerdictDrop, v.Kind)
 }
 
 func TestExtractVIPs(t *testing.T) {

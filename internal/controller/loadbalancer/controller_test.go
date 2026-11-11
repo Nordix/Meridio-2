@@ -201,14 +201,14 @@ var _ = Describe("LoadBalancer Controller", func() {
 			GatewayNamespace: namespace,
 			NFQLB:            mockNfqlb,
 			Readiness:        readiness.NewManager(""),
-			NftManagerFactory: func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error) {
+			NftManagerFactory: func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark, primaryIfindex uint32) (nftablesManager, error) {
 				return newMockNftablesManager(), nil
 			},
 		}
 
 		// Initialize shared nftManager
 		var err error
-		controller.nftManager, err = controller.NftManagerFactory(0, 4, uint32(nfqlb.DefaultFwmarkBase), uint32(nfqlb.DefaultFwmarkBase+1))
+		controller.nftManager, err = controller.NftManagerFactory(0, 4, uint32(nfqlb.DefaultFwmarkBase), uint32(nfqlb.DefaultFwmarkBase+1), 0)
 		Expect(err).ToNot(HaveOccurred())
 	})
 

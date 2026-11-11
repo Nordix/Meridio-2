@@ -51,6 +51,11 @@ spec:
           value: info
         - name: MERIDIO_LOG_LEVEL_API
           value: 127.0.0.1:9901
+        # Identifies the primary interface for the forward-path primary egress guard.
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         # Scale tuning (optional). The LB caches all L34Routes in the Gateway's
         # namespace, so at scale its initial informer sync can exceed the default
         # 2m deadline. Uncomment and raise to tune the LB Pods.

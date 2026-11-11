@@ -1355,3 +1355,53 @@ func TestInjectRouterPodIdentityEnvVars(t *testing.T) {
 		assert.Equal(t, 3, count)
 	})
 }
+
+func TestInjectLoadBalancerPodIPEnvVar(t *testing.T) {
+	podIPEnv := corev1.EnvVar{
+		Name: "POD_IP",
+		ValueFrom: &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"},
+		},
+	}
+	deploymentWith := func(containers ...corev1.Container) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{Containers: containers},
+				},
+			},
+		}
+	}
+
+	t.Run("InjectsPodIP", func(t *testing.T) {
+		deployment := deploymentWith(
+			corev1.Container{Name: "loadbalancer", Env: []corev1.EnvVar{
+				{Name: "MERIDIO_GATEWAY_NAME", Value: "gw1"},
+			}},
+			corev1.Container{Name: "router"},
+		)
+
+		injectLoadBalancerPodIPEnvVar(deployment)
+
+		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Env, podIPEnv)
+		assert.Empty(t, deployment.Spec.Template.Spec.Containers[1].Env, "router container must not be touched")
+	})
+
+	t.Run("NoLoadBalancerContainer_NoOp", func(t *testing.T) {
+		deployment := deploymentWith(corev1.Container{Name: "router"})
+
+		injectLoadBalancerPodIPEnvVar(deployment) // should not panic
+
+		assert.Empty(t, deployment.Spec.Template.Spec.Containers[0].Env)
+	})
+
+	t.Run("AlreadySet_Idempotent", func(t *testing.T) {
+		// A template-provided POD_IP is preserved as-is, never duplicated.
+		deployment := deploymentWith(corev1.Container{Name: "loadbalancer", Env: []corev1.EnvVar{podIPEnv}})
+
+		injectLoadBalancerPodIPEnvVar(deployment)
+		injectLoadBalancerPodIPEnvVar(deployment)
+
+		assert.Equal(t, []corev1.EnvVar{podIPEnv}, deployment.Spec.Template.Spec.Containers[0].Env)
+	})
+}

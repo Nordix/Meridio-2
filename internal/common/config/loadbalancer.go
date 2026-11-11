@@ -30,6 +30,7 @@ import (
 type LoadBalancerConfig struct {
 	GatewayName           string
 	GatewayNamespace      string
+	PodIP                 string
 	NFQueue               string
 	FwmarkBase            int
 	ReadinessDir          string
@@ -56,6 +57,9 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Name of the Gateway this LB belongs to")
 	fs.StringVar(&c.GatewayNamespace, "gateway-namespace", "",
 		"Namespace of the Gateway")
+	fs.StringVar(&c.PodIP, "pod-ip", "",
+		"Pod IP (from Downward API status.podIP). Identifies the primary network interface, on which "+
+			"forwarded traffic is dropped as a safety net. Empty disables the safety net.")
 	fs.StringVar(&c.NFQueue, "nfqueue", nfqlb.DefaultQueue,
 		"Netfilter queue(s) to be used by NFQLB. Single queue: \"2\", range: \"0:3\" (4 queues starting at 0)")
 	fs.IntVar(&c.FwmarkBase, "fwmark-base", nfqlb.DefaultFwmarkBase,
@@ -100,6 +104,7 @@ func (c *LoadBalancerConfig) AddFlags(fs *pflag.FlagSet) {
 func (c *LoadBalancerConfig) BindEnv(fs *pflag.FlagSet) {
 	bindString(fs, "gateway-name", "MERIDIO_GATEWAY_NAME", &c.GatewayName)
 	bindString(fs, "gateway-namespace", "MERIDIO_GATEWAY_NAMESPACE", &c.GatewayNamespace)
+	bindString(fs, "pod-ip", "POD_IP", &c.PodIP)
 	bindString(fs, "nfqueue", "MERIDIO_NFQUEUE", &c.NFQueue)
 	bindInt(fs, "fwmark-base", "MERIDIO_FWMARK_BASE", &c.FwmarkBase)
 	bindString(fs, "readiness-dir", "MERIDIO_READINESS_DIR", &c.ReadinessDir)

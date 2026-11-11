@@ -20,8 +20,10 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 
 	"github.com/spf13/cobra"
+	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +44,7 @@ import (
 	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
+	"github.com/nordix/meridio-2/internal/common/netutil"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
 	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
@@ -229,6 +232,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
 		Readiness:        readiness.NewManager(cfg.ReadinessDir),
 		ConfigErrors:     configErrors, // typed-nil when metrics disabled; Inc is nil-safe
+		PrimaryIfindex:   resolvePrimaryIfindex(cfg.PodIP),
 	}
 	if err := lbController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to setup controller")
@@ -266,6 +270,35 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	}
 
 	return nil
+}
+
+// resolvePrimaryIfindex returns the ifindex of the Pod's primary (default CNI) network interface,
+// identified as the link holding the Pod IP (status.podIP). It feeds the nftables primary egress
+// guard that drops forwarded traffic leaking toward the primary network.
+//
+// Best-effort: the guard only catches stray packets, so a missing or unresolvable Pod IP is
+// logged as an anomaly and 0 is returned, which disables the guard without blocking startup.
+func resolvePrimaryIfindex(podIP string) uint32 {
+	logger := setupLog.WithName("primary-egress-guard")
+
+	if podIP == "" {
+		logger.Error(nil, "Pod IP not set (--pod-ip/POD_IP), primary egress guard disabled")
+		return 0
+	}
+	ip := net.ParseIP(podIP)
+	if ip == nil {
+		logger.Error(nil, "Invalid Pod IP, primary egress guard disabled", "podIP", podIP)
+		return 0
+	}
+
+	ifindex, err := netutil.LinkIndexByIP(&netlink.Handle{}, ip)
+	if err != nil {
+		logger.Error(err, "Failed to resolve primary interface, primary egress guard disabled", "podIP", podIP)
+		return 0
+	}
+
+	logger.Info("Primary egress guard enabled", "podIP", podIP, "ifindex", ifindex)
+	return uint32(ifindex)
 }
 
 // registerLBMetrics registers the LB custom metrics collectors with the controller-runtime

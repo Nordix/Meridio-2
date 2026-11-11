@@ -63,7 +63,11 @@ type Controller struct {
 	GatewayNamespace  string
 	NFQLB             nfqlbManager
 	Readiness         *readiness.Manager
-	NftManagerFactory func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark uint32) (nftablesManager, error)
+	NftManagerFactory func(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark, primaryIfindex uint32) (nftablesManager, error)
+
+	// PrimaryIfindex is the ifindex of the LB Pod's primary (default CNI) network interface.
+	// (0 when the interface could not be resolved.)
+	PrimaryIfindex uint32
 
 	// ConfigErrors counts failed data-plane config operations by reason. Nil-safe: when metrics
 	// are disabled, leave it as a typed-nil *loadbalancer.ConfigErrors (Inc no-ops on a nil
@@ -365,9 +369,9 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	var err error
 	nolb, notargets := c.NFQLB.DropFwmarks()
 	if c.NftManagerFactory != nil {
-		c.nftManager, err = c.NftManagerFactory(0, 4, uint32(nolb), uint32(notargets))
+		c.nftManager, err = c.NftManagerFactory(0, 4, uint32(nolb), uint32(notargets), c.PrimaryIfindex)
 	} else {
-		c.nftManager, err = nftablesmanager.NewManager(0, 4, uint32(nolb), uint32(notargets))
+		c.nftManager, err = nftablesmanager.NewManager(0, 4, uint32(nolb), uint32(notargets), c.PrimaryIfindex)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create nftables manager: %w", err)
