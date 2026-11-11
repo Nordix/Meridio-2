@@ -16,10 +16,25 @@ on:
 env:
   KIND_VERSION: v0.27.0
 
+# NOTE: the runner image is pinned to ubuntu-24.04 instead of ubuntu-latest.
+#
+# The e2e data path runs on the *host* kernel and Docker daemon: Kind nodes are
+# containers, and nfqueue/nftables (nfqlb), MACVLAN/SBR secondary networking and
+# the breakout bridge all use host netfilter. When ubuntu-latest migrated to
+# Ubuntu 26.04 (see actions/runner-images#14748), unchanged commits that had been
+# fully green started failing the ipv4 and dual-stack suites, while the ipv6 ones
+# kept passing.
+#
+# On 26.04 the control plane stays healthy (Gateways Programmed, ENCs Ready,
+# complete nfqlb Maglev tables) and ICMP to the VIP works, but TCP/UDP through
+# the LB is black-holed for affected VIP:port pairs.
+#
+# Pinning is a stopgap: ubuntu-latest finishes migrating to 26.04 in Dec 2026,
+# so the underlying 26.04 incompatibility still has to be found and fixed.
 jobs:
   get-tag:
     name: Get tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.get-tag-step.outputs.tag }}
     steps:
@@ -41,7 +56,7 @@ jobs:
 
   build-and-push:
     name: Build and push ${{ matrix.image }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: get-tag
     strategy:
       matrix:
@@ -61,7 +76,7 @@ jobs:
       - run: make ${{ matrix.image }} REGISTRY=${{ secrets.HARBOR_REGISTRY }}/cloud-native/meridio-2 VERSION=${{ needs.get-tag.outputs.tag }} BUILD_STEPS="build tag push"
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [get-tag, build-and-push]
     strategy:
       fail-fast: false
