@@ -20,8 +20,10 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 
 	"github.com/spf13/cobra"
+	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +44,7 @@ import (
 	"github.com/nordix/meridio-2/internal/common/httpsec"
 	"github.com/nordix/meridio-2/internal/common/log"
 	commonmetrics "github.com/nordix/meridio-2/internal/common/metrics"
+	"github.com/nordix/meridio-2/internal/common/netutil"
 	"github.com/nordix/meridio-2/internal/common/readiness"
 	"github.com/nordix/meridio-2/internal/controller/loadbalancer"
 	lbmetrics "github.com/nordix/meridio-2/internal/metrics/loadbalancer"
@@ -112,6 +115,19 @@ func newCmdRun() *cobra.Command {
 
 func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	setupLog.Info("Starting LoadBalancer controller", "config", cfg)
+	if err := validateConfig(cfg); err != nil {
+		setupLog.Error(err, "invalid configuration")
+		return err
+	}
+
+	// Resolve the primary interface for the forward-path primary egress guard. The first Pod IP
+	// (status.podIPs[0], which equals status.podIP) identifies it. Failure stops startup.
+	primaryIfindex, err := resolvePrimaryIfindex(cfg.PodIPs[0])
+	if err != nil {
+		setupLog.Error(err, "failed to resolve primary interface for the primary egress guard")
+		return fmt.Errorf("primary egress guard: %w", err)
+	}
+
 	var tlsOpts []func(*tls.Config)
 	if !cfg.EnableHTTP2 {
 		disableHTTP2 := func(c *tls.Config) {
@@ -119,24 +135,6 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 			c.NextProtos = []string{"http/1.1"}
 		}
 		tlsOpts = append(tlsOpts, disableHTTP2)
-	}
-	// Validate required fields
-	if cfg.GatewayName == "" || cfg.GatewayNamespace == "" {
-		return fmt.Errorf("gateway-name and gateway-namespace are required")
-	}
-
-	if err := cfg.ValidateKubeAPI(); err != nil {
-		return fmt.Errorf("kube API tuning: %w", err)
-	}
-
-	// Validate metrics settings early (fail fast) when metrics are enabled.
-	if commonmetrics.Enabled(cfg.MetricsAddr) {
-		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
-			return fmt.Errorf("metrics-prefix: %w", err)
-		}
-		if cfg.MetricsCollectTimeout <= 0 {
-			return fmt.Errorf("metrics-collect-timeout must be greater than 0, got %s", cfg.MetricsCollectTimeout)
-		}
 	}
 
 	// Initialize NFQLB
@@ -229,6 +227,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
 		Readiness:        readiness.NewManager(cfg.ReadinessDir),
 		ConfigErrors:     configErrors, // typed-nil when metrics disabled; Inc is nil-safe
+		PrimaryIfindex:   primaryIfindex,
 	}
 	if err := lbController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to setup controller")
@@ -266,6 +265,48 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 	}
 
 	return nil
+}
+
+// validateConfig checks configuration values that don't require infrastructure access.
+func validateConfig(cfg *config.LoadBalancerConfig) error {
+	if cfg.GatewayName == "" || cfg.GatewayNamespace == "" {
+		return fmt.Errorf("gateway-name and gateway-namespace are required")
+	}
+	if len(cfg.PodIPs) == 0 {
+		return fmt.Errorf("pod-ips is required")
+	}
+	if err := cfg.ValidateKubeAPI(); err != nil {
+		return fmt.Errorf("kube API tuning: %w", err)
+	}
+	// Validate metrics settings early (fail fast) when metrics are enabled.
+	if commonmetrics.Enabled(cfg.MetricsAddr) {
+		if err := commonmetrics.ValidatePrefix(cfg.MetricsPrefix); err != nil {
+			return fmt.Errorf("metrics-prefix: %w", err)
+		}
+		if cfg.MetricsCollectTimeout <= 0 {
+			return fmt.Errorf("metrics-collect-timeout must be greater than 0, got %s", cfg.MetricsCollectTimeout)
+		}
+	}
+	return nil
+}
+
+// resolvePrimaryIfindex returns the ifindex of the Pod's primary (default CNI) network interface,
+// identified as the link holding podIP. It feeds the nftables primary egress guard that drops
+// forwarded traffic leaking toward the primary network.
+func resolvePrimaryIfindex(podIP string) (uint32, error) {
+	ip := net.ParseIP(podIP)
+	if ip == nil {
+		return 0, fmt.Errorf("invalid pod IP %q", podIP)
+	}
+
+	ifindex, err := netutil.LinkIndexByIP(&netlink.Handle{}, ip)
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve primary interface for pod IP %s: %w", podIP, err)
+	}
+
+	setupLog.WithName("primary-egress-guard").Info("Resolved primary interface",
+		"podIP", podIP, "ifindex", ifindex)
+	return uint32(ifindex), nil
 }
 
 // registerLBMetrics registers the LB custom metrics collectors with the controller-runtime

@@ -285,3 +285,106 @@ func TestIntegration_DropCounts_Disabled(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, counts)
 }
+
+// TestIntegration_PrimaryEgressGuardForwardChain verifies the forward-hook guard against a real kernel:
+// filter type, forward hook, accept policy, and a single oif-match counter drop rule.
+func TestIntegration_PrimaryEgressGuardForwardChain(t *testing.T) {
+	conn := newTestConn(t)
+	const primaryIfindex = 1 // lo always exists in a fresh netns
+	mgr := &Manager{
+		tableName:      sharedTableName,
+		queueNum:       0,
+		queueTotal:     1,
+		primaryIfindex: primaryIfindex,
+		conn:           conn,
+	}
+	require.NoError(t, mgr.Setup())
+
+	chains, err := conn.ListChains()
+	require.NoError(t, err)
+
+	var guard *nftables.Chain
+	for _, c := range chains {
+		if c.Name == primaryGuardFwdChainName {
+			guard = c
+			break
+		}
+	}
+	require.NotNil(t, guard, "primary-egress-guard-forward chain should exist")
+	assert.Equal(t, nftables.ChainTypeFilter, guard.Type)
+	assert.Equal(t, *nftables.ChainHookForward, *guard.Hooknum)
+	assert.Equal(t, *nftables.ChainPriorityFilter, *guard.Priority)
+	require.NotNil(t, guard.Policy)
+	assert.Equal(t, nftables.ChainPolicyAccept, *guard.Policy, "policy drop would break all other traffic")
+
+	rules, err := conn.GetRules(mgr.table, mgr.primaryGuardFwd)
+	require.NoError(t, err)
+	require.Len(t, rules, 1, "guard chain should have a single rule")
+
+	var haveOif, haveDrop bool
+	for _, e := range rules[0].Exprs {
+		switch ex := e.(type) {
+		case *expr.Meta:
+			haveOif = haveOif || ex.Key == expr.MetaKeyOIF
+		case *expr.Verdict:
+			haveDrop = haveDrop || ex.Kind == expr.VerdictDrop
+		}
+	}
+	assert.True(t, haveOif, "rule should match on meta oif")
+	assert.True(t, haveDrop, "rule should drop")
+}
+
+// TestIntegration_PrimaryEgressGuardForwardChain_Skipped verifies that no forward chain is
+// installed when the ifindex is 0.
+func TestIntegration_PrimaryEgressGuardForwardChain_Skipped(t *testing.T) {
+	conn := newTestConn(t)
+	mgr := &Manager{
+		tableName:  sharedTableName,
+		queueNum:   0,
+		queueTotal: 1,
+		conn:       conn,
+	}
+	require.NoError(t, mgr.Setup())
+
+	chains, err := conn.ListChains()
+	require.NoError(t, err)
+	for _, c := range chains {
+		assert.NotEqual(t, primaryGuardFwdChainName, c.Name, "guard chain must not exist when ifindex is 0")
+	}
+}
+
+// TestIntegration_SetupIsIdempotent verifies that re-running Setup in the same netns (e.g. after a
+// loadbalancer container restart, which reuses the existing table) replaces each chain's rules
+// instead of appending duplicates.
+func TestIntegration_SetupIsIdempotent(t *testing.T) {
+	conn := newTestConn(t)
+	newMgr := func() *Manager {
+		return &Manager{
+			tableName:       sharedTableName,
+			queueNum:        0,
+			queueTotal:      1,
+			nolbFwmark:      5000,
+			notargetsFwmark: 5001,
+			primaryIfindex:  1, // lo always exists in a fresh netns
+			conn:            conn,
+		}
+	}
+
+	first := newMgr()
+	require.NoError(t, first.Setup())
+	second := newMgr()
+	require.NoError(t, second.Setup())
+
+	want := map[*nftables.Chain]int{
+		second.preChain:        2,
+		second.dropChain:       2,
+		second.outputChain:     2,
+		second.pmtudChain:      2,
+		second.primaryGuardFwd: 1,
+	}
+	for chain, n := range want {
+		rules, err := conn.GetRules(second.table, chain)
+		require.NoError(t, err)
+		assert.Len(t, rules, n, "chain %s should not accumulate duplicate rules", chain.Name)
+	}
+}
