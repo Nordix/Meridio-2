@@ -106,3 +106,32 @@ func TestPprofBindAddress_FlagOverridesEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadBalancerPodIPs(t *testing.T) {
+	t.Run("default empty", func(t *testing.T) {
+		cfg := &LoadBalancerConfig{}
+		parse(t, cfg, nil)
+		require.Empty(t, cfg.PodIPs)
+	})
+
+	t.Run("env bound, comma-separated", func(t *testing.T) {
+		t.Setenv("POD_IPS", "10.244.1.5,fd00:10:244:1::5")
+		cfg := &LoadBalancerConfig{}
+		parse(t, cfg, nil)
+		require.Equal(t, []string{"10.244.1.5", "fd00:10:244:1::5"}, cfg.PodIPs)
+	})
+
+	t.Run("env single value", func(t *testing.T) {
+		t.Setenv("POD_IPS", "10.244.1.5")
+		cfg := &LoadBalancerConfig{}
+		parse(t, cfg, nil)
+		require.Equal(t, []string{"10.244.1.5"}, cfg.PodIPs)
+	})
+
+	t.Run("flag overrides env", func(t *testing.T) {
+		t.Setenv("POD_IPS", "10.244.1.5")
+		cfg := &LoadBalancerConfig{}
+		parse(t, cfg, []string{"--pod-ips", "10.244.1.6,fd00::6"})
+		require.Equal(t, []string{"10.244.1.6", "fd00::6"}, cfg.PodIPs)
+	})
+}

@@ -19,6 +19,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -66,6 +67,22 @@ func bindDuration(fs *pflag.FlagSet, flagName, envName string, target *time.Dura
 			if parsed, err := time.ParseDuration(val); err == nil {
 				*target = parsed
 			}
+		}
+	}
+}
+
+// bindStringSlice binds a comma-separated environment variable to a string slice configuration field
+// Only applies if the corresponding flag was not explicitly set
+func bindStringSlice(fs *pflag.FlagSet, flagName, envName string, target *[]string) {
+	if !fs.Changed(flagName) {
+		if val := os.Getenv(envName); val != "" {
+			var items []string
+			for item := range strings.SplitSeq(val, ",") {
+				if item = strings.TrimSpace(item); item != "" {
+					items = append(items, item)
+				}
+			}
+			*target = items
 		}
 	}
 }
