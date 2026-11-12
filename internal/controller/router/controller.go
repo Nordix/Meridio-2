@@ -327,6 +327,16 @@ func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meri
 					failed = true
 					break
 				}
+				// Reject over-length keys here (see bird.MaxKeyLength) so one
+				// bad key does not fail the whole reconfiguration; the Secret
+				// value is never logged.
+				if len(password) > bird.MaxKeyLength {
+					logf.FromContext(ctx).Info("Rejected over-length TCP-AO secret value",
+						"router", router.Name, "secretName", key.SecretName, "secretKey", key.SecretKey,
+						"bytes", len(password), "maxBytes", bird.MaxKeyLength)
+					failed = true
+					break
+				}
 				passwords[key.SendId] = password
 			}
 			if failed {
@@ -344,6 +354,21 @@ func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meri
 				allResolved = false
 			} else if password == "" {
 				logf.FromContext(ctx).Info("Rejected empty MD5 secret value",
+					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey)
+				allResolved = false
+			} else if len(password) > bird.MaxKeyLength {
+				// Reject over-length keys here (see bird.MaxKeyLength); the
+				// value is not logged.
+				logf.FromContext(ctx).Info("Rejected over-length MD5 secret value",
+					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey,
+					"bytes", len(password), "maxBytes", bird.MaxKeyLength)
+				allResolved = false
+			} else if !bird.QuotedStringRepresentable(password) {
+				// MD5 keys are emitted as a BIRD quoted string (see
+				// bird.QuotedStringRepresentable); keys containing bytes that a
+				// quoted string or the kernel C-string API cannot carry are
+				// rejected. The value is not logged.
+				logf.FromContext(ctx).Info("Rejected MD5 secret value with unrepresentable bytes",
 					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey)
 				allResolved = false
 			} else {

@@ -53,6 +53,8 @@ stringData:
   key3: "third-master-key-value"
 ```
 
+**Key constraints**: A key value must be non-empty and at most **80 bytes** (bytes, not characters); empty or over-length keys cause the router to be skipped and the previous config retained. See [Key encoding and length limit](../controllers/router.md#bgp-authentication-tcp-ao) in the router controller doc for details.
+
 ## Key Rotation Procedure
 
 A hitless key rotation requires coordination between Meridio and the remote BGP peer. The exact commands for the remote end depend on your router vendor/software — the steps below describe only what needs to happen logically on each side.
@@ -206,7 +208,7 @@ The router controller currently provides **no status field or condition** to ind
 Operators must infer success from:
 
 - BIRD's control socket: `birdc show protocols all "NBR-<router-name>"` (look for `Established` state)
-- Router controller logs: look for `"Reconciling router"` log entries (indicates config was applied) vs. `"TCP-AO secret resolution incomplete"` (indicates config was retained)
+- Router controller logs: look for `"Reconciling router"` log entries (indicates config was applied) vs. `"BGP authentication secret resolution incomplete"` (indicates config was retained)
 - BGP session state on the remote peer
 
 ### Avoiding Resolution Problems
