@@ -43,6 +43,8 @@ stringData:
 
 The same key must be configured on the remote BGP peer.
 
+**Key constraints**: The key must be non-empty and at most **80 bytes** (bytes, not characters), and must not contain a NUL byte, a double quote, a newline, or a carriage return (MD5 keys are carried in a BIRD quoted string, unlike TCP-AO). Empty, over-length, or unrepresentable keys cause the router to be skipped and the previous config retained. See [Key encoding and length limit](../controllers/router.md#bgp-authentication-md5--deprecated) in the router controller doc for details.
+
 ## No key rotation
 
 Unlike TCP-AO, MD5 has **no hitless key rotation**. There is only one key, and

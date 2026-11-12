@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -661,6 +662,111 @@ func TestResolvePasswords(t *testing.T) {
 		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
 		assert.False(t, ok)
 		assert.NotContains(t, result, "router1")
+	})
+
+	// The kernel caps both TCP-AO and MD5 keys at bird.MaxKeyLength bytes. A
+	// key at the limit must be accepted and one byte over it must be rejected.
+	// The limit is in bytes, not characters, so a multi-byte UTF-8 key shorter
+	// than the limit in runes can still exceed it.
+	t.Run("TcpAo_MaxLengthKey_Accepted", func(t *testing.T) {
+		pw := strings.Repeat("a", bird.MaxKeyLength)
+		secret := newSecret("my-secret", map[string][]byte{"pw": []byte(pw)})
+		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "pw"},
+		})
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.True(t, ok)
+		assert.Equal(t, pw, result["router1"].TcpAoPasswords[1])
+	})
+
+	t.Run("TcpAo_OverLengthKey_SkipsRouter", func(t *testing.T) {
+		pw := strings.Repeat("a", bird.MaxKeyLength+1)
+		secret := newSecret("my-secret", map[string][]byte{"pw": []byte(pw)})
+		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "pw"},
+		})
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router1")
+	})
+
+	t.Run("TcpAo_MultibyteKeyOverLengthInBytes_SkipsRouter", func(t *testing.T) {
+		// 41 two-byte runes = 82 bytes > 80, though only 41 characters.
+		pw := strings.Repeat("\u00e9", 41)
+		assert.Greater(t, len(pw), bird.MaxKeyLength)
+		secret := newSecret("my-secret", map[string][]byte{"pw": []byte(pw)})
+		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "pw"},
+		})
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router1")
+	})
+
+	t.Run("Md5_MaxLengthKey_Accepted", func(t *testing.T) {
+		pw := strings.Repeat("a", bird.MaxKeyLength)
+		secret := newSecret("md5-secret", map[string][]byte{"pw": []byte(pw)})
+		router := newGatewayRouterWithMd5("router-md5-max", gwRef, "md5-secret", "pw")
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.True(t, ok)
+		assert.Equal(t, pw, result["router-md5-max"].Md5Password)
+	})
+
+	t.Run("Md5_OverLengthKey_SkipsRouter", func(t *testing.T) {
+		pw := strings.Repeat("a", bird.MaxKeyLength+1)
+		secret := newSecret("md5-secret-over", map[string][]byte{"md5key": []byte(pw)})
+		router := newGatewayRouterWithMd5("router-md5-over", gwRef, "md5-secret-over", "md5key")
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.False(t, ok)
+		assert.NotContains(t, result, "router-md5-over")
+	})
+
+	// A BGP MD5 key is emitted as a BIRD quoted string and reaches the kernel as
+	// a C string, so bytes those cannot carry (NUL, double quote, newline, CR)
+	// must be rejected rather than silently corrupting the config. TCP-AO is
+	// unaffected: it hex-encodes and accepts any byte.
+	t.Run("Md5_UnrepresentableBytes_SkipsRouter", func(t *testing.T) {
+		for name, pw := range map[string]string{
+			"nul":     "ab\x00cd",
+			"quote":   `ab"cd`,
+			"newline": "ab\ncd",
+			"cr":      "ab\rcd",
+		} {
+			t.Run(name, func(t *testing.T) {
+				secret := newSecret("md5-secret-bad", map[string][]byte{"md5key": []byte(pw)})
+				router := newGatewayRouterWithMd5("router-md5-bad", gwRef, "md5-secret-bad", "md5key")
+				reconciler, _ := setupReconciler(secret, router)
+
+				result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+				assert.False(t, ok)
+				assert.NotContains(t, result, "router-md5-bad")
+			})
+		}
+	})
+
+	// A TCP-AO secret may contain any of those same bytes, because it is
+	// hex-encoded rather than quoted; it must be accepted.
+	t.Run("TcpAo_UnrepresentableBytesAllowed_Accepted", func(t *testing.T) {
+		pw := "ab\x00\"\n\rcd"
+		secret := newSecret("ao-secret-bin", map[string][]byte{"pw": []byte(pw)})
+		router := newGatewayRouterWithAuth("router-ao-bin", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, Algorithm: "hmac sha256", SecretName: "ao-secret-bin", SecretKey: "pw"},
+		})
+		reconciler, _ := setupReconciler(secret, router)
+
+		result, ok := reconciler.resolvePasswords(context.Background(), []*meridio2v1alpha1.GatewayRouter{router})
+		assert.True(t, ok)
+		assert.Equal(t, pw, result["router-ao-bin"].TcpAoPasswords[1])
 	})
 }
 

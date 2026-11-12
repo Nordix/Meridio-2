@@ -18,6 +18,7 @@ package bird
 
 import (
 	"cmp"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"slices"
@@ -82,8 +83,11 @@ type tcpAoData struct {
 }
 
 type tcpAoKeyData struct {
-	SendId    uint8
-	RecvId    uint8
+	SendId uint8
+	RecvId uint8
+	// Secret is the raw key material; the template renders it as a BIRD "hex:"
+	// bytestring with a human-readable comment via the birdBytestring and
+	// birdSecretComment template functions.
 	Secret    string
 	Algorithm string
 	Preferred bool
@@ -256,14 +260,16 @@ protocol static 'NBR-{{.Name}}' {
 `))
 
 var tcpAoTmpl = template.Must(template.New("tcpao").Funcs(template.FuncMap{
-	"deref": func(p *uint8) uint8 { return *p },
+	"deref":             func(p *uint8) uint8 { return *p },
+	"birdBytestring":    birdBytestring,
+	"birdSecretComment": birdSecretComment,
 }).Parse(`authentication ao;
 	keys {
 {{- range .Keys}}
 		key {
 			send id {{.SendId}};
 			recv id {{.RecvId}};
-			secret "{{.Secret}}";
+			secret {{birdBytestring .Secret}}; # {{birdSecretComment .Secret}}
 			algorithm {{.Algorithm}};
 {{- if .Preferred}}
 			preferred;
@@ -387,7 +393,7 @@ func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]strin
 		keys = append(keys, tcpAoKeyData{
 			SendId:    key.SendId,
 			RecvId:    key.RecvId,
-			Secret:    escapeBirdString(password),
+			Secret:    password,
 			Algorithm: key.Algorithm,
 			Preferred: tcpAo.CurrentKeyId != nil && *tcpAo.CurrentKeyId == key.SendId,
 		})
@@ -412,15 +418,64 @@ func md5Config(md5 *meridio2v1alpha1.BgpMd5Spec, password string) string {
 	if md5 == nil || password == "" {
 		return ""
 	}
-	return fmt.Sprintf("password \"%s\";", escapeBirdString(password))
+	// BGP's "password" option takes a quoted string, not a bytestring (BIRD
+	// proto/bgp/config.Y: "PASSWORD text"), so unlike TCP-AO the key cannot be
+	// hex-encoded. BIRD does no unescaping inside quoted strings, so the raw key
+	// bytes are emitted verbatim between the quotes; the caller must have
+	// rejected any key that is not QuotedStringRepresentable, otherwise the
+	// emitted config would be corrupt or unparseable. No human-readable comment
+	// is added (unlike TCP-AO): the quoted key is already human-readable, so a
+	// strconv.Quote rendering would be redundant.
+	return fmt.Sprintf("password \"%s\";", password)
 }
 
-func escapeBirdString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
-	s = strings.ReplaceAll(s, "\r", `\r`)
-	return s
+// MaxKeyLength is the maximum BGP authentication key length in bytes, shared by
+// TCP-AO and MD5. It matches Linux TCP_AO_MAXKEYLEN and TCP_MD5SIG_MAXKEYLEN
+// (both 80, see <linux/tcp.h>) and BIRD's AO_MAX_KEY_LENGTH (lib/socket.h). The
+// kernel measures this in bytes, not characters, so a multi-byte UTF-8 key can
+// exceed the limit with fewer than 80 runes. Keys longer than this are rejected
+// before reaching BIRD: an over-length TCP-AO secret is a BIRD config-load
+// error, and an over-length MD5 key is silently accepted by BIRD but then
+// rejected by the kernel setsockopt(TCP_MD5SIG), breaking the session.
+const MaxKeyLength = 80
+
+// birdBytestring encodes arbitrary key material as a BIRD "hex:" bytestring,
+// for use with the TCP-AO "secret" option.
+//
+// BIRD's configuration lexer performs no escape processing inside double-quoted
+// strings (see BIRD conf/cf-lex.l, QUOTED state): a double quote terminates the
+// string, a backslash is stored literally, and a newline is a hard parse error.
+// A Kubernetes Secret value is an arbitrary byte sequence, so it cannot be
+// represented losslessly as a quoted string. The TCP-AO "secret" option accepts
+// a bytestring (BIRD proto/bgp/config.Y: "SECRET bytestring_or_text"), so
+// encoding the key as "hex:<hex>" makes BIRD see exactly the intended bytes and
+// can never trip the parser. Note this does not apply to the MD5 "password"
+// option, which takes a quoted string only; see md5Config.
+func birdBytestring(s string) string {
+	return "hex:" + hex.EncodeToString([]byte(s))
+}
+
+// QuotedStringRepresentable reports whether s can be carried by a BIRD quoted
+// string and the kernel's TCP MD5 C-string API. BIRD does no unescaping inside
+// quoted strings, so a double quote would terminate the string and a newline
+// (or carriage return) is a parse error; the kernel measures the MD5 key with
+// strlen (sysdep/linux/sysio.h), so an embedded NUL would truncate it. Such
+// bytes cannot be expressed, so a key containing any of them must be rejected
+// rather than silently corrupted. This constraint is specific to MD5; TCP-AO
+// keys are hex-encoded (see birdBytestring) and may contain any byte.
+func QuotedStringRepresentable(s string) bool {
+	return !strings.ContainsAny(s, "\x00\"\n\r")
+}
+
+// birdSecretComment renders key material as a single-line, human-readable BIRD
+// comment body, as an operator aid placed next to a TCP-AO key's "hex:"
+// bytestring (which is otherwise unreadable). It uses strconv.Quote, which
+// escapes quotes, backslashes, newlines and non-printable or non-ASCII bytes,
+// guaranteeing the result stays on one line and therefore cannot prematurely
+// terminate the "#" comment it is embedded in. The MD5 path does not use this:
+// its quoted key is already human-readable.
+func birdSecretComment(s string) string {
+	return strconv.Quote(s)
 }
 
 func isIPv6(ipOrCIDR string) bool {

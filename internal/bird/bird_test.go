@@ -18,6 +18,7 @@ package bird
 
 import (
 	"context"
+	"encoding/hex"
 	"os"
 	"strings"
 	"testing"
@@ -773,7 +774,7 @@ func TestTcpAoConfig(t *testing.T) {
 		if !strings.Contains(got, "recv id 10;") {
 			t.Error("missing recv id")
 		}
-		if !strings.Contains(got, `secret "secret123";`) {
+		if !strings.Contains(got, `secret hex:736563726574313233; # "secret123"`) {
 			t.Error("missing secret")
 		}
 		if !strings.Contains(got, "algorithm hmac sha256;") {
@@ -878,21 +879,119 @@ func TestMd5Config(t *testing.T) {
 		}
 	})
 
-	t.Run("renders password line", func(t *testing.T) {
+	t.Run("renders quoted password line", func(t *testing.T) {
+		// BGP's "password" option takes a quoted string (not a bytestring), so
+		// the raw key is emitted verbatim between quotes. No human-readable
+		// comment is added: the quoted key is already readable.
 		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
 		got := md5Config(spec, "s3cr3t")
-		if got != `password "s3cr3t";` {
-			t.Errorf("unexpected rendering: %q", got)
+		if want := `password "s3cr3t";`; got != want {
+			t.Errorf("unexpected rendering:\n got %q\nwant %q", got, want)
 		}
 	})
 
-	t.Run("escapes special characters", func(t *testing.T) {
+	t.Run("representable special characters are emitted verbatim", func(t *testing.T) {
+		// A backslash is representable (BIRD stores it literally, no unescaping)
+		// and must be emitted as-is, not doubled.
 		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
-		got := md5Config(spec, `a"b\c`)
-		if got != `password "a\"b\\c";` {
-			t.Errorf("unexpected escaping: %q", got)
+		got := md5Config(spec, `a\b`)
+		if want := `password "a\b";`; got != want {
+			t.Errorf("unexpected rendering:\n got %q\nwant %q", got, want)
+		}
+		if strings.ContainsAny(got, "\n\r") {
+			t.Errorf("rendered line must be single-line: %q", got)
 		}
 	})
+}
+
+// TestBirdBytestring verifies that key material is encoded as a BIRD "hex:"
+// bytestring that reproduces the exact input bytes, including bytes that cannot
+// appear in a BIRD quoted string.
+func TestBirdBytestring(t *testing.T) {
+	cases := map[string]string{
+		"":             "hex:",
+		"abc":          "hex:616263",
+		"a\"b\\c\n":    "hex:6122625c630a",
+		"\x00\xff\x80": "hex:00ff80", // NUL and non-UTF-8 bytes
+	}
+	for in, want := range cases {
+		if got := birdBytestring(in); got != want {
+			t.Errorf("birdBytestring(%q) = %q, want %q", in, got, want)
+		}
+		// Round-trip: the hex payload must decode back to the original bytes.
+		raw, err := hex.DecodeString(strings.TrimPrefix(want, "hex:"))
+		if err != nil {
+			t.Fatalf("decode %q: %v", want, err)
+		}
+		if string(raw) != in {
+			t.Errorf("round-trip mismatch: decoded %q, want %q", string(raw), in)
+		}
+	}
+}
+
+// TestBirdSecretComment verifies the human-readable comment body is single-line
+// (so it cannot terminate a "#" comment early) and readable.
+func TestBirdSecretComment(t *testing.T) {
+	cases := map[string]string{
+		"mypassword": `"mypassword"`,
+		"a\"b\\c":    `"a\"b\\c"`,
+		"line1\nl2":  `"line1\nl2"`,
+	}
+	for in, want := range cases {
+		got := birdSecretComment(in)
+		if got != want {
+			t.Errorf("birdSecretComment(%q) = %q, want %q", in, got, want)
+		}
+		if strings.ContainsAny(got, "\n\r") {
+			t.Errorf("comment for %q contains a line break: %q", in, got)
+		}
+	}
+}
+
+// TestQuotedStringRepresentable verifies the MD5 key representability gate:
+// bytes a BIRD quoted string or the kernel C-string API cannot carry (NUL,
+// double quote, newline, carriage return) are rejected; everything else,
+// including a backslash and non-ASCII bytes, is accepted.
+func TestQuotedStringRepresentable(t *testing.T) {
+	ok := []string{"plainkey", `with\backslash`, "sp ace", "\xc3\xa9", "tab\tok"}
+	for _, s := range ok {
+		if !QuotedStringRepresentable(s) {
+			t.Errorf("QuotedStringRepresentable(%q) = false, want true", s)
+		}
+	}
+	bad := []string{"has\x00nul", `has"quote`, "has\nnewline", "has\rcr"}
+	for _, s := range bad {
+		if QuotedStringRepresentable(s) {
+			t.Errorf("QuotedStringRepresentable(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestTcpAoConfigSpecialBytes verifies a TCP-AO secret with bytes that would
+// corrupt a quoted string is rendered as a lossless hex bytestring and the
+// secret is never emitted as a quoted string.
+func TestTcpAoConfigSpecialBytes(t *testing.T) {
+	spec := &meridio2v1alpha1.BgpTcpAoSpec{
+		Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+			{SendId: 1, RecvId: 2, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
+		},
+	}
+	got := tcpAoConfig(spec, map[uint8]string{1: "a\"b\\c\n"})
+	if !strings.Contains(got, `secret hex:6122625c630a; # "a\"b\\c\n"`) {
+		t.Errorf("missing lossless hex secret with readable comment:\n%s", got)
+	}
+	// Isolate the secret line and ensure the key material before the comment
+	// is a bytestring, not a quoted string.
+	for line := range strings.SplitSeq(got, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "secret ") {
+			continue
+		}
+		directive, _, _ := strings.Cut(trimmed, "#")
+		if strings.Contains(directive, `"`) {
+			t.Errorf("secret must be a hex bytestring, not quoted: %q", directive)
+		}
+	}
 }
 
 func TestGenerateConfigWithTcpAo(t *testing.T) {
@@ -932,7 +1031,7 @@ func TestGenerateConfigWithTcpAo(t *testing.T) {
 	if !strings.Contains(conf, "authentication ao;") {
 		t.Error("missing 'authentication ao;' in generated config")
 	}
-	if !strings.Contains(conf, `secret "mypassword";`) {
+	if !strings.Contains(conf, `secret hex:6d7970617373776f7264; # "mypassword"`) {
 		t.Error("missing secret in generated config")
 	}
 	if !strings.Contains(conf, "send id 5;") {
@@ -948,7 +1047,7 @@ func TestGenerateConfigWithTcpAo(t *testing.T) {
 
 // TestGenerateConfigWithMd5 covers the deprecated BGP MD5 (RFC2385) rendering
 // path end-to-end: a GatewayRouter using MD5 produces a single password line in
-// its BGP protocol block, with the resolved key escaped.
+// its BGP protocol block, with the resolved key emitted as a quoted string.
 //
 //nolint:staticcheck // SA1019: this test exercises the deprecated MD5 mechanism.
 func TestGenerateConfigWithMd5(t *testing.T) {
