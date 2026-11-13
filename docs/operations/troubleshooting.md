@@ -147,7 +147,11 @@ BIRD logs are not sent to stdout — they are written to a file inside the route
 ```bash
 kubectl exec -n <ns> <sllbr-pod> -c router -- cat /var/log/bird/bird.log
 ```
-The log file path and size limit are configurable via `MERIDIO_BIRD_LOG_FILE` and `MERIDIO_BIRD_LOG_FILE_SIZE`.
+BIRD logging is configured through a single composite spec via the `--bird-log` flag or the `MERIDIO_BIRD_LOG` environment variable. The spec encodes the sink type, path, optional rotation size and backup path, and log classes. The default deployment template sets a rotating file sink:
+```
+MERIDIO_BIRD_LOG=file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all
+```
+This is `file:<path>:<size-bytes>:<backup-path>:<classes>`. Other sink forms are supported (`stderr:`, `fixed:`, `syslog:`, `udp:`); run the router binary with `--help` for the full grammar.
 
 ## Enter Containers
 
@@ -604,14 +608,14 @@ Two condition types are used:
 - `Available=True`, reason `EndpointsAvailable` — LoadBalancerEndpointSlices have been reconciled with at least one endpoint.
 - `Available=False`, reason `NoEndpoints` — no endpoints are available. The `message` field explains why:
   - `"No Pods match selector"` — no Pods match the DG's label selector.
-  - `"No Gateways reference this DistributionGroup"` — no L34Route links this DG to a Gateway (check `parentRefs` or L34Route `backendRefs`).
-  - `"No accepted Gateways found"` — referenced Gateways don't have `Accepted=True` (Gateway may not exist or GatewayConfiguration is invalid).
-  - `"No network context available"` — the GatewayConfiguration has no `internalSubnets` configured.
+  - `"No Gateways reference this DistributionGroup (check parentRefs or L34Route backendRefs)"` — no L34Route links this DG to a Gateway.
+  - `"No accepted Gateways found (Gateways may not exist or lack Accepted=True status condition)"` — referenced Gateways don't have `Accepted=True` (Gateway may not exist or GatewayConfiguration is invalid).
+  - `"No network context available (check GatewayConfiguration internalSubnets)"` — the GatewayConfiguration has no `internalSubnets` configured.
   - `"No endpoints available"` — Pods exist but none have an IP matching the network subnets.
 - `Available=False`, reason `MultipleGateways` — the DG is referenced by more than one accepted Gateway. Reconciliation is skipped until the conflict is resolved.
 
 **`CapacityExceeded`** (Maglev only) — present only when the number of matching Pods exceeds `maxEndpoints`:
-- `CapacityExceeded=True`, reason `MaglevCapacityExceeded` — some Pods were excluded from LoadBalancerEndpointSlices because the Maglev table is full. The message lists affected networks with counts (e.g., `"10.0.0.0/24: 5/37 pods excluded (32 capacity)"`).
+- `CapacityExceeded=True`, reason `MaglevCapacityExceeded` — some Pods were excluded from LoadBalancerEndpointSlices because the Maglev table is full. The message reports the aggregate excluded/total counts and the capacity (e.g., `"5/37 pods excluded (32 capacity)"`).
 - Absent — capacity is sufficient; all matching Pods have Maglev IDs assigned.
 
 ### Check LoadBalancerEndpointSlices

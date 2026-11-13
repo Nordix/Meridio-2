@@ -89,9 +89,13 @@ BIRD runs as a child process of the router binary, started via `exec.CommandCont
 - Mutex protects concurrent access to config writes and the `running` flag
 
 **Logging**:
-- BIRD logs to a configurable file path via `--bird-log-file` flag (default: `/var/log/bird/bird.log`)
-- The config template conditionally emits `log "<path>" all;` when a log file is set
-- `log stderr all;` is always present as baseline
+- BIRD logging is driven by the `--bird-log` flag (env `MERIDIO_BIRD_LOG`), which
+  accepts one or more composite log specs (`stderr:`, `file:`, `fixed:`, `syslog:`,
+  `udp:`). The LB deployment template sets a rotating file sink:
+  `file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all`.
+- The config template emits one `log ...;` line per configured spec (via the
+  `LogParams` list). There is no hardcoded baseline — if no spec is configured, no
+  `log` line is emitted.
 - The `Bird` struct takes a `bird.Config` struct: `bird.New(bird.Config{...})`
 
 **Interface**: `BirdInterface` allows mocking in tests (config generation, monitoring) without filesystem or process dependencies.
@@ -220,7 +224,7 @@ No GatewayRouter configuration is required to enable this — acceptance of non-
 
 ### BGP Authentication (TCP-AO)
 
-The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support.
+The router controller supports TCP Authentication Option ([RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925)) for securing BGP sessions. TCP-AO replaces the deprecated TCP MD5 option with stronger cryptographic algorithms and key rotation support. For the operational procedure of rotating keys without dropping the session, see [TCP-AO key rotation](../operations/tcp-ao-key-rotation.md).
 
 **Configuration**: Authentication is configured per GatewayRouter via `spec.bgp.authentication`, a discriminated union. The required `type` field selects the mechanism and names the matching per-mechanism field: `type: TCPAO` selects TCP-AO and requires the `tcpAo` field below it. This shape keeps the API open for adding further mechanisms as a new `type` enum value plus its own per-mechanism field, without breaking existing objects or requiring a new API version. The deprecated MD5 (RFC2385) mechanism, documented below, is the second defined member; prefer TCP-AO.
 
@@ -360,11 +364,16 @@ All flags support environment variable overrides following the precedence: flags
 | `--health-probe-bind-address` | `MERIDIO_PROBE_ADDR` | `:8082` | Health/readiness probe bind address |
 | `--metrics-bind-address` | `MERIDIO_METRICS_ADDR` | `0` | Metrics endpoint bind address (0 = disabled) |
 | `--metrics-secure` | `MERIDIO_METRICS_SECURE` | `true` | Serve metrics over HTTPS |
+| `--metrics-cert-path` | `MERIDIO_METRICS_CERT_PATH` | _(empty)_ | Directory that contains the metrics server certificate |
+| `--metrics-cert-name` | `MERIDIO_METRICS_CERT_NAME` | `tls.crt` | Filename of the metrics server certificate |
+| `--metrics-cert-key` | `MERIDIO_METRICS_CERT_KEY` | `tls.key` | Filename of the metrics server private key |
+| `--metrics-prefix` | `MERIDIO_METRICS_PREFIX` | `meridio_2` | Prefix for custom metric names. Lowercase letter first, then lowercase letters/digits/underscores; max 10 chars. |
+| `--metrics-collect-timeout` | `MERIDIO_METRICS_COLLECT_TIMEOUT` | `5s` | Max time a single scrape spends querying BIRD before reporting the collection as failed. Keep below Prometheus's `scrape_timeout` (default 10s). |
 | `--enable-http2` | `MERIDIO_ENABLE_HTTP2` | `false` | Enable HTTP/2 for metrics server |
 
 ## Known Limitations and Future Work
 
-### BIRD Process Lifecycle (MVP gaps)
+### BIRD Process Lifecycle (known gaps)
 
 - **No error propagation**: ~~`Bird.Run()` goroutine logs errors but doesn't signal the main process.~~ Resolved: the router controller uses an errgroup to run BIRD and the monitor goroutine. If either fails, the errgroup cancels the context and the router process exits.
 
@@ -391,14 +400,25 @@ The monitoring goroutine sets per-IP-family Pod readiness gate conditions based 
   2. Per-IP-family gate — `ipv4-connectivity=True` required for IPv4 next-hops, `ipv6-connectivity=True` for IPv6
   If a gate is not declared for a specific IP family (e.g., IPv4-only Gateway), the Pod is included for that family (gate not applicable).
 
-### Metrics and Route Monitoring (post-MVP)
+### Metrics and Route Monitoring
 
-Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
+The router container exposes Prometheus metrics via the controller-runtime metrics
+server when `--metrics-bind-address` is set (off by default). Names are prefixed with
+`--metrics-prefix` (default `meridio_2`) and carry a `gateway` label. The
+`RouterCollector` reads BIRD at scrape time and exposes:
+
+- `<prefix>_bgp_session_up` (labels: `gateway`, `gateway_router`) — BGP session state
+- `<prefix>_bgp_session_uptime_seconds` (labels: `gateway`, `gateway_router`) — session uptime
+- `<prefix>_bfd_session_up` (labels: `gateway`, `neighbor`, `interface`) — BFD session state
+- `<prefix>_router_route_config_errors_total` (labels: `gateway`, `reason` = `route`/`rule`) —
+  push-style counter of policy rule/route configuration failures
+
+See [router metrics](../development/metrics/router.md) for how to enable and scrape them.
+
+Some Meridio v1 observability remains unimplemented here:
 
 - **Route count monitoring**: Periodic `birdc show route count` to track total routes in BIRD tables. Meridio v1 logs route count changes and rate-limits the output (see `stats.go`).
-- **GatewayRouter metrics**: Per-GatewayRouter up/down state exposed via OpenTelemetry. Includes per-IP-family connectivity status. (In Meridio v1 these were called "gateway metrics" — the resource was renamed to GatewayRouter in Meridio-2 to avoid ambiguity with Gateway API's Gateway.)
 - **Memory monitoring**: `birdc show memory` for BIRD memory usage tracking.
-- These should be exposed as Prometheus metrics via the controller-runtime metrics server (already wired but unused).
 
 ### Feature Parity with Meridio v1
 
@@ -415,7 +435,7 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 | BIRD log monitoring | ✅ | ⚠️ | File-based logging added; no stderr parsing or structured re-emission |
 | Connectivity → health signal | ✅ | ❌ | Meridio-1 signals NSP; this controller only logs |
 | Error propagation | ✅ | ✅ | errgroup cancels context on BIRD/monitor failure |
-| Metrics | ✅ | ❌ | Meridio-1 has gateway metrics |
+| Metrics | ✅ | ⚠️ | BGP/BFD session + route-config-error Prometheus metrics implemented; route-count and memory monitoring still missing |
 | Config generation method | `fmt.Sprintf` | `text/template` | Migrated for maintainability and auth template composition |
 
 ## Testing
