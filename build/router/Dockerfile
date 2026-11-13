@@ -45,7 +45,7 @@ RUN case "${TARGETARCH}" in \
     && make install \
     && strip /usr/local/sbin/bird /usr/local/sbin/birdc
 
-FROM golang:1.26 AS builder
+FROM golang:1.27 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
