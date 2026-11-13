@@ -22,6 +22,7 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -44,6 +45,7 @@ func (r *DistributionGroupReconciler) findDGsReferencingGateways(ctx context.Con
 		listOpts = append(listOpts, client.InNamespace(r.Namespace))
 	}
 	if err := r.List(ctx, &routeList, listOpts...); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list L34Routes while resolving Gateways to DistributionGroups, enqueuing nothing", "error", err)
 		return nil
 	}
 
@@ -94,6 +96,7 @@ func (r *DistributionGroupReconciler) findDGsReferencingGateways(ctx context.Con
 		listOpts = append(listOpts, client.InNamespace(r.Namespace))
 	}
 	if err := r.List(ctx, &dgList, listOpts...); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list DistributionGroups while resolving Gateways to DistributionGroups, enqueuing nothing", "error", err)
 		return nil
 	}
 
