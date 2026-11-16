@@ -125,7 +125,7 @@ type gatewayRef struct {
 func NewDistributionGroupCollector(
 	c client.Client, cacheWaiter metricsutil.CacheSyncWaiter, collectTimeout time.Duration, namespace, controllerName, prefix string,
 ) *DistributionGroupCollector {
-	gatewayLabels := []string{"gateway", "gateway_namespace", "dg", "namespace"}
+	gatewayLabels := []string{"gateway", "gateway_namespace", "dg", labelNamespace}
 	return &DistributionGroupCollector{
 		client:         c,
 		syncGate:       metricsutil.NewSyncGate(cacheWaiter),
@@ -149,7 +149,7 @@ func NewDistributionGroupCollector(
 			prefix+"_distributiongroup_available",
 			"Whether the DistributionGroup's Available status condition is currently True, as 0 or 1. "+
 				"DG-wide (no Gateway dimension).",
-			[]string{"dg", "namespace"}, nil,
+			[]string{"dg", labelNamespace}, nil,
 		),
 	}
 }

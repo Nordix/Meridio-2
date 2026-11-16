@@ -53,6 +53,9 @@ import (
 	"github.com/nordix/meridio-2/internal/bird"
 )
 
+// labelGateway is the Prometheus label name carried by every router metric.
+const labelGateway = "gateway"
+
 // protocolNamePrefix is the prefix the router's BIRD config gives every GatewayRouter-derived
 // protocol, so stripping it recovers the GatewayRouter name.
 //
@@ -129,7 +132,7 @@ type RouterCollector struct {
 func NewRouterCollector(
 	client *bird.Client, collectTimeout time.Duration, gatewayName, prefix string,
 ) *RouterCollector {
-	bgpLabels := []string{"gateway", "gateway_router"}
+	bgpLabels := []string{labelGateway, "gateway_router"}
 	return &RouterCollector{
 		client:         client,
 		collectTimeout: collectTimeout,
@@ -160,7 +163,7 @@ func NewRouterCollector(
 			prefix+"_bfd_session_up",
 			"Whether the BFD session to the given neighbor on the given interface is up (1) or not (0), "+
 				"as reported by BIRD.",
-			[]string{"gateway", "neighbor", "interface"}, nil,
+			[]string{labelGateway, "neighbor", "interface"}, nil,
 		),
 		collectSuccess: prometheus.NewDesc(
 			prefix+"_router_metrics_collect_success",
@@ -168,7 +171,7 @@ func NewRouterCollector(
 				"Reports only the health of serving these metrics: it is independent of BGP/BFD session "+
 				"state and of the router's own BIRD monitoring, so 0 means the data could not be read, "+
 				"not that connectivity is down.",
-			[]string{"gateway", "source"}, nil,
+			[]string{labelGateway, "source"}, nil,
 		),
 	}
 }

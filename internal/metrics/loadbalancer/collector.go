@@ -80,6 +80,12 @@ import (
 	"github.com/nordix/meridio-2/internal/nfqlb"
 )
 
+// Prometheus label names shared by the LB collectors and error counters.
+const (
+	labelGateway = "gateway"
+	labelReason  = "reason"
+)
+
 // StatsReader is the subset of the nfqlb load balancer the collector reads at scrape time.
 // *nfqlb.NFQueueLoadBalancer satisfies it; a fake is used in tests.
 type StatsReader interface {
@@ -120,13 +126,13 @@ func NewCollector(stats StatsReader, gatewayName, prefix string, collectTimeout 
 			prefix+"_lb_flow_matches_total",
 			"Number of packets matched per L34Route flow by nfqlb (from flow-list matches_count). "+
 				"Resets if the flow is re-created; consume via rate()/increase().",
-			[]string{"gateway", "l34route"}, nil,
+			[]string{labelGateway, "l34route"}, nil,
 		),
 		activeTargetsDesc: prometheus.NewDesc(
 			prefix+"_lb_active_targets",
 			"Number of backends currently receiving traffic for the DistributionGroup "+
 				"(active Maglev targets, from nfqlb show).",
-			[]string{"gateway", "dg"}, nil,
+			[]string{labelGateway, "dg"}, nil,
 		),
 	}
 }
