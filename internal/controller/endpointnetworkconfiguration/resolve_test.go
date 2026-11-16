@@ -583,7 +583,7 @@ func TestResolveGatewayConnections_DeterministicOrdering(t *testing.T) {
 	ipv6VIPs := []string{"2001:db8::4", "2001:db8::2", "2001:db8::3", "2001:db8::1"}
 
 	buildObjects := func(order []int) []client.Object {
-		var objs []client.Object
+		objs := make([]client.Object, 0, 1+3*len(order))
 		objs = append(objs, pod)
 		for _, i := range order {
 			gw := acceptedGateway(names[i], testControllerName, ipv4VIPs[i], ipv6VIPs[i])
