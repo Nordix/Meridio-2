@@ -56,10 +56,8 @@ func (r *GatewayReconciler) mapL34RouteToGateway(ctx context.Context, obj client
 		}
 
 		requests = append(requests, ctrl.Request{
-			NamespacedName: client.ObjectKey{
-				Namespace: ns,
-				Name:      string(parentRef.Name),
-			},
+			Namespace: ns,
+			Name:      string(parentRef.Name),
 		})
 	}
 	return requests

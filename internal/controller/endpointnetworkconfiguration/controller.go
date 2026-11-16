@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -140,10 +139,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // reconcileENC creates or updates the EndpointNetworkConfiguration for a Pod.
 func (r *Reconciler) reconcileENC(ctx context.Context, pod *corev1.Pod, connections []meridio2v1alpha1.GatewayConnection) error {
 	desired := &meridio2v1alpha1.EndpointNetworkConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      pod.Name,
-			Namespace: pod.Namespace,
-		},
+		Name:      pod.Name,
+		Namespace: pod.Namespace,
 		Spec: meridio2v1alpha1.EndpointNetworkConfigurationSpec{
 			Gateways: connections,
 		},

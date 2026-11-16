@@ -22,7 +22,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,7 +34,7 @@ import (
 // object before creating it.
 func baseL34Route(name string) *meridio2v1alpha1.L34Route {
 	return &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Name: name, Namespace: "default",
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			ParentRefs:       []gatewayapiv1.ParentReference{{Name: "test-gateway"}},
 			DestinationCIDRs: []string{"20.0.0.1/32"},

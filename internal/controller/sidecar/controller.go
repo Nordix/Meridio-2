@@ -118,8 +118,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 			return ctrl.Result{}, statusErr
 		}
-		var infErr *InterfaceNotFoundError
-		if errors.As(err, &infErr) {
+		if _, ok := errors.AsType[*InterfaceNotFoundError](err); ok {
 			return ctrl.Result{}, err // requeue; interface may appear
 		}
 		return ctrl.Result{}, nil // don't requeue; wait for ENC fix

@@ -26,7 +26,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -98,14 +97,14 @@ func TestIntegration_ReadinessGatingTriggersReconcile(t *testing.T) {
 	require.NoError(t, err)
 
 	gw := &gatewayapiv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
-		Spec:       gatewayapiv1.GatewaySpec{GatewayClassName: "test-class", Listeners: []gatewayapiv1.Listener{{Name: "tcp", Port: 80, Protocol: gatewayapiv1.TCPProtocolType}}},
+		Name: "test-gw", Namespace: "default",
+		Spec: gatewayapiv1.GatewaySpec{GatewayClassName: "test-class", Listeners: []gatewayapiv1.Listener{{Name: "tcp", Port: 80, Protocol: gatewayapiv1.TCPProtocolType}}},
 	}
 	require.NoError(t, k8sClient.Create(ctx, gw))
 
 	// Set VIP on gateway status
 	gw.Status.Addresses = []gatewayapiv1.GatewayStatusAddress{
-		{Type: ptr(gatewayapiv1.IPAddressType), Value: "10.0.0.1"},
+		{Type: new(gatewayapiv1.IPAddressType), Value: "10.0.0.1"},
 	}
 	require.NoError(t, k8sClient.Status().Update(ctx, gw))
 

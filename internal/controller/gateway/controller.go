@@ -151,8 +151,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		// Set Programmed=False only for permanent errors (name collision, create failure)
-		var permErr *permanentDeploymentError
-		if errors.As(err, &permErr) {
+		if _, ok := errors.AsType[*permanentDeploymentError](err); ok {
 			if statusErr := r.updateProgrammedStatus(ctx, &gw, metav1.ConditionFalse,
 				string(gatewayv1.GatewayReasonInvalid), err.Error()); statusErr != nil {
 				if apierrors.IsConflict(statusErr) {

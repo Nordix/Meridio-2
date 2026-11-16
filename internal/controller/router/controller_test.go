@@ -28,7 +28,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -99,10 +98,8 @@ func newScheme() *runtime.Scheme {
 
 func newGateway(name, namespace string, addresses ...string) *gatewayapiv1.Gateway {
 	gw := &gatewayapiv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
+		Name:      name,
+		Namespace: namespace,
 		Spec: gatewayapiv1.GatewaySpec{
 			GatewayClassName: "test-class",
 		},
@@ -112,7 +109,7 @@ func newGateway(name, namespace string, addresses ...string) *gatewayapiv1.Gatew
 		gw.Status.Addresses = make([]gatewayapiv1.GatewayStatusAddress, len(addresses))
 		for i, addr := range addresses {
 			gw.Status.Addresses[i] = gatewayapiv1.GatewayStatusAddress{
-				Type:  ptr(gatewayapiv1.IPAddressType),
+				Type:  new(gatewayapiv1.IPAddressType),
 				Value: addr,
 			}
 		}
@@ -123,10 +120,8 @@ func newGateway(name, namespace string, addresses ...string) *gatewayapiv1.Gatew
 
 func newGatewayRouter(name string, gatewayRef gatewayapiv1.ParentReference) *meridio2v1alpha1.GatewayRouter {
 	return &meridio2v1alpha1.GatewayRouter{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNamespace,
-		},
+		Name:      name,
+		Namespace: testNamespace,
 		Spec: meridio2v1alpha1.GatewayRouterSpec{
 			GatewayRef: gatewayRef,
 		},
@@ -150,17 +145,12 @@ func setupReconciler(objects ...client.Object) (*RouterReconciler, client.Client
 	}, fakeClient
 }
 
-//go:fix inline
-func ptr[T any](v T) *T {
-	return new(v)
-}
-
 func TestReconciler_Reconcile(t *testing.T) {
 	t.Run("Reconcile_SkipsNonMatchingGatewayName", func(t *testing.T) {
 		gw := newGateway("other-gateway", testNamespace)
 		reconciler, _ := setupReconciler(gw)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: "other-gateway", Namespace: testNamespace}}
+		request := reconcile.Request{Name: "other-gateway", Namespace: testNamespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -171,7 +161,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 		gw := newGateway(testGatewayName, "other-namespace")
 		reconciler, _ := setupReconciler(gw)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: "other-namespace"}}
+		request := reconcile.Request{Name: testGatewayName, Namespace: "other-namespace"}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -181,7 +171,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 	t.Run("Reconcile_HandlesGatewayNotFound", func(t *testing.T) {
 		reconciler, _ := setupReconciler()
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		request := reconcile.Request{Name: testGatewayName, Namespace: testNamespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -193,7 +183,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 		reconciler, fakeClient := setupReconciler(gw)
 		mock := reconciler.Bird.(*mockingBird)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		request := reconcile.Request{Name: testGatewayName, Namespace: testNamespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -210,7 +200,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 		mock := reconciler.Bird.(*mockingBird)
 		mock.setConfigureErr(fmt.Errorf("birdc failed"))
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		request := reconcile.Request{Name: testGatewayName, Namespace: testNamespace}
 		_, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.Error(t, err)
@@ -237,7 +227,7 @@ func TestGetVIPs(t *testing.T) {
 		gw := newGateway(testGatewayName, testNamespace, "20.0.0.1")
 		gw.Status.Addresses = append(gw.Status.Addresses,
 			gatewayapiv1.GatewayStatusAddress{
-				Type:  ptr(gatewayapiv1.HostnameAddressType),
+				Type:  new(gatewayapiv1.HostnameAddressType),
 				Value: "example.com",
 			},
 			gatewayapiv1.GatewayStatusAddress{
@@ -294,7 +284,7 @@ func TestGetGatewayRouters(t *testing.T) {
 		gw := newGateway(testGatewayName, testNamespace)
 		gwRef := gatewayapiv1.ParentReference{
 			Name:      gatewayapiv1.ObjectName(testGatewayName),
-			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+			Namespace: new(gatewayapiv1.Namespace(testNamespace)),
 		}
 		router1 := newGatewayRouter("router1", gwRef)
 		router2 := newGatewayRouter("router2", gwRef)
@@ -312,11 +302,11 @@ func TestGetGatewayRouters(t *testing.T) {
 		gw := newGateway(testGatewayName, testNamespace)
 		matchingRef := gatewayapiv1.ParentReference{
 			Name:      gatewayapiv1.ObjectName(testGatewayName),
-			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+			Namespace: new(gatewayapiv1.Namespace(testNamespace)),
 		}
 		nonMatchingRef := gatewayapiv1.ParentReference{
 			Name:      "other-gateway",
-			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+			Namespace: new(gatewayapiv1.Namespace(testNamespace)),
 		}
 		router1 := newGatewayRouter("router1", matchingRef)
 		router2 := newGatewayRouter("router2", nonMatchingRef)
@@ -336,7 +326,7 @@ func TestGatewayRouterEnqueue(t *testing.T) {
 	t.Run("MatchingRouter_Enqueues", func(t *testing.T) {
 		gwRef := gatewayapiv1.ParentReference{
 			Name:      gatewayapiv1.ObjectName(testGatewayName),
-			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+			Namespace: new(gatewayapiv1.Namespace(testNamespace)),
 		}
 		router := newGatewayRouter("router1", gwRef)
 		reconciler, _ := setupReconciler()
@@ -351,7 +341,7 @@ func TestGatewayRouterEnqueue(t *testing.T) {
 	t.Run("DifferentName_ReturnsNil", func(t *testing.T) {
 		gwRef := gatewayapiv1.ParentReference{
 			Name:      "other-gateway",
-			Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+			Namespace: new(gatewayapiv1.Namespace(testNamespace)),
 		}
 		router := newGatewayRouter("router1", gwRef)
 		reconciler, _ := setupReconciler()
@@ -364,7 +354,7 @@ func TestGatewayRouterEnqueue(t *testing.T) {
 	t.Run("DifferentNamespace_ReturnsNil", func(t *testing.T) {
 		gwRef := gatewayapiv1.ParentReference{
 			Name:      gatewayapiv1.ObjectName(testGatewayName),
-			Namespace: ptr(gatewayapiv1.Namespace("other-namespace")),
+			Namespace: new(gatewayapiv1.Namespace("other-namespace")),
 		}
 		router := newGatewayRouter("router1", gwRef)
 		reconciler, _ := setupReconciler()
@@ -408,7 +398,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		reconciler.Readiness = readiness.NewManager(dir)
 		mock := reconciler.Bird.(*mockingBird)
 
-		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		req := reconcile.Request{Name: testGatewayName, Namespace: testNamespace}
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -425,7 +415,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		reconciler.Readiness = readiness.NewManager(dir)
 		mock := reconciler.Bird.(*mockingBird)
 
-		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		req := reconcile.Request{Name: testGatewayName, Namespace: testNamespace}
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -438,7 +428,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		reconciler.Readiness = readiness.NewManager("") // disabled
 		mock := reconciler.Bird.(*mockingBird)
 
-		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		req := reconcile.Request{Name: testGatewayName, Namespace: testNamespace}
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -451,7 +441,7 @@ func TestReconciler_ReadinessGating(t *testing.T) {
 		reconciler.Readiness = readiness.NewManager("")
 		mock := reconciler.Bird.(*mockingBird)
 
-		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: testGatewayName, Namespace: testNamespace}}
+		req := reconcile.Request{Name: testGatewayName, Namespace: testNamespace}
 		_, err := reconciler.Reconcile(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -557,7 +547,7 @@ func TestGetSecretValue(t *testing.T) {
 func TestResolvePasswords(t *testing.T) {
 	gwRef := gatewayapiv1.ParentReference{
 		Name:      gatewayapiv1.ObjectName(testGatewayName),
-		Namespace: ptr(gatewayapiv1.Namespace(testNamespace)),
+		Namespace: new(gatewayapiv1.Namespace(testNamespace)),
 	}
 
 	t.Run("SecretNotFound_SkipsRouter", func(t *testing.T) {
@@ -772,11 +762,9 @@ func TestResolvePasswords(t *testing.T) {
 
 func newSecret(name string, data map[string][]byte) *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNamespace,
-		},
-		Data: data,
+		Name:      name,
+		Namespace: testNamespace,
+		Data:      data,
 	}
 }
 

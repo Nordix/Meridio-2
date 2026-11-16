@@ -443,10 +443,8 @@ func (c *Controller) endpointSliceEnqueue(ctx context.Context, obj client.Object
 			ownerRef.Kind == kindDistributionGroup &&
 			ownerRef.Controller != nil && *ownerRef.Controller {
 			return []ctrl.Request{{
-				NamespacedName: client.ObjectKey{
-					Name:      ownerRef.Name,
-					Namespace: obj.GetNamespace(),
-				},
+				Name:      ownerRef.Name,
+				Namespace: obj.GetNamespace(),
 			}}
 		}
 	}
