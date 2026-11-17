@@ -23,7 +23,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -198,7 +197,7 @@ func (r *RouterReconciler) gatewayRouterEnqueue(_ context.Context, obj client.Ob
 		return nil
 	}
 
-	return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: r.GatewayName, Namespace: r.GatewayNamespace}}}
+	return []ctrl.Request{{Name: r.GatewayName, Namespace: r.GatewayNamespace}}
 }
 
 func (r *RouterReconciler) secretEnqueue(ctx context.Context, obj client.Object) []ctrl.Request {
@@ -222,7 +221,7 @@ func (r *RouterReconciler) secretEnqueue(ctx context.Context, obj client.Object)
 			ns = string(*ref.Namespace)
 		}
 		if string(ref.Name) == r.GatewayName && ns == r.GatewayNamespace {
-			return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: r.GatewayName, Namespace: r.GatewayNamespace}}}
+			return []ctrl.Request{{Name: r.GatewayName, Namespace: r.GatewayNamespace}}
 		}
 	}
 	return nil
@@ -265,10 +264,8 @@ func (r *RouterReconciler) watchLBReadinessDir(ctx context.Context, ch chan<- ev
 		log.Info("LB readiness state changed", "ready", r.Readiness.IsReady())
 		select {
 		case ch <- event.GenericEvent{Object: &gatewayapiv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      r.GatewayName,
-				Namespace: r.GatewayNamespace,
-			},
+			Name:      r.GatewayName,
+			Namespace: r.GatewayNamespace,
 		}}:
 		default:
 		}

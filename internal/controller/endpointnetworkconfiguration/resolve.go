@@ -342,8 +342,8 @@ func extractVIPs(vips []string) (ipv4, ipv6 []string) {
 	for _, addr := range vips {
 		// Strip the CIDR prefix length if present (e.g. "10.0.0.1/32" → "10.0.0.1")
 		host := addr
-		if i := strings.IndexByte(addr, '/'); i >= 0 {
-			host = addr[:i]
+		if before, _, ok := strings.Cut(addr, "/"); ok {
+			host = before
 		}
 		ip := net.ParseIP(host)
 		if ip == nil {

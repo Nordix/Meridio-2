@@ -22,7 +22,6 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -33,14 +32,13 @@ func TestMapL34RouteToDistributionGroup_SameNamespace(t *testing.T) {
 	dgKind := kindDistributionGroup
 
 	route := &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: "route-1", Namespace: "default"},
+		Name: "route-1", Namespace: "default",
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			BackendRefs: []gatewayv1.BackendRef{
-				{BackendObjectReference: gatewayv1.BackendObjectReference{
+				{
 					Group: (*gatewayv1.Group)(&dgGroup),
 					Kind:  (*gatewayv1.Kind)(&dgKind),
-					Name:  "dg-1",
-				}},
+					Name:  "dg-1"},
 			},
 		},
 	}
@@ -60,15 +58,14 @@ func TestMapL34RouteToDistributionGroup_CrossNamespaceRejected(t *testing.T) {
 
 	// backendRef explicitly points outside the controller's watched namespace.
 	route := &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: "route-1", Namespace: "default"},
+		Name: "route-1", Namespace: "default",
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			BackendRefs: []gatewayv1.BackendRef{
-				{BackendObjectReference: gatewayv1.BackendObjectReference{
+				{
 					Group:     (*gatewayv1.Group)(&dgGroup),
 					Kind:      (*gatewayv1.Kind)(&dgKind),
 					Name:      "dg-1",
-					Namespace: (*gatewayv1.Namespace)(&otherNs),
-				}},
+					Namespace: (*gatewayv1.Namespace)(&otherNs)},
 			},
 		},
 	}
@@ -85,15 +82,14 @@ func TestMapL34RouteToDistributionGroup_ClusterWideAllowsAnyNamespace(t *testing
 	otherNs := testOtherNamespace
 
 	route := &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: "route-1", Namespace: "default"},
+		Name: "route-1", Namespace: "default",
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			BackendRefs: []gatewayv1.BackendRef{
-				{BackendObjectReference: gatewayv1.BackendObjectReference{
+				{
 					Group:     (*gatewayv1.Group)(&dgGroup),
 					Kind:      (*gatewayv1.Kind)(&dgKind),
 					Name:      "dg-1",
-					Namespace: (*gatewayv1.Namespace)(&otherNs),
-				}},
+					Namespace: (*gatewayv1.Namespace)(&otherNs)},
 			},
 		},
 	}

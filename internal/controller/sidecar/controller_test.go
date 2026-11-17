@@ -29,7 +29,6 @@ import (
 	"github.com/vishvananda/netlink"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -47,17 +46,15 @@ func newScheme() *runtime.Scheme {
 
 func newENC(gateways ...meridio2v1alpha1.GatewayConnection) *meridio2v1alpha1.EndpointNetworkConfiguration {
 	return &meridio2v1alpha1.EndpointNetworkConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
+		Name:       testPodName,
+		Namespace:  testNamespace,
+		Generation: 1,
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "v1",
+			Kind:       "Pod",
 			Name:       testPodName,
-			Namespace:  testNamespace,
-			Generation: 1,
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "v1",
-				Kind:       "Pod",
-				Name:       testPodName,
-				UID:        testPodUID,
-			}},
-		},
+			UID:        testPodUID,
+		}},
 		Spec: meridio2v1alpha1.EndpointNetworkConfigurationSpec{
 			Gateways: gateways,
 		},
@@ -88,10 +85,9 @@ func setupController(nl *mockNetlink, objects ...client.Object) (*Controller, cl
 }
 
 func reconcileRequest() ctrl.Request {
-	return ctrl.Request{NamespacedName: types.NamespacedName{
+	return ctrl.Request{
 		Name:      testPodName,
-		Namespace: testNamespace,
-	}}
+		Namespace: testNamespace}
 }
 
 func getENCStatus(t *testing.T, fakeClient client.Client) *meridio2v1alpha1.EndpointNetworkConfiguration {

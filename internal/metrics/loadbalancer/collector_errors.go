@@ -71,7 +71,7 @@ func NewCollectorErrors(gatewayName, prefix string) *CollectorErrors {
 			Help: "Number of scrape-time read failures in the LB metrics collectors, by " +
 				"collector. A non-zero rate means a collector could not read its source for some " +
 				"scrapes (the corresponding data series is absent for those scrapes).",
-		}, []string{"gateway", "collector"}),
+		}, []string{labelGateway, "collector"}),
 	}
 	for _, collector := range collectors {
 		c.total.WithLabelValues(gatewayName, collector)

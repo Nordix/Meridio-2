@@ -113,13 +113,9 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err != nil {
 		log.Error(err, "failed to build desired state")
 		if statusErr := c.updateStatus(ctx, &enc, err); statusErr != nil {
-			if apierrors.IsConflict(statusErr) {
-				return ctrl.Result{Requeue: true}, nil
-			}
 			return ctrl.Result{}, statusErr
 		}
-		var infErr *InterfaceNotFoundError
-		if errors.As(err, &infErr) {
+		if _, ok := errors.AsType[*InterfaceNotFoundError](err); ok {
 			return ctrl.Result{}, err // requeue; interface may appear
 		}
 		return ctrl.Result{}, nil // don't requeue; wait for ENC fix
@@ -129,9 +125,6 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := c.applyState(ctx, domains); err != nil {
 		log.Error(err, "failed to apply network configuration")
 		if statusErr := c.updateStatus(ctx, &enc, err); statusErr != nil {
-			if apierrors.IsConflict(statusErr) {
-				return ctrl.Result{Requeue: true}, nil
-			}
 			return ctrl.Result{}, statusErr
 		}
 		return ctrl.Result{}, err // requeue for transient netlink errors
@@ -159,9 +152,6 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// Success
 	if err := c.updateStatus(ctx, &enc, nil); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
 		return ctrl.Result{}, err
 	}
 

@@ -53,9 +53,7 @@ func newScheme() *runtime.Scheme {
 
 func newGatewayClass(controllerName string) *gatewayv1.GatewayClass {
 	return &gatewayv1.GatewayClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: testGatewayClassName,
-		},
+		Name: testGatewayClassName,
 		Spec: gatewayv1.GatewayClassSpec{
 			ControllerName: gatewayv1.GatewayController(controllerName),
 		},
@@ -64,10 +62,8 @@ func newGatewayClass(controllerName string) *gatewayv1.GatewayClass {
 
 func newGateway(gatewayClassName string) *gatewayv1.Gateway {
 	return &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testGatewayName,
-			Namespace: testNamespace,
-		},
+		Name:      testGatewayName,
+		Namespace: testNamespace,
 		Spec: gatewayv1.GatewaySpec{
 			GatewayClassName: gatewayv1.ObjectName(gatewayClassName),
 		},
@@ -76,10 +72,8 @@ func newGateway(gatewayClassName string) *gatewayv1.Gateway {
 
 func newGatewayConfiguration() *meridio2v1alpha1.GatewayConfiguration {
 	return &meridio2v1alpha1.GatewayConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-gwconfig",
-			Namespace: testNamespace,
-		},
+		Name:      "test-gwconfig",
+		Namespace: testNamespace,
 		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 			InternalSubnets: []meridio2v1alpha1.InternalSubnet{
 				{
@@ -148,7 +142,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 
 		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -163,7 +157,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 
 		reconciler, fakeClient := setupReconciler(gwClass, gw)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -181,7 +175,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 
 		reconciler, fakeClient := setupReconciler(gw)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -198,7 +192,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 		// Gateway not in API server (already deleted via ownerReference GC)
 		reconciler, _ := setupReconciler()
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: "deleted-gw", Namespace: "default"}}
+		request := reconcile.Request{Name: "deleted-gw", Namespace: "default"}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		// Should return without error (client.IgnoreNotFound)
@@ -234,7 +228,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 		err = fakeClient.Update(context.Background(), gw)
 		assert.NoError(t, err)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -270,7 +264,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 		}
 		reconciler, fakeClient := setupReconciler(gwClass, gw)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)
@@ -301,7 +295,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig)
 		reconciler.TemplatePath = "/nonexistent/path"
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.Error(t, err) // requeue with backoff
@@ -330,24 +324,22 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 
 		isController := true
 		existing := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      lbDeploymentPrefix + gw.Name,
-				Namespace: gw.Namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: gatewayv1.GroupVersion.String(),
-						Kind:       kindGateway,
-						Name:       "other-gateway",
-						UID:        "other-uid",
-						Controller: &isController,
-					},
+			Name:      lbDeploymentPrefix + gw.Name,
+			Namespace: gw.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: gatewayv1.GroupVersion.String(),
+					Kind:       kindGateway,
+					Name:       "other-gateway",
+					UID:        "other-uid",
+					Controller: &isController,
 				},
 			},
 		}
 
 		reconciler, fakeClient := setupReconciler(gwClass, gw, gwConfig, existing)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.Error(t, err)
@@ -378,7 +370,7 @@ func TestGatewayReconciler_Reconcile(t *testing.T) {
 
 		reconciler, fakeClient := setupReconciler(gwClass, gw)
 
-		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: gw.Name, Namespace: gw.Namespace}}
+		request := reconcile.Request{Name: gw.Name, Namespace: gw.Namespace}
 		result, err := reconciler.Reconcile(context.Background(), request)
 
 		assert.NoError(t, err)

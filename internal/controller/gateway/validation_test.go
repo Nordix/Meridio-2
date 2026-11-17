@@ -75,7 +75,7 @@ func TestValidateGateway(t *testing.T) {
 
 	t.Run("GatewayConfigurationNotFound", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: testNamespace},
+			Name: "test-gw", Namespace: testNamespace,
 			Spec: gatewayv1.GatewaySpec{
 				Infrastructure: &gatewayv1.GatewayInfrastructure{
 					ParametersRef: &gatewayv1.LocalParametersReference{
@@ -97,7 +97,7 @@ func TestValidateGateway(t *testing.T) {
 
 	t.Run("UnsupportedParametersRefGroupKind", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: testNamespace},
+			Name: "test-gw", Namespace: testNamespace,
 			Spec: gatewayv1.GatewaySpec{
 				Infrastructure: &gatewayv1.GatewayInfrastructure{
 					ParametersRef: &gatewayv1.LocalParametersReference{
@@ -120,7 +120,7 @@ func TestValidateGateway(t *testing.T) {
 	t.Run("TemplateMissing", func(t *testing.T) {
 		gwConfig := newGatewayConfiguration()
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: testNamespace},
+			Name: "test-gw", Namespace: testNamespace,
 		}
 		attachGatewayConfiguration(gw, gwConfig)
 		reconciler, _ := setupReconciler(gw, gwConfig)
@@ -134,13 +134,13 @@ func TestValidateGateway(t *testing.T) {
 
 	t.Run("InvalidGatewayConfiguration", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gwconfig", Namespace: testNamespace},
+			Name: "test-gwconfig", Namespace: testNamespace,
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				InternalSubnets: []meridio2v1alpha1.InternalSubnet{}, // empty = invalid
 			},
 		}
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: testNamespace},
+			Name: "test-gw", Namespace: testNamespace,
 		}
 		attachGatewayConfiguration(gw, gwConfig)
 
@@ -159,7 +159,7 @@ func TestValidateGateway(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		gwConfig := newGatewayConfiguration()
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: testNamespace},
+			Name: "test-gw", Namespace: testNamespace,
 		}
 		attachGatewayConfiguration(gw, gwConfig)
 
@@ -341,7 +341,7 @@ func TestValidateVerticalScaling(t *testing.T) {
 func TestValidateMergedNetworkAttachments(t *testing.T) {
 	t.Run("NoTemplateAnnotations", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace},
+			Namespace: testNamespace,
 		}
 		template := &appsv1.Deployment{}
 
@@ -350,7 +350,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("EmptyTemplateNADAnnotation", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace},
+			Namespace: testNamespace,
 		}
 		template := &appsv1.Deployment{}
 		template.Spec.Template.Annotations = map[string]string{"other": "value"}
@@ -360,7 +360,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("NoConflict", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace},
+			Namespace: testNamespace,
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 					{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Name: "nad1", Namespace: testNamespace, Interface: "net1"}},
@@ -374,7 +374,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("SameTripletRecognizedAsOverride_NoDuplicate", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace},
+			Namespace: testNamespace,
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 					{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Name: "nad1", Namespace: testNamespace, Interface: "net1"}},
@@ -388,7 +388,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("DuplicateInterfaceBetweenTemplateAndGwConfig", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace},
+			Namespace: testNamespace,
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 					{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Name: "nad1", Namespace: testNamespace, Interface: "net1"}},
@@ -405,7 +405,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("TemplateNADDefaultsToGwConfigNamespace", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "prod"},
+			Namespace: "prod",
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 					{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Name: "nad1", Namespace: "prod", Interface: "net1"}},
@@ -421,7 +421,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("GwConfigNADDefaultsToGwConfigNamespace", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "prod"},
+			Namespace: "prod",
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 					// No namespace - defaults to gwConfig.Namespace ("prod")
@@ -436,7 +436,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("DifferentNamespacesNotOverridden", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace},
+			Namespace: testNamespace,
 			Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 				NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 					{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Name: "nad1", Namespace: "other-ns", Interface: "net1"}},
@@ -453,7 +453,7 @@ func TestValidateMergedNetworkAttachments(t *testing.T) {
 
 	t.Run("NoGwConfigAttachments", func(t *testing.T) {
 		gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace},
+			Namespace: testNamespace,
 		}
 		template := templateWithNADs(`[{"name":"nad1","namespace":"default","interface":"net1"}]`)
 

@@ -81,10 +81,9 @@ func tcSetupReconciler(objects ...client.Object) (*DistributionGroupReconciler, 
 }
 
 func tcReconcileRequest() ctrl.Request {
-	return ctrl.Request{NamespacedName: types.NamespacedName{
+	return ctrl.Request{
 		Name:      tcDGName,
-		Namespace: tcNamespace,
-	}}
+		Namespace: tcNamespace}
 }
 
 // tcFakeIPScraper returns the Pod's PodIP if it falls within the requested CIDR.
@@ -104,11 +103,9 @@ func tcFakeIPScraper(pod *corev1.Pod, cidr, _ string) string {
 
 func tcNewDG(opts ...func(*meridio2v1alpha1.DistributionGroup)) *meridio2v1alpha1.DistributionGroup {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:       tcDGName,
-			Namespace:  tcNamespace,
-			Generation: 1,
-		},
+		Name:       tcDGName,
+		Namespace:  tcNamespace,
+		Generation: 1,
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type: meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{
@@ -127,10 +124,8 @@ func tcNewDG(opts ...func(*meridio2v1alpha1.DistributionGroup)) *meridio2v1alpha
 
 func tcNewGateway(accepted bool) *gatewayv1.Gateway {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      tcGatewayName,
-			Namespace: tcNamespace,
-		},
+		Name:      tcGatewayName,
+		Namespace: tcNamespace,
 		Spec: gatewayv1.GatewaySpec{
 			GatewayClassName: gatewayv1.ObjectName(tcGWClassName),
 			Infrastructure: &gatewayv1.GatewayInfrastructure{
@@ -155,10 +150,8 @@ func tcNewGateway(accepted bool) *gatewayv1.Gateway {
 
 func tcNewGatewayConfig() *meridio2v1alpha1.GatewayConfiguration {
 	return &meridio2v1alpha1.GatewayConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      tcGWConfigName,
-			Namespace: tcNamespace,
-		},
+		Name:      tcGWConfigName,
+		Namespace: tcNamespace,
 		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 			InternalSubnets: []meridio2v1alpha1.InternalSubnet{
 				{AttachmentType: "NAD", CIDR: tcInternalSubnet},
@@ -175,20 +168,17 @@ func tcNewL34Route(gatewayName, dgName string) *meridio2v1alpha1.L34Route {
 	dgGroup := meridio2v1alpha1.GroupVersion.Group
 	dgKind := kindDistributionGroup
 	return &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-route",
-			Namespace: tcNamespace,
-		},
+		Name:      "test-route",
+		Namespace: tcNamespace,
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			ParentRefs: []gatewayv1.ParentReference{
 				{Name: gatewayv1.ObjectName(gatewayName)},
 			},
 			BackendRefs: []gatewayv1.BackendRef{
-				{BackendObjectReference: gatewayv1.BackendObjectReference{
+				{
 					Group: (*gatewayv1.Group)(&dgGroup),
 					Kind:  (*gatewayv1.Kind)(&dgKind),
-					Name:  gatewayv1.ObjectName(dgName),
-				}},
+					Name:  gatewayv1.ObjectName(dgName)},
 			},
 			DestinationCIDRs: []string{"20.0.0.1/32"},
 			Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
@@ -199,12 +189,10 @@ func tcNewL34Route(gatewayName, dgName string) *meridio2v1alpha1.L34Route {
 
 func tcNewPod(name string, ready bool, ips ...string) *corev1.Pod {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: tcNamespace,
-			Labels:    map[string]string{"app": "target"},
-			UID:       types.UID(name),
-		},
+		Name:      name,
+		Namespace: tcNamespace,
+		Labels:    map[string]string{"app": "target"},
+		UID:       types.UID(name),
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
 		},

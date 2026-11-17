@@ -114,9 +114,6 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if errors.As(err, &valErr) || errors.As(err, &tmplErr) {
 			if statusErr := r.updateAcceptedStatus(ctx, &gw, metav1.ConditionFalse,
 				string(gatewayv1.GatewayReasonInvalidParameters), err.Error()); statusErr != nil {
-				if apierrors.IsConflict(statusErr) {
-					return ctrl.Result{Requeue: true}, nil
-				}
 				return ctrl.Result{}, statusErr
 			}
 			if errors.As(err, &tmplErr) {
@@ -129,17 +126,11 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// 4. Set Accepted status condition
 	if err := r.updateAcceptedStatus(ctx, &gw, metav1.ConditionTrue, string(gatewayv1.GatewayReasonAccepted), r.acceptedMessage()); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
 		return ctrl.Result{}, err
 	}
 
 	// 5. Update status.addresses from L34Routes
 	if err := r.updateAddressesFromRoutes(ctx, &gw); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
 		return ctrl.Result{}, err
 	}
 
@@ -147,17 +138,15 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.reconcileLBDeployment(ctx, &gw, gwConfig, template); err != nil {
 		// Handle transient errors (requeue without setting Programmed=False)
 		if apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) {
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{}, err
 		}
 
 		// Set Programmed=False only for permanent errors (name collision, create failure)
-		var permErr *permanentDeploymentError
-		if errors.As(err, &permErr) {
+		if _, ok := errors.AsType[*permanentDeploymentError](err); ok {
 			if statusErr := r.updateProgrammedStatus(ctx, &gw, metav1.ConditionFalse,
 				string(gatewayv1.GatewayReasonInvalid), err.Error()); statusErr != nil {
-				if apierrors.IsConflict(statusErr) {
-					return ctrl.Result{Requeue: true}, nil
-				}
+				// Report the deployment failure below; the status write is retried on requeue.
+				log.Error(statusErr, "failed to set Programmed=False")
 			}
 		}
 		return ctrl.Result{}, err
@@ -166,9 +155,6 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// 7. Set Programmed=True status condition
 	if err := r.updateProgrammedStatus(ctx, &gw, metav1.ConditionTrue,
 		string(gatewayv1.GatewayReasonProgrammed), messageProgrammed); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
 		return ctrl.Result{}, err
 	}
 

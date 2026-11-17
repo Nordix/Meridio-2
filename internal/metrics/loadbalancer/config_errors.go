@@ -59,7 +59,7 @@ func NewConfigErrors(gatewayName, prefix string) *ConfigErrors {
 			Help: "Number of failed data-plane config operations in the LB reconcile path, by " +
 				"reason (route_config: policy rule/route or target activation failure; " +
 				"vip_config: nftables VIP set update failure).",
-		}, []string{"gateway", "reason"}),
+		}, []string{labelGateway, labelReason}),
 	}
 	for _, reason := range []string{ReasonRouteConfig, ReasonVIPConfig} {
 		c.total.WithLabelValues(gatewayName, reason)

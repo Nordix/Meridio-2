@@ -41,6 +41,9 @@ import (
 	metricsutil "github.com/nordix/meridio-2/internal/metrics/util"
 )
 
+// labelNamespace is the Prometheus label name identifying the namespace of the reported object.
+const labelNamespace = "namespace"
+
 // GatewayCollector is a prometheus.Collector exposing Gateway-derived metrics:
 //   - <prefix>_gateway_count: number of Gateways with Accepted=True managed by this controller
 //   - <prefix>_gateway_programmed: 0/1 per Gateway, from the Programmed status condition
@@ -102,7 +105,7 @@ func NewGatewayCollector(
 		programmedDesc: prometheus.NewDesc(
 			prefix+"_gateway_programmed",
 			"Whether the Gateway's LB Deployment has been successfully reconciled (Programmed condition), as 0 or 1.",
-			[]string{"gateway", "namespace"}, nil,
+			[]string{"gateway", labelNamespace}, nil,
 		),
 	}
 }

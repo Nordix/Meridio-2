@@ -22,18 +22,14 @@ import (
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-//go:fix inline
-func int32Ptr(v int32) *int32 { return new(v) }
-
 func TestAssignMaglevIDs_NewPods(t *testing.T) {
 	pods := []corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}},
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}},
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}},
+		{UID: "pod-1"},
+		{UID: "pod-2"},
+		{UID: "pod-3"},
 	}
 
 	result := assignMaglevIDs(pods, nil, 32)
@@ -53,9 +49,9 @@ func TestAssignMaglevIDs_PreserveExisting(t *testing.T) {
 	}
 
 	pods := []corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}},
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}},
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}},
+		{UID: "pod-1"},
+		{UID: "pod-2"},
+		{UID: "pod-3"},
 	}
 
 	result := assignMaglevIDs(pods, existing, 32)
@@ -70,9 +66,9 @@ func TestAssignMaglevIDs_PreserveExisting(t *testing.T) {
 
 func TestAssignMaglevIDs_CapacityLimit(t *testing.T) {
 	pods := []corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-1"}},
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-2"}},
-		{ObjectMeta: metav1.ObjectMeta{UID: "pod-3"}},
+		{UID: "pod-1"},
+		{UID: "pod-2"},
+		{UID: "pod-3"},
 	}
 
 	result := assignMaglevIDs(pods, nil, 2)
@@ -89,11 +85,11 @@ func TestExtractMaglevAssignments(t *testing.T) {
 				Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
 					{
 						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-1", UID: "uid-1"},
-						Identifier: int32Ptr(5),
+						Identifier: new(int32(5)),
 					},
 					{
 						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
-						Identifier: int32Ptr(10),
+						Identifier: new(int32(10)),
 					},
 				},
 			},
@@ -121,7 +117,7 @@ func TestExtractMaglevAssignments_SkipNilIdentifier(t *testing.T) {
 					},
 					{
 						Target:     meridio2v1alpha1.EndpointTarget{Name: "pod-2", UID: "uid-2"},
-						Identifier: int32Ptr(15),
+						Identifier: new(int32(15)),
 					},
 				},
 			},
@@ -149,11 +145,11 @@ func TestAssignMaglevIDs_CapacityEnforcement(t *testing.T) {
 	pods := make([]corev1.Pod, 33)
 	for i := range 32 {
 		pods[i] = corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-" + strconv.Itoa(i))},
+			UID: types.UID("pod-" + strconv.Itoa(i)),
 		}
 	}
 	pods[32] = corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{UID: "pod-new"},
+		UID: "pod-new",
 	}
 
 	result := assignMaglevIDs(pods, existing, 32)

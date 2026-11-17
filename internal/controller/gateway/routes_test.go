@@ -32,12 +32,12 @@ import (
 
 func TestRouteReferencesGateway(t *testing.T) {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+		Name: "test-gw", Namespace: "default",
 	}
 
 	t.Run("MatchingReference", func(t *testing.T) {
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs: []gatewayv1.ParentReference{
 					{Name: "test-gw"},
@@ -49,7 +49,7 @@ func TestRouteReferencesGateway(t *testing.T) {
 
 	t.Run("DifferentName", func(t *testing.T) {
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs: []gatewayv1.ParentReference{
 					{Name: "other-gw"},
@@ -62,7 +62,7 @@ func TestRouteReferencesGateway(t *testing.T) {
 	t.Run("DifferentNamespace", func(t *testing.T) {
 		ns := gatewayv1.Namespace("other-ns")
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs: []gatewayv1.ParentReference{
 					{Name: "test-gw", Namespace: &ns},
@@ -75,7 +75,7 @@ func TestRouteReferencesGateway(t *testing.T) {
 	t.Run("NonGatewayKind", func(t *testing.T) {
 		kind := gatewayv1.Kind("HTTPRoute")
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs: []gatewayv1.ParentReference{
 					{Name: "test-gw", Kind: &kind},
@@ -88,7 +88,7 @@ func TestRouteReferencesGateway(t *testing.T) {
 	t.Run("NonGatewayGroup", func(t *testing.T) {
 		group := gatewayv1.Group("example.com")
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs: []gatewayv1.ParentReference{
 					{Name: "test-gw", Group: &group},
@@ -102,7 +102,7 @@ func TestRouteReferencesGateway(t *testing.T) {
 func TestMapL34RouteToGateway(t *testing.T) {
 	t.Run("AcceptedGateway", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+			Name: "test-gw", Namespace: "default",
 			Status: gatewayv1.GatewayStatus{
 				Conditions: []metav1.Condition{
 					{
@@ -114,7 +114,7 @@ func TestMapL34RouteToGateway(t *testing.T) {
 			},
 		}
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-route", Namespace: "default"},
+			Name: "test-route", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw"}},
 				DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -127,15 +127,15 @@ func TestMapL34RouteToGateway(t *testing.T) {
 		requests := reconciler.mapL34RouteToGateway(context.Background(), route)
 
 		assert.Len(t, requests, 1)
-		assert.Equal(t, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-gw", Namespace: "default"}}, requests[0])
+		assert.Equal(t, ctrl.Request{Name: "test-gw", Namespace: "default"}, requests[0])
 	})
 
 	t.Run("NotAcceptedGateway", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+			Name: "test-gw", Namespace: "default",
 		}
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-route", Namespace: "default"},
+			Name: "test-route", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw"}},
 				DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -150,13 +150,13 @@ func TestMapL34RouteToGateway(t *testing.T) {
 		// Mapper enqueues all Gateway parentRefs (no pre-filtering)
 		// Reconcile loop decides whether to process based on acceptance
 		assert.Len(t, requests, 1)
-		assert.Equal(t, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-gw", Namespace: "default"}}, requests[0])
+		assert.Equal(t, ctrl.Request{Name: "test-gw", Namespace: "default"}, requests[0])
 	})
 
 	t.Run("NonGatewayParentRef", func(t *testing.T) {
 		kind := gatewayv1.Kind("HTTPRoute")
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-route", Namespace: "default"},
+			Name: "test-route", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw", Kind: &kind}},
 				DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -175,10 +175,10 @@ func TestMapL34RouteToGateway(t *testing.T) {
 func TestUpdateAddressesFromRoutes(t *testing.T) {
 	t.Run("SingleRoute", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+			Name: "test-gw", Namespace: "default",
 		}
 		route := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-route", Namespace: "default"},
+			Name: "test-route", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw"}},
 				DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -200,10 +200,10 @@ func TestUpdateAddressesFromRoutes(t *testing.T) {
 
 	t.Run("MultipleRoutes", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+			Name: "test-gw", Namespace: "default",
 		}
 		route1 := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+			Name: "route1", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw"}},
 				DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -212,7 +212,7 @@ func TestUpdateAddressesFromRoutes(t *testing.T) {
 			},
 		}
 		route2 := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "route2", Namespace: "default"},
+			Name: "route2", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw"}},
 				DestinationCIDRs: []string{"20.0.0.2/32"},
@@ -233,10 +233,10 @@ func TestUpdateAddressesFromRoutes(t *testing.T) {
 
 	t.Run("DuplicateCIDRs", func(t *testing.T) {
 		gw := &gatewayv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+			Name: "test-gw", Namespace: "default",
 		}
 		route1 := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "route1", Namespace: "default"},
+			Name: "route1", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw"}},
 				DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -245,7 +245,7 @@ func TestUpdateAddressesFromRoutes(t *testing.T) {
 			},
 		}
 		route2 := &meridio2v1alpha1.L34Route{
-			ObjectMeta: metav1.ObjectMeta{Name: "route2", Namespace: "default"},
+			Name: "route2", Namespace: "default",
 			Spec: meridio2v1alpha1.L34RouteSpec{
 				ParentRefs:       []gatewayv1.ParentReference{{Name: "test-gw"}},
 				DestinationCIDRs: []string{"20.0.0.1/32"},

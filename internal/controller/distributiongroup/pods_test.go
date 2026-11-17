@@ -75,7 +75,7 @@ func TestEndpointConditions_NoCondition(t *testing.T) {
 func TestEndpointConditions_TerminatingButServing(t *testing.T) {
 	now := metav1.Now()
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+		DeletionTimestamp: &now,
 		Status: corev1.PodStatus{
 			Conditions: []corev1.PodCondition{
 				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
@@ -93,13 +93,11 @@ func TestEndpointConditions_TerminatingButServing(t *testing.T) {
 
 func TestScrapeNADIP_ValidAnnotation(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
 					{"name":"net1","interface":"net1","ips":["` + testIP + `"]}
 				]`,
-			},
 		},
 	}
 
@@ -111,13 +109,11 @@ func TestScrapeNADIP_ValidAnnotation(t *testing.T) {
 
 func TestScrapeNADIP_SkipPrimaryInterface(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"default","interface":"eth0","ips":["192.168.100.5"],"default":true},
 					{"name":"net1","interface":"net1","ips":["` + testIP + `"]}
 				]`,
-			},
 		},
 	}
 
@@ -129,13 +125,11 @@ func TestScrapeNADIP_SkipPrimaryInterface(t *testing.T) {
 
 func TestScrapeNADIP_IPv6(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
 					{"name":"net1","interface":"net1","ips":["2001:db8::10"]}
 				]`,
-			},
 		},
 	}
 
@@ -147,9 +141,7 @@ func TestScrapeNADIP_IPv6(t *testing.T) {
 
 func TestScrapeNADIP_MissingAnnotation(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{},
-		},
+		Annotations: map[string]string{},
 	}
 
 	ip := scrapeNADIP(pod, "192.168.100.0/24")
@@ -160,10 +152,8 @@ func TestScrapeNADIP_MissingAnnotation(t *testing.T) {
 
 func TestScrapeNADIP_InvalidJSON(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `invalid json`,
-			},
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `invalid json`,
 		},
 	}
 
@@ -175,13 +165,11 @@ func TestScrapeNADIP_InvalidJSON(t *testing.T) {
 
 func TestScrapeNADIP_NoMatchingIP(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"default","interface":"eth0","ips":["10.244.0.5"],"default":true},
 					{"name":"net1","interface":"net1","ips":["192.168.200.10"]}
 				]`,
-			},
 		},
 	}
 
@@ -193,12 +181,10 @@ func TestScrapeNADIP_NoMatchingIP(t *testing.T) {
 
 func TestScrapeNADIP_InvalidCIDR(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"net1","interface":"net1","ips":["192.168.100.10"]}
 				]`,
-			},
 		},
 	}
 
@@ -210,12 +196,10 @@ func TestScrapeNADIP_InvalidCIDR(t *testing.T) {
 
 func TestScrapeNADIP_MultipleIPs(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"net1","interface":"net1","ips":["192.168.100.10","192.168.100.11"]}
 				]`,
-			},
 		},
 	}
 
@@ -227,12 +211,10 @@ func TestScrapeNADIP_MultipleIPs(t *testing.T) {
 
 func TestDefaultIPScraper_NAD(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"net1","interface":"net1","ips":["` + testIP + `"]}
 				]`,
-			},
 		},
 	}
 
@@ -244,12 +226,10 @@ func TestDefaultIPScraper_NAD(t *testing.T) {
 
 func TestDefaultIPScraper_UnknownType(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				netdefv1.NetworkStatusAnnot: `[
+		Annotations: map[string]string{
+			netdefv1.NetworkStatusAnnot: `[
 					{"name":"net1","interface":"net1","ips":["192.168.100.10"]}
 				]`,
-			},
 		},
 	}
 
