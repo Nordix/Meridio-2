@@ -38,7 +38,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -112,9 +111,6 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 		if err := r.updateStatus(ctx, &dg, false, nil, messageNoMatchingPods); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
-			}
 			log.Error(err, "failed to update status")
 			return ctrl.Result{}, err
 		}
@@ -141,9 +137,6 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// 7. Enforce single-Gateway restriction
 	if len(acceptedGateways) > 1 {
 		if err := r.updateStatus(ctx, &dg, false, nil, messageMultipleGateways); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
-			}
 			log.Error(err, "failed to update status")
 			return ctrl.Result{}, err
 		}
@@ -172,9 +165,6 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// 11. Reconcile LoadBalancerEndpointSlices (create/update/delete)
 	if err := r.reconcileSlices(ctx, &dg, desiredSlices, existingSlices); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
 		log.Error(err, "failed to reconcile endpointslices")
 		return ctrl.Result{}, err
 	}
@@ -193,11 +183,9 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// If msg still empty, Pods probably have no secondary IPs (leave default message)
 	}
 	if err := r.updateStatus(ctx, &dg, len(desiredSlices) > 0, capacityInfo, msg); err != nil {
-		if apierrors.IsConflict(err) {
-			// Conflict is expected during concurrent reconciles (e.g., .Owns() watch triggers)
-			// Controller-runtime will automatically retry with fresh resourceVersion
-			return ctrl.Result{Requeue: true}, nil
-		}
+		// Conflicts are expected during concurrent reconciles (e.g. .Owns() watch triggers);
+		// returning the error requeues with the rate limiter so the retry re-reads a fresh
+		// resourceVersion.
 		log.Error(err, "failed to update status")
 		return ctrl.Result{}, err
 	}
