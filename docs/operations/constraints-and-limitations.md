@@ -77,6 +77,14 @@ By contrast, `L34Route.spec.byteMatches` (`MaxItems=100`) has no fixed nfqlb dat
 
 BIRD allows only one set of BFD parameters (`minTx`, `minRx`, `multiplier`) per interface. When multiple static GatewayRouters share the same interface, the controller selects a single set deterministically: the BFD parameters from the first GatewayRouter alphabetically (by `.metadata.name`) that has BFD enabled on that interface win; parameters from the others on the same interface are silently ignored. Users must therefore define identical BFD parameters for all static GatewayRouters on the same interface. Mismatched values lead to confusing, unexpected behavior. See [Router controller docs](../controllers/router.md#bfd-interface-parameters-first-alphabetically-wins).
 
+### BGP authentication keys are limited to 80 bytes, and MD5 keys to a restricted byte set
+
+TCP-AO and MD5 keys must be non-empty and at most 80 bytes, the limit of the components involved (such as BIRD and the Linux kernel). The limit counts bytes, not characters, so a multi-byte UTF-8 key can exceed it with fewer than 80 characters. TCP-AO keys may contain any byte value. MD5 keys must not contain a NUL byte, a double quote or a newline, which are not allowed by the components involved (such as BIRD and the Linux kernel), nor a carriage return, which we do not allow. Keys that break these rules are rejected (see the next entry). See the router controller docs for [TCP-AO](../controllers/router.md#bgp-authentication-tcp-ao) and [MD5](../controllers/router.md#bgp-authentication-md5--deprecated).
+
+### One unusable BGP authentication key holds back the whole BIRD configuration
+
+The router controller renders a single BIRD configuration for all GatewayRouters of a Gateway. If any key referenced by any of these GatewayRouters cannot be used (Secret missing or not yet propagated, referenced key absent, or value rejected), the controller keeps the previous BIRD configuration. Changes to every other GatewayRouter, and to VIP advertisement, are not applied until the key is fixed. On a freshly started Pod there is no previous configuration to keep, so the Gateway then has no BGP sessions and advertises no VIPs. The condition is only reported in the router controller logs. No status is written to the GatewayRouter. Retaining only the affected GatewayRouter's last applied configuration while applying the others is not implemented.
+
 ## Sidecar Controller
 
 ### Sidecar policy routing rule priority not configurable *(architectural constraint)*

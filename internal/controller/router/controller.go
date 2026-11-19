@@ -321,19 +321,16 @@ func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meri
 					failed = true
 					break
 				}
-				if password == "" {
-					logf.FromContext(ctx).Info("Rejected empty TCP-AO secret value",
-						"router", router.Name, "secretName", key.SecretName, "secretKey", key.SecretKey)
-					failed = true
-					break
-				}
-				// Reject over-length keys here (see bird.MaxKeyLength) so one
-				// bad key does not fail the whole reconfiguration; the Secret
-				// value is never logged.
-				if len(password) > bird.MaxKeyLength {
-					logf.FromContext(ctx).Info("Rejected over-length TCP-AO secret value",
+				// Reject unusable keys here (see bird.ValidateTcpAoKey); the
+				// Secret value is never logged. One rejected key fails the whole
+				// Gateway reconfiguration: it sets failed, which sets
+				// allResolved=false, and Reconcile then returns before
+				// Bird.Configure, retaining the previous BIRD config for every
+				// GatewayRouter and VIP of the Gateway.
+				if reason := bird.ValidateTcpAoKey(password); reason != nil {
+					logf.FromContext(ctx).Info("Rejected TCP-AO secret value",
 						"router", router.Name, "secretName", key.SecretName, "secretKey", key.SecretKey,
-						"bytes", len(password), "maxBytes", bird.MaxKeyLength)
+						"reason", reason)
 					failed = true
 					break
 				}
@@ -352,24 +349,15 @@ func (r *RouterReconciler) resolvePasswords(ctx context.Context, routers []*meri
 				logf.FromContext(ctx).Info("Failed to fetch MD5 secret",
 					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey, "reason", err)
 				allResolved = false
-			} else if password == "" {
-				logf.FromContext(ctx).Info("Rejected empty MD5 secret value",
-					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey)
-				allResolved = false
-			} else if len(password) > bird.MaxKeyLength {
-				// Reject over-length keys here (see bird.MaxKeyLength); the
-				// value is not logged.
-				logf.FromContext(ctx).Info("Rejected over-length MD5 secret value",
+			} else if reason := bird.ValidateMd5Key(password); reason != nil {
+				// Unusable keys (empty, over-length, or containing bytes that
+				// are not allowed) are rejected here (see
+				// bird.ValidateMd5Key). The value is not logged. As with TCP-AO,
+				// one rejected key holds back the whole Gateway config (see the
+				// TCP-AO branch above).
+				logf.FromContext(ctx).Info("Rejected MD5 secret value",
 					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey,
-					"bytes", len(password), "maxBytes", bird.MaxKeyLength)
-				allResolved = false
-			} else if !bird.QuotedStringRepresentable(password) {
-				// MD5 keys are emitted as a BIRD quoted string (see
-				// bird.QuotedStringRepresentable); keys containing bytes that a
-				// quoted string or the kernel C-string API cannot carry are
-				// rejected. The value is not logged.
-				logf.FromContext(ctx).Info("Rejected MD5 secret value with unrepresentable bytes",
-					"router", router.Name, "secretName", auth.Md5.SecretName, "secretKey", auth.Md5.SecretKey)
+					"reason", reason)
 				allResolved = false
 			} else {
 				result[router.Name] = bird.ResolvedAuth{Md5Password: password}
