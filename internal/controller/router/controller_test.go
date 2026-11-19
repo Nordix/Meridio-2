@@ -46,6 +46,10 @@ import (
 const testGatewayName = "test-gateway"
 const testNamespace = "default"
 
+// maxKeyLength mirrors the (unexported) bird key length limit in bytes.
+// Duplicated here because the bird constant is intentionally not exported.
+const maxKeyLength = 80
+
 // mockingBird is a test double for bird.BirdInterface that captures Configure arguments.
 // Configure is invoked from the controller-runtime reconcile goroutine while tests read the
 // captured values from the test goroutine (notably the async integration test via
@@ -664,12 +668,12 @@ func TestResolvePasswords(t *testing.T) {
 		assert.NotContains(t, result, "router1")
 	})
 
-	// The kernel caps both TCP-AO and MD5 keys at bird.MaxKeyLength bytes. A
+	// The kernel caps both TCP-AO and MD5 keys at maxKeyLength bytes. A
 	// key at the limit must be accepted and one byte over it must be rejected.
 	// The limit is in bytes, not characters, so a multi-byte UTF-8 key shorter
 	// than the limit in runes can still exceed it.
 	t.Run("TcpAo_MaxLengthKey_Accepted", func(t *testing.T) {
-		pw := strings.Repeat("a", bird.MaxKeyLength)
+		pw := strings.Repeat("a", maxKeyLength)
 		secret := newSecret("my-secret", map[string][]byte{"pw": []byte(pw)})
 		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
 			{SendId: 1, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "pw"},
@@ -682,7 +686,7 @@ func TestResolvePasswords(t *testing.T) {
 	})
 
 	t.Run("TcpAo_OverLengthKey_SkipsRouter", func(t *testing.T) {
-		pw := strings.Repeat("a", bird.MaxKeyLength+1)
+		pw := strings.Repeat("a", maxKeyLength+1)
 		secret := newSecret("my-secret", map[string][]byte{"pw": []byte(pw)})
 		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
 			{SendId: 1, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "pw"},
@@ -697,7 +701,7 @@ func TestResolvePasswords(t *testing.T) {
 	t.Run("TcpAo_MultibyteKeyOverLengthInBytes_SkipsRouter", func(t *testing.T) {
 		// 41 two-byte runes = 82 bytes > 80, though only 41 characters.
 		pw := strings.Repeat("\u00e9", 41)
-		assert.Greater(t, len(pw), bird.MaxKeyLength)
+		assert.Greater(t, len(pw), maxKeyLength)
 		secret := newSecret("my-secret", map[string][]byte{"pw": []byte(pw)})
 		router := newGatewayRouterWithAuth("router1", gwRef, []meridio2v1alpha1.TcpAoKeyChain{
 			{SendId: 1, Algorithm: "hmac sha256", SecretName: "my-secret", SecretKey: "pw"},
@@ -710,7 +714,7 @@ func TestResolvePasswords(t *testing.T) {
 	})
 
 	t.Run("Md5_MaxLengthKey_Accepted", func(t *testing.T) {
-		pw := strings.Repeat("a", bird.MaxKeyLength)
+		pw := strings.Repeat("a", maxKeyLength)
 		secret := newSecret("md5-secret", map[string][]byte{"pw": []byte(pw)})
 		router := newGatewayRouterWithMd5("router-md5-max", gwRef, "md5-secret", "pw")
 		reconciler, _ := setupReconciler(secret, router)
@@ -721,7 +725,7 @@ func TestResolvePasswords(t *testing.T) {
 	})
 
 	t.Run("Md5_OverLengthKey_SkipsRouter", func(t *testing.T) {
-		pw := strings.Repeat("a", bird.MaxKeyLength+1)
+		pw := strings.Repeat("a", maxKeyLength+1)
 		secret := newSecret("md5-secret-over", map[string][]byte{"md5key": []byte(pw)})
 		router := newGatewayRouterWithMd5("router-md5-over", gwRef, "md5-secret-over", "md5key")
 		reconciler, _ := setupReconciler(secret, router)
@@ -731,8 +735,7 @@ func TestResolvePasswords(t *testing.T) {
 		assert.NotContains(t, result, "router-md5-over")
 	})
 
-	// A BGP MD5 key is emitted as a BIRD quoted string and reaches the kernel as
-	// a C string, so bytes those cannot carry (NUL, double quote, newline, CR)
+	// Bytes that are not allowed in an MD5 key (NUL, double quote, newline, CR)
 	// must be rejected rather than silently corrupting the config. TCP-AO is
 	// unaffected: it hex-encodes and accepts any byte.
 	t.Run("Md5_UnrepresentableBytes_SkipsRouter", func(t *testing.T) {

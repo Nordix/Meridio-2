@@ -139,6 +139,10 @@ var _ = Describe("E2E TCP-AO Test Suite", Label("ipv4"), func() {
 							g.Expect(err).NotTo(HaveOccurred())
 							g.Expect(out).To(ContainSubstring("authentication ao;"))
 							g.Expect(out).To(ContainSubstring("algorithm hmac sha256;"))
+							// Pin the hex bytestring encoding: the key is rendered as
+							// "secret hex:...", never as a quoted string. Mirrors the MD5 suite
+							// which pins its rendered password line.
+							g.Expect(out).To(ContainSubstring("secret hex:"))
 						}).Should(Succeed())
 					})
 					It(fmt.Sprintf("BGP is Up %s", gw.name), func() {
