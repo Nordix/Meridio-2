@@ -726,15 +726,15 @@ func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
 
 func TestTcpAoConfig(t *testing.T) {
 	t.Run("nil spec returns empty", func(t *testing.T) {
-		if got := tcpAoConfig(nil, nil); got != "" {
-			t.Errorf("expected empty, got %q", got)
+		if got, err := tcpAoConfig(nil, nil); err != nil || got != "" {
+			t.Errorf("expected empty, got %q (err %v)", got, err)
 		}
 	})
 
 	t.Run("empty keychain returns empty", func(t *testing.T) {
 		spec := &meridio2v1alpha1.BgpTcpAoSpec{Keychain: []meridio2v1alpha1.TcpAoKeyChain{}}
-		if got := tcpAoConfig(spec, nil); got != "" {
-			t.Errorf("expected empty, got %q", got)
+		if got, err := tcpAoConfig(spec, nil); err != nil || got != "" {
+			t.Errorf("expected empty, got %q (err %v)", got, err)
 		}
 	})
 
@@ -744,8 +744,8 @@ func TestTcpAoConfig(t *testing.T) {
 				{SendId: 1, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
 			},
 		}
-		if got := tcpAoConfig(spec, map[uint8]string{}); got != "" {
-			t.Errorf("expected empty when password missing, got %q", got)
+		if got, err := tcpAoConfig(spec, map[uint8]string{}); err != nil || got != "" {
+			t.Errorf("expected empty when password missing, got %q (err %v)", got, err)
 		}
 	})
 
@@ -756,8 +756,10 @@ func TestTcpAoConfig(t *testing.T) {
 			},
 		}
 		passwords := map[uint8]string{1: "secret123"}
-		got := tcpAoConfig(spec, passwords)
-
+		got, err := tcpAoConfig(spec, passwords)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !strings.Contains(got, "authentication ao;") {
 			t.Error("missing 'authentication ao;'")
 		}
@@ -783,7 +785,10 @@ func TestTcpAoConfig(t *testing.T) {
 			},
 		}
 		passwords := map[uint8]string{1: "pass1", 2: "pass2"}
-		got := tcpAoConfig(spec, passwords)
+		got, err := tcpAoConfig(spec, passwords)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		if !strings.Contains(got, "send id 1;") || !strings.Contains(got, "send id 2;") {
 			t.Error("missing one of the send ids")
@@ -809,7 +814,10 @@ func TestTcpAoConfig(t *testing.T) {
 			},
 		}
 		passwords := map[uint8]string{1: "pass1", 2: "pass2"}
-		got := tcpAoConfig(spec, passwords)
+		got, err := tcpAoConfig(spec, passwords)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		// Key 2 should have preferred, key 1 should not
 		parts := strings.Split(got, "key {")
@@ -833,7 +841,10 @@ func TestTcpAoConfig(t *testing.T) {
 			},
 		}
 		passwords := map[uint8]string{1: "pass1"}
-		got := tcpAoConfig(spec, passwords)
+		got, err := tcpAoConfig(spec, passwords)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		if !strings.Contains(got, "rnext id 3;") {
 			t.Error("missing rnext id")
@@ -847,7 +858,10 @@ func TestTcpAoConfig(t *testing.T) {
 			},
 		}
 		passwords := map[uint8]string{1: "pass1"}
-		got := tcpAoConfig(spec, passwords)
+		got, err := tcpAoConfig(spec, passwords)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		if strings.Contains(got, "rnext id") {
 			t.Error("rnext id should not be present when NextKeyId is nil")
@@ -860,24 +874,26 @@ func TestTcpAoConfig(t *testing.T) {
 //nolint:staticcheck // SA1019: this test exercises the deprecated MD5 mechanism.
 func TestMd5Config(t *testing.T) {
 	t.Run("nil spec returns empty", func(t *testing.T) {
-		if got := md5Config(nil, "pw"); got != "" {
-			t.Errorf("expected empty, got %q", got)
+		if got, err := md5Config(nil, "pw"); err != nil || got != "" {
+			t.Errorf("expected empty, got %q (err %v)", got, err)
 		}
 	})
 
 	t.Run("missing password returns empty", func(t *testing.T) {
 		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
-		if got := md5Config(spec, ""); got != "" {
-			t.Errorf("expected empty when password unresolved, got %q", got)
+		if got, err := md5Config(spec, ""); err != nil || got != "" {
+			t.Errorf("expected empty when password unresolved, got %q (err %v)", got, err)
 		}
 	})
 
 	t.Run("renders quoted password line", func(t *testing.T) {
-		// BGP's "password" option takes a quoted string (not a bytestring), so
-		// the raw key is emitted verbatim between quotes. No human-readable
+		// The raw key is emitted verbatim between quotes. No human-readable
 		// comment is added: the quoted key is already readable.
 		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
-		got := md5Config(spec, "s3cr3t")
+		got, err := md5Config(spec, "s3cr3t")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if want := `password "s3cr3t";`; got != want {
 			t.Errorf("unexpected rendering:\n got %q\nwant %q", got, want)
 		}
@@ -887,12 +903,27 @@ func TestMd5Config(t *testing.T) {
 		// A backslash is representable (BIRD stores it literally, no unescaping)
 		// and must be emitted as-is, not doubled.
 		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
-		got := md5Config(spec, `a\b`)
+		got, err := md5Config(spec, `a\b`)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if want := `password "a\b";`; got != want {
 			t.Errorf("unexpected rendering:\n got %q\nwant %q", got, want)
 		}
 		if strings.ContainsAny(got, "\n\r") {
 			t.Errorf("rendered line must be single-line: %q", got)
+		}
+	})
+
+	t.Run("unrepresentable key returns error", func(t *testing.T) {
+		// md5Config enforces the gate at the rendering site (defense-in-depth):
+		// a key that is not allowed must never be rendered, even if a caller
+		// failed to validate it.
+		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
+		for _, pw := range []string{`has"quote`, "has\nnewline", "has\x00nul", strings.Repeat("a", maxKeyLength+1)} {
+			if got, err := md5Config(spec, pw); err == nil {
+				t.Errorf("md5Config(%q) = %q, nil; want error", pw, got)
+			}
 		}
 	})
 }
@@ -941,21 +972,39 @@ func TestBirdSecretComment(t *testing.T) {
 	}
 }
 
-// TestQuotedStringRepresentable verifies the MD5 key representability gate:
-// bytes a BIRD quoted string or the kernel C-string API cannot carry (NUL,
-// double quote, newline, carriage return) are rejected; everything else,
+// TestValidateMd5Key verifies the MD5 key gate: empty and over-length keys are
+// rejected, and so are keys containing bytes that are not allowed (NUL, double
+// quote, newline, carriage return). Everything else,
 // including a backslash and non-ASCII bytes, is accepted.
-func TestQuotedStringRepresentable(t *testing.T) {
-	ok := []string{"plainkey", `with\backslash`, "sp ace", "\xc3\xa9", "tab\tok"}
+func TestValidateMd5Key(t *testing.T) {
+	ok := []string{"plainkey", `with\backslash`, "sp ace", "\xc3\xa9", "tab\tok", strings.Repeat("a", maxKeyLength)}
 	for _, s := range ok {
-		if !QuotedStringRepresentable(s) {
-			t.Errorf("QuotedStringRepresentable(%q) = false, want true", s)
+		if err := ValidateMd5Key(s); err != nil {
+			t.Errorf("ValidateMd5Key(%q) = %v, want nil", s, err)
 		}
 	}
-	bad := []string{"has\x00nul", `has"quote`, "has\nnewline", "has\rcr"}
+	bad := []string{"", strings.Repeat("a", maxKeyLength+1), "has\x00nul", `has"quote`, "has\nnewline", "has\rcr"}
 	for _, s := range bad {
-		if QuotedStringRepresentable(s) {
-			t.Errorf("QuotedStringRepresentable(%q) = true, want false", s)
+		if err := ValidateMd5Key(s); err == nil {
+			t.Errorf("ValidateMd5Key(%q) = nil, want error", s)
+		}
+	}
+}
+
+// TestValidateTcpAoKey verifies the TCP-AO key gate: only the shared non-empty
+// and length checks apply. TCP-AO keys are hex-encoded, so bytes that would be
+// rejected for MD5 (NUL, double quote, CR, LF) are accepted here.
+func TestValidateTcpAoKey(t *testing.T) {
+	ok := []string{"plainkey", "has\x00nul", `has"quote`, "has\nnewline", "has\rcr", strings.Repeat("a", maxKeyLength)}
+	for _, s := range ok {
+		if err := ValidateTcpAoKey(s); err != nil {
+			t.Errorf("ValidateTcpAoKey(%q) = %v, want nil", s, err)
+		}
+	}
+	bad := []string{"", strings.Repeat("a", maxKeyLength+1)}
+	for _, s := range bad {
+		if err := ValidateTcpAoKey(s); err == nil {
+			t.Errorf("ValidateTcpAoKey(%q) = nil, want error", s)
 		}
 	}
 }
@@ -969,7 +1018,10 @@ func TestTcpAoConfigSpecialBytes(t *testing.T) {
 			{SendId: 1, RecvId: 2, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
 		},
 	}
-	got := tcpAoConfig(spec, map[uint8]string{1: "a\"b\\c\n"})
+	got, err := tcpAoConfig(spec, map[uint8]string{1: "a\"b\\c\n"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !strings.Contains(got, `secret hex:6122625c630a; # "a\"b\\c\n"`) {
 		t.Errorf("missing lossless hex secret with readable comment:\n%s", got)
 	}

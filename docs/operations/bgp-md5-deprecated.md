@@ -43,7 +43,9 @@ stringData:
 
 The same key must be configured on the remote BGP peer.
 
-**Key constraints**: The key must be non-empty and at most **80 bytes** (bytes, not characters), and must not contain a NUL byte, a double quote, a newline, or a carriage return (MD5 keys are carried in a BIRD quoted string, unlike TCP-AO). Empty, over-length, or unrepresentable keys cause the router to be skipped and the previous config retained. See [Key encoding and length limit](../controllers/router.md#bgp-authentication-md5--deprecated) in the router controller doc for details.
+**Key constraints**: The key must be non-empty and at most **80 bytes** (bytes, not characters), and must not contain a NUL byte, a double quote or a newline (not allowed by the components involved, such as BIRD and the Linux kernel), nor a carriage return (which we do not allow). TCP-AO, unlike MD5, accepts any byte. An empty, over-length, or unrepresentable key holds back the whole Gateway's BIRD config (not just the affected router) and the previous config is retained. See [Key encoding and length limit](../controllers/router.md#bgp-authentication-md5--deprecated) in the router controller doc for details.
+
+> **Watch for a trailing newline.** `kubectl create secret generic --from-file=...` and `echo "key" | ...` routinely append a `\n` to the value. Because a newline is not allowed in an MD5 key, such a key is **rejected** and (as above) holds back the whole Gateway's BIRD config. The `stringData` examples here do not add a newline; prefer them, or strip the trailing newline (for example `printf %s`) when creating the Secret from a file or pipe.
 
 ## No key rotation
 
