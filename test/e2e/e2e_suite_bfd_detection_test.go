@@ -177,9 +177,7 @@ func injectAndMeasure(podName string) time.Duration {
 	return detect
 }
 
-var _ = Describe("BFD Detection", Label("ipv4", "bfd-detection"), Serial, Ordered, func() {
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
+var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Serial, Ordered, func() {
 
 	var (
 		pod         string

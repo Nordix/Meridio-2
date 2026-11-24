@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/nordix/meridio-2/test/utils"
 	. "github.com/onsi/ginkgo/v2"
@@ -90,9 +89,7 @@ func nonDefaultLBPod() (string, error) {
 	return utils.Run(cmd)
 }
 
-var _ = Describe("Non-Default BGP Routes", Label("ipv4", "non-default-bgp"), Ordered, func() {
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
+var _ = Describe("Non-Default BGP Routes", Label(labelSuiteNonDefaultBGP, labelIPv4), Ordered, func() {
 
 	var pod string
 

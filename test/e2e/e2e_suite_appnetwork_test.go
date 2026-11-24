@@ -31,6 +31,10 @@ type suiteTestCase struct {
 	targetApp      string
 	targetReplicas int
 	gateways       []gwTestCase
+	// suiteLabel is the suite:<name> selector for this test case; see
+	// e2e_conventions_test.go. Table-driven files put it on the per-case
+	// container so each deployable topology stays independently selectable.
+	suiteLabel string
 }
 
 var testCases = []suiteTestCase{
@@ -39,6 +43,7 @@ var testCases = []suiteTestCase{
 		namespace:      "e2e-separate-appnetwork-v4",
 		targetApp:      "target-a",
 		targetReplicas: 2,
+		suiteLabel:     labelSuiteSeparateAppnetworkV4,
 		gateways: []gwTestCase{
 			{name: "gw-a1", vip: "10.0.0.1", targets: 2, dgName: "dg-a1"},
 			{name: "gw-a2", vip: "10.0.0.2", targets: 2, dgName: "dg-a2"},
@@ -49,6 +54,7 @@ var testCases = []suiteTestCase{
 		namespace:      "e2e-separate-static-appnetwork",
 		targetApp:      "target-a",
 		targetReplicas: 2,
+		suiteLabel:     labelSuiteSeparateStaticAppnetwork,
 		gateways: []gwTestCase{
 			{name: "gw-a1", vip: "110.0.0.1", targets: 2, dgName: "dg-a1"},
 			{name: "gw-a2", vip: "110.0.0.2", targets: 2, dgName: "dg-a2"},
@@ -59,6 +65,7 @@ var testCases = []suiteTestCase{
 		namespace:      "e2e-shared-appnetwork",
 		targetApp:      "target-b",
 		targetReplicas: 2,
+		suiteLabel:     labelSuiteSharedAppnetwork,
 		gateways: []gwTestCase{
 			{name: "gw-b1", vip: "20.0.0.1", targets: 2, dgName: "dg-b1"},
 			{name: "gw-b2", vip: "20.0.0.2", targets: 2, dgName: "dg-b2"},
@@ -72,6 +79,7 @@ var ipv6TestCases = []suiteTestCase{
 		namespace:      "e2e-separate-appnetwork-v6",
 		targetApp:      "target-v6a",
 		targetReplicas: 2,
+		suiteLabel:     labelSuiteSeparateAppnetworkV6,
 		gateways: []gwTestCase{
 			{name: "gw-v6a1", vip: "fd00:cafe:1::1", targets: 2, dgName: "dg-v6a1"},
 			{name: "gw-v6a2", vip: "fd00:cafe:1::2", targets: 2, dgName: "dg-v6a2"},
@@ -79,13 +87,10 @@ var ipv6TestCases = []suiteTestCase{
 	},
 }
 
-var _ = Describe("E2E Test Suites", Label("ipv4"), func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
+var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 	for _, suite := range testCases {
 		suite := suite
-		Describe(suite.name, Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
 			Context("Deployment", func() {
 				for _, gw := range suite.gateways {
 					gw := gw
@@ -511,13 +516,10 @@ var _ = Describe("E2E Test Suites", Label("ipv4"), func() {
 	}
 })
 
-var _ = Describe("E2E IPv6 Test Suites", Label("ipv6"), func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
+var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 	for _, suite := range ipv6TestCases {
 		suite := suite
-		Describe(suite.name, Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
 			Context("Deployment", func() {
 				for _, gw := range suite.gateways {
 					gw := gw

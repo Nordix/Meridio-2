@@ -62,7 +62,7 @@ import (
 // unconditionally restores readiness and the baseline replica count, so it
 // neither depends on nor perturbs the other specs. Serial ensures it does not
 // run concurrently with the low-MTU traffic specs.
-var _ = Describe("Traffic Exclusion", Label("ipv4"), Serial, Ordered, func() {
+var _ = Describe("Traffic Exclusion", Label(labelSuiteTrafficExclusion, labelIPv4), Serial, Ordered, func() {
 	const (
 		namespace = "e2e-ipv4-simple"
 		targetApp = "target-m"

@@ -83,7 +83,7 @@ func verifyRobustHealthy(timeout, polling time.Duration) {
 	}
 }
 
-var _ = Describe("Robustness", Label("dual-stack"), Serial, Ordered, func() {
+var _ = Describe("Robustness", Label(labelSuiteRobustness, labelDualStack), Serial, Ordered, func() {
 	BeforeEach(func() {
 		By("confirming baseline healthy state and traffic continuity before fault injection")
 		verifyRobustHealthy(30*time.Second, 2*time.Second)

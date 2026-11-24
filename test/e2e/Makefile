@@ -1,9 +1,16 @@
+################################################################################
+##@ General
+################################################################################
+
 .PHONY: default
-default: test
+# No single "run everything" target exists: suites claim overlapping VLANs and
+# ASNs (see suites/README.md), so they cannot all be deployed at once. Pick a
+# per-suite target (make <suite>) or an IP-family aggregate (make ipv4).
+default: help
 
 .PHONY: help
 help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } END { printf "\n" }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-37s\033[0m%s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } END { printf "\n" }' $(MAKEFILE_LIST)
 
 ################################################################################
 # Variables
@@ -27,13 +34,28 @@ BREAKOUT_NETWORK ?= kind-breakout
 MULTUS_VERSION ?= v4.1.2
 WHEREABOUTS_VERSION ?= v0.8.0
 
-# Suites
-SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao md5 bfd-detection
-SUITES_DS ?= dual-stack-simple shared-appnetwork-ds
+# Suites deployed per IP family by the CI aggregate targets. Listed in the same
+# order as the ##@ sections below: IPv4, IPv6, dual-stack.
+SUITES_IPV4 ?= bfd-detection md5 pod-cache-label sctp-multihoming separate-appnetwork-v4 separate-static-appnetwork shared-appnetwork tcp-ao ipv4-simple
 SUITES_IPV6 ?= separate-appnetwork-v6 client-v6
+SUITES_DS ?= dual-stack-simple shared-appnetwork-ds
 
-# Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
+# Test flags (e.g., make test-ipv4 GINKGO_FLAGS="--junit-report=report.xml")
+#
+# GINKGO_FLAGS is appended last, so it can also narrow a suite run down to a
+# single spec by text for quick local reproduction, at any depth of the tree:
+#   make test-md5 GINKGO_FLAGS='--focus="key rotation"'
 GINKGO_FLAGS ?=
+
+# Ginkgo invocation shared by every test-* target.
+#
+# Suite selection is by label filter, not by --focus on spec text: spec text is
+# report output and gets reworded, labels are the contract between the Makefile
+# and the spec trees. --fail-on-empty turns a selector that matches nothing into
+# a failure instead of a green run of zero specs.
+# See test/e2e/CONVENTIONS.md.
+GINKGO ?= go run github.com/onsi/ginkgo/v2/ginkgo
+GINKGO_OPTS ?= -v --tags=e2e --fail-on-empty
 
 # Paths
 PROJECT_ROOT := $(shell cd ../.. && pwd)
@@ -134,6 +156,16 @@ cluster-cleanup: ## Cleanup cluster dependencies.
 # Helper functions
 ################################################################################
 
+# run-specs: Run the spec trees selected by a Ginkgo label filter.
+# Args: $(1)=label filter expression, $(2)=extra ginkgo flags (optional)
+#
+# Per-suite targets pass a single suite label ("suite:md5") for local
+# reproduction; the CI aggregate targets pass an IP-family label ("ipv4") plus
+# -p to run every suite of that family in parallel.
+define run-specs
+	cd $(PROJECT_ROOT)/test/e2e && $(GINKGO) $(GINKGO_OPTS) $(2) --label-filter='$(1)' $(GINKGO_FLAGS)
+endef
+
 # deploy-suite: Deploy a test suite
 # Args: $(1)=namespace, $(2)=suite-dir, $(3)=suite-label, $(4)=sllbr-deployments, $(5)=lb-template (optional)
 define deploy-suite
@@ -192,44 +224,20 @@ define deploy-suite
 	echo "All pods ready in namespace $$NS"
 endef
 
-#################################################################################
-##@ Topology: ipv4-simple
 ################################################################################
-
-.PHONY: deploy-ipv4-simple
-deploy-ipv4-simple: cluster ## Deploy ipv4-simple topology.
-	$(call deploy-suite,e2e-ipv4-simple,$(shell pwd)/suites/ipv4-simple,ipv4-simple,sllbr-gw-m1)
-
-.PHONY: undeploy-ipv4-simple
-undeploy-ipv4-simple: ## Undeploy ipv4-simple topology.
-	@NS=e2e-ipv4-simple; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-ipv4-simple --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-#################################################################################
-##@ Suite: separate-appnetwork-v4
+##@ IPv4 suites
 ################################################################################
+#
+# One suite per deployable topology, then the suites that reuse the shared
+# ipv4-simple topology. Every suite is runnable on its own:
+#   make <suite>            deploy + test
+#   make test-<suite>       test only (--label-filter='suite:<suite>')
+#
 
-.PHONY: separate-appnetwork-v4
-separate-appnetwork-v4: deploy-separate-appnetwork-v4 test-separate-appnetwork-v4 ## Deploy and test separate-appnetwork-v4 suite.
+#-------------------------------------------------------------------------------
+# bfd-detection
+#-------------------------------------------------------------------------------
 
-.PHONY: deploy-separate-appnetwork-v4
-deploy-separate-appnetwork-v4: cluster ## Deploy separate-appnetwork-v4 topology.
-	$(call deploy-suite,e2e-separate-appnetwork-v4,$(shell pwd)/suites/separate-appnetwork-v4,separate-appnet-v4,sllbr-gw-a1 sllbr-gw-a2)
-
-.PHONY: test-separate-appnetwork-v4
-test-separate-appnetwork-v4: ## Run e2e tests for separate-appnetwork-v4 suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network IPv4" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-separate-appnetwork-v4
-undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
-	@NS=e2e-separate-appnetwork-v4; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v4 --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-#################################################################################
-##@ Suite: bfd-detection
-################################################################################
 
 # Standalone single-gateway suite (VLAN 1300, gw-bfd). The GatewayRouter starts
 # with BFD enabled; the test compares BGP-down detection time with BFD (~0.9s)
@@ -245,7 +253,7 @@ deploy-bfd-detection: cluster ## Deploy bfd-detection topology.
 
 .PHONY: test-bfd-detection
 test-bfd-detection: ## Run e2e tests for bfd-detection suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="BFD Detection" $(GINKGO_FLAGS)
+	$(call run-specs,suite:bfd-detection)
 
 .PHONY: undeploy-bfd-detection
 undeploy-bfd-detection: ## Undeploy bfd-detection topology.
@@ -253,30 +261,104 @@ undeploy-bfd-detection: ## Undeploy bfd-detection topology.
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-bfd-detection --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-#################################################################################
-##@ Suite: separate-appnetwork-v6
-################################################################################
+#-------------------------------------------------------------------------------
+# md5 (deprecated, RFC2385)
+#-------------------------------------------------------------------------------
 
-.PHONY: separate-appnetwork-v6
-separate-appnetwork-v6: deploy-separate-appnetwork-v6 test-separate-appnetwork-v6 ## Deploy and test separate-appnetwork-v6 suite.
 
-.PHONY: deploy-separate-appnetwork-v6
-deploy-separate-appnetwork-v6: cluster ## Deploy separate-appnetwork-v6 topology.
-	$(call deploy-suite,e2e-separate-appnetwork-v6,$(shell pwd)/suites/separate-appnetwork-v6,separate-appnet-v6,sllbr-gw-v6a1 sllbr-gw-v6a2)
+# Deprecated: MD5 (RFC2385) is a weak, legacy BGP authentication mechanism with
+# no key rotation, superseded by TCP-AO (RFC5925). This suite guards the
+# deprecated MD5 path. gw-md1 peers on VLAN 1400 (ASN 64523) and gw-md2 on VLAN
+# 1500 (ASN 64524); the simulated DCGW (vpn-gateway) matches with a `password`
+# line per peer (see hack/vpn-gateway/bird-gw.conf).
 
-.PHONY: test-separate-appnetwork-v6
-test-separate-appnetwork-v6: ## Run e2e tests for separate-appnetwork-v6 suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate App Network IPv6" $(GINKGO_FLAGS)
+.PHONY: md5
+md5: deploy-md5 test-md5 ## Deploy and test md5 suite (deprecated).
 
-.PHONY: undeploy-separate-appnetwork-v6
-undeploy-separate-appnetwork-v6: ## Undeploy separate-appnetwork-v6 topology.
-	@NS=e2e-separate-appnetwork-v6; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v6 --ignore-not-found=true; \
+.PHONY: deploy-md5
+deploy-md5: cluster ## Deploy md5 topology (deprecated).
+	$(call deploy-suite,e2e-md5,$(shell pwd)/suites/md5,md5,sllbr-gw-md1 sllbr-gw-md2)
+
+.PHONY: test-md5
+test-md5: ## Run e2e tests for md5 suite (deprecated).
+	$(call run-specs,suite:md5)
+
+.PHONY: undeploy-md5
+undeploy-md5: ## Undeploy md5 topology (deprecated).
+	@NS=e2e-md5; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-md5 --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-##############################################################################
-##@ Suite: separate-static-appnetwork
-################################################################################
+#-------------------------------------------------------------------------------
+# pod-cache-label
+#-------------------------------------------------------------------------------
+
+
+.PHONY: pod-cache-label
+pod-cache-label: deploy-pod-cache-label test-pod-cache-label ## Deploy and test pod-cache-label suite.
+
+.PHONY: deploy-pod-cache-label
+deploy-pod-cache-label: cluster ## Deploy pod-cache-label topology.
+	$(call deploy-suite,e2e-pod-cache-label,$(shell pwd)/suites/pod-cache-label,pod-cache-label,sllbr-gw-pcl)
+
+.PHONY: test-pod-cache-label
+test-pod-cache-label: ## Run e2e tests for pod-cache-label suite.
+	$(call run-specs,suite:pod-cache-label)
+
+.PHONY: undeploy-pod-cache-label
+undeploy-pod-cache-label: ## Undeploy pod-cache-label topology.
+	@NS=e2e-pod-cache-label; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-pod-cache-label --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#-------------------------------------------------------------------------------
+# sctp-multihoming
+#-------------------------------------------------------------------------------
+
+
+.PHONY: sctp-multihoming
+sctp-multihoming: deploy-sctp-multihoming test-sctp-multihoming ## Deploy and test sctp-multihoming suite.
+
+.PHONY: deploy-sctp-multihoming
+deploy-sctp-multihoming: cluster ## Deploy sctp-multihoming topology.
+	$(call deploy-suite,e2e-sctp-multihoming,$(shell pwd)/suites/sctp-multihoming,sctp-multihoming,sllbr-sctp-gw1 sllbr-sctp-gw2)
+
+.PHONY: test-sctp-multihoming
+test-sctp-multihoming: ## Run e2e tests for sctp-multihoming suite.
+	$(call run-specs,suite:sctp-multihoming)
+
+.PHONY: undeploy-sctp-multihoming
+undeploy-sctp-multihoming: ## Undeploy sctp-multihoming topology.
+	@NS=e2e-sctp-multihoming; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-sctp-multihoming --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#-------------------------------------------------------------------------------
+# separate-appnetwork-v4
+#-------------------------------------------------------------------------------
+
+
+.PHONY: separate-appnetwork-v4
+separate-appnetwork-v4: deploy-separate-appnetwork-v4 test-separate-appnetwork-v4 ## Deploy and test separate-appnetwork-v4 suite.
+
+.PHONY: deploy-separate-appnetwork-v4
+deploy-separate-appnetwork-v4: cluster ## Deploy separate-appnetwork-v4 topology.
+	$(call deploy-suite,e2e-separate-appnetwork-v4,$(shell pwd)/suites/separate-appnetwork-v4,separate-appnet-v4,sllbr-gw-a1 sllbr-gw-a2)
+
+.PHONY: test-separate-appnetwork-v4
+test-separate-appnetwork-v4: ## Run e2e tests for separate-appnetwork-v4 suite.
+	$(call run-specs,suite:separate-appnetwork-v4)
+
+.PHONY: undeploy-separate-appnetwork-v4
+undeploy-separate-appnetwork-v4: ## Undeploy separate-appnetwork-v4 topology.
+	@NS=e2e-separate-appnetwork-v4; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v4 --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#-------------------------------------------------------------------------------
+# separate-static-appnetwork
+#-------------------------------------------------------------------------------
+
 
 .PHONY: separate-static-appnetwork
 separate-static-appnetwork: deploy-separate-static-appnetwork test-separate-static-appnetwork ## Deploy and test separate-static-appnetwork suite.
@@ -287,7 +369,7 @@ deploy-separate-static-appnetwork: cluster ## Deploy separate-static-appnetwork 
 
 .PHONY: test-separate-static-appnetwork
 test-separate-static-appnetwork: ## Run e2e tests for separate-static-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Separate Static App Network" $(GINKGO_FLAGS)
+	$(call run-specs,suite:separate-static-appnetwork)
 
 .PHONY: undeploy-separate-static-appnetwork
 undeploy-separate-static-appnetwork: ## Undeploy separate-static-appnetwork topology.
@@ -295,9 +377,10 @@ undeploy-separate-static-appnetwork: ## Undeploy separate-static-appnetwork topo
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-sep-static-net --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-##############################################################################
-##@ Suite: shared-appnetwork
-################################################################################
+#-------------------------------------------------------------------------------
+# shared-appnetwork
+#-------------------------------------------------------------------------------
+
 
 .PHONY: shared-appnetwork
 shared-appnetwork: deploy-shared-appnetwork test-shared-appnetwork ## Deploy and test shared-appnetwork suite.
@@ -308,7 +391,7 @@ deploy-shared-appnetwork: cluster ## Deploy shared-appnetwork topology.
 
 .PHONY: test-shared-appnetwork
 test-shared-appnetwork: ## Run e2e tests for shared-appnetwork suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Shared App Network" $(GINKGO_FLAGS)
+	$(call run-specs,suite:shared-appnetwork)
 
 .PHONY: undeploy-shared-appnetwork
 undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
@@ -316,9 +399,280 @@ undeploy-shared-appnetwork: ## Undeploy shared-appnetwork topology.
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnet --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-#################################################################################
-##@ Topology: shared-appnetwork-ds (dual-stack; used by Endpoint Scaling)
+#-------------------------------------------------------------------------------
+# tcp-ao
+#-------------------------------------------------------------------------------
+
+
+.PHONY: tcp-ao
+tcp-ao: deploy-tcp-ao test-tcp-ao ## Deploy and test tcp-ao suite.
+
+.PHONY: deploy-tcp-ao
+deploy-tcp-ao: cluster ## Deploy tcp-ao topology.
+	$(call deploy-suite,e2e-tcp-ao,$(shell pwd)/suites/tcp-ao,tcp-ao,sllbr-gw-t1 sllbr-gw-t2)
+
+.PHONY: test-tcp-ao
+test-tcp-ao: ## Run e2e tests for tcp-ao suite.
+	$(call run-specs,suite:tcp-ao)
+
+.PHONY: undeploy-tcp-ao
+undeploy-tcp-ao: ## Undeploy tcp-ao topology.
+	@NS=e2e-tcp-ao; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-tcp-ao --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#-------------------------------------------------------------------------------
+# Topology: ipv4-simple (shared; no spec tree of its own)
+#-------------------------------------------------------------------------------
+
+
+.PHONY: deploy-ipv4-simple
+deploy-ipv4-simple: cluster ## Deploy ipv4-simple topology.
+	$(call deploy-suite,e2e-ipv4-simple,$(shell pwd)/suites/ipv4-simple,ipv4-simple,sllbr-gw-m1)
+
+.PHONY: undeploy-ipv4-simple
+undeploy-ipv4-simple: ## Undeploy ipv4-simple topology.
+	@NS=e2e-ipv4-simple; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-ipv4-simple --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#-------------------------------------------------------------------------------
+# any-port  [reuses ipv4-simple]
+#-------------------------------------------------------------------------------
+
+
+# Regression test for issue #262 (fixed in #266): an L34Route with
+# destinationPorts ["any"] must program a working all-ports match in the data
+# plane, not just be admitted. Reuses the ipv4-simple topology; the spec patches
+# route-m1 at runtime and restores the baseline via DeferCleanup, so the tree is
+# Serial with respect to the other suites sharing that route.
+
+.PHONY: any-port
+any-port: deploy-any-port test-any-port ## Deploy and test any-port suite.
+
+.PHONY: deploy-any-port
+deploy-any-port: deploy-ipv4-simple ## Deploy ipv4-simple topology (shared).
+
+.PHONY: test-any-port
+test-any-port: ## Run e2e tests for any-port suite (destinationPorts "any").
+	$(call run-specs,suite:any-port)
+
+.PHONY: undeploy-any-port
+undeploy-any-port: undeploy-ipv4-simple ## Undeploy ipv4-simple topology (shared).
+
+#-------------------------------------------------------------------------------
+# bgp  [reuses ipv4-simple]
+#-------------------------------------------------------------------------------
+
+
+.PHONY: bgp
+bgp: deploy-bgp test-bgp ## Deploy and test bgp suite.
+
+.PHONY: deploy-bgp
+deploy-bgp: deploy-ipv4-simple ## Deploy ipv4-simple topology (shared).
+
+.PHONY: test-bgp
+test-bgp: ## Run e2e tests for bgp suite (VIP advertisement).
+	$(call run-specs,suite:bgp)
+
+.PHONY: undeploy-bgp
+undeploy-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology (shared).
+
+#-------------------------------------------------------------------------------
+# low-mtu  [reuses ipv4-simple]
+#-------------------------------------------------------------------------------
+
+
+.PHONY: low-mtu
+low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
+
+.PHONY: deploy-low-mtu
+deploy-low-mtu: deploy-ipv4-simple ## Deploy ipv4-simple topology (shared).
+
+.PHONY: test-low-mtu
+test-low-mtu: ## Run e2e tests for low-mtu suite (PMTU discovery).
+	$(call run-specs,suite:low-mtu)
+
+.PHONY: undeploy-low-mtu
+undeploy-low-mtu: undeploy-ipv4-simple ## Undeploy ipv4-simple topology (shared).
+
+#-------------------------------------------------------------------------------
+# non-default-bgp  [reuses ipv4-simple]
+#-------------------------------------------------------------------------------
+
+
+# Verifies the LB router accepts non-default/specific BGP routes (not just the
+# default route) and installs them into the kernel breakout table. Reuses the
+# ipv4-simple topology; the simulated DCGW (vpn-gateway) announces specific
+# blackhole prefixes from hack/vpn-gateway/bird-filler-net.conf alongside the
+# default route (see hack/vpn-gateway/bird-gw.conf).
+
+.PHONY: non-default-bgp
+non-default-bgp: deploy-non-default-bgp test-non-default-bgp ## Deploy and test non-default-bgp suite.
+
+.PHONY: deploy-non-default-bgp
+deploy-non-default-bgp: deploy-ipv4-simple ## Deploy ipv4-simple topology (shared).
+
+.PHONY: test-non-default-bgp
+test-non-default-bgp: ## Run e2e tests for non-default-bgp suite (route acceptance).
+	$(call run-specs,suite:non-default-bgp)
+
+.PHONY: undeploy-non-default-bgp
+undeploy-non-default-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology (shared).
+
+#-------------------------------------------------------------------------------
+# resiliency  [reuses ipv4-simple]
+#-------------------------------------------------------------------------------
+
+
+.PHONY: resiliency
+resiliency: deploy-resiliency test-resiliency ## Deploy and test resiliency suite.
+
+.PHONY: deploy-resiliency
+deploy-resiliency: deploy-ipv4-simple ## Deploy ipv4-simple topology (shared).
+
+.PHONY: test-resiliency
+test-resiliency: ## Run e2e tests for resiliency suite (process recovery).
+	$(call run-specs,suite:resiliency)
+
+.PHONY: undeploy-resiliency
+undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology (shared).
+
+#-------------------------------------------------------------------------------
+# traffic-exclusion  [reuses ipv4-simple]
+#-------------------------------------------------------------------------------
+
+
+.PHONY: traffic-exclusion
+traffic-exclusion: deploy-traffic-exclusion test-traffic-exclusion ## Deploy and test traffic-exclusion suite.
+
+.PHONY: deploy-traffic-exclusion
+deploy-traffic-exclusion: deploy-ipv4-simple ## Deploy ipv4-simple topology (shared).
+
+.PHONY: test-traffic-exclusion
+test-traffic-exclusion: ## Run e2e tests for traffic-exclusion suite (NotReady targets).
+	$(call run-specs,suite:traffic-exclusion)
+
+.PHONY: undeploy-traffic-exclusion
+undeploy-traffic-exclusion: undeploy-ipv4-simple ## Undeploy ipv4-simple topology (shared).
+
 ################################################################################
+##@ IPv6 suites
+################################################################################
+
+#-------------------------------------------------------------------------------
+# separate-appnetwork-v6
+#-------------------------------------------------------------------------------
+
+
+.PHONY: separate-appnetwork-v6
+separate-appnetwork-v6: deploy-separate-appnetwork-v6 test-separate-appnetwork-v6 ## Deploy and test separate-appnetwork-v6 suite.
+
+.PHONY: deploy-separate-appnetwork-v6
+deploy-separate-appnetwork-v6: cluster ## Deploy separate-appnetwork-v6 topology.
+	$(call deploy-suite,e2e-separate-appnetwork-v6,$(shell pwd)/suites/separate-appnetwork-v6,separate-appnet-v6,sllbr-gw-v6a1 sllbr-gw-v6a2)
+
+.PHONY: test-separate-appnetwork-v6
+test-separate-appnetwork-v6: ## Run e2e tests for separate-appnetwork-v6 suite.
+	$(call run-specs,suite:separate-appnetwork-v6)
+
+.PHONY: undeploy-separate-appnetwork-v6
+undeploy-separate-appnetwork-v6: ## Undeploy separate-appnetwork-v6 topology.
+	@NS=e2e-separate-appnetwork-v6; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-separate-appnet-v6 --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#-------------------------------------------------------------------------------
+# client-v6
+#-------------------------------------------------------------------------------
+
+# Target-initiated (client) traffic over IPv6: application Pods connect from the
+# VIP to an external server simulated on the VPN gateway (fd00:200:90::100).
+# gw-c6 peers on VLAN 1600 (ASN 64525). Part of SUITES_IPV6.
+
+.PHONY: client-v6
+client-v6: deploy-client-v6 test-client-v6 ## Deploy and test client-v6 suite.
+
+.PHONY: deploy-client-v6
+deploy-client-v6: cluster ## Deploy client-v6 topology.
+	$(call deploy-suite,e2e-client-v6,$(shell pwd)/suites/client-v6,client-v6,sllbr-gw-c6)
+
+.PHONY: test-client-v6
+test-client-v6: ## Run e2e tests for client-v6 suite.
+	$(call run-specs,suite:client-v6)
+
+.PHONY: undeploy-client-v6
+undeploy-client-v6: ## Undeploy client-v6 topology.
+	@NS=e2e-client-v6; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-client-v6 --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
+##@ Dual-stack suites
+################################################################################
+
+#-------------------------------------------------------------------------------
+# dual-stack-simple
+#-------------------------------------------------------------------------------
+
+
+.PHONY: dual-stack-simple
+dual-stack-simple: deploy-dual-stack-simple test-dual-stack-simple ## Deploy and test dual-stack-simple suite.
+
+.PHONY: deploy-dual-stack-simple
+deploy-dual-stack-simple: cluster ## Deploy dual-stack-simple topology.
+	$(call deploy-suite,e2e-dual-stack-simple,$(shell pwd)/suites/dual-stack-simple,dual-stack-simple,sllbr-gw-ds)
+
+.PHONY: test-dual-stack-simple
+test-dual-stack-simple: ## Run e2e tests for dual-stack-simple suite.
+	$(call run-specs,suite:dual-stack-simple)
+
+.PHONY: undeploy-dual-stack-simple
+undeploy-dual-stack-simple: ## Undeploy dual-stack-simple topology.
+	@NS=e2e-dual-stack-simple; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack-simple --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+#-------------------------------------------------------------------------------
+# readiness-gates  [reuses dual-stack-simple]
+#-------------------------------------------------------------------------------
+
+
+.PHONY: readiness-gates
+readiness-gates: deploy-readiness-gates test-readiness-gates ## Deploy and test readiness-gates suite.
+
+.PHONY: deploy-readiness-gates
+deploy-readiness-gates: deploy-dual-stack-simple ## Deploy dual-stack-simple topology (shared).
+
+.PHONY: test-readiness-gates
+test-readiness-gates: ## Run e2e tests for readiness-gates suite.
+	$(call run-specs,suite:readiness-gates)
+
+.PHONY: undeploy-readiness-gates
+undeploy-readiness-gates: undeploy-dual-stack-simple ## Undeploy dual-stack-simple topology (shared).
+
+#-------------------------------------------------------------------------------
+# robustness  [reuses dual-stack-simple]
+#-------------------------------------------------------------------------------
+
+
+.PHONY: robustness
+robustness: deploy-robustness test-robustness ## Deploy and test robustness suite.
+
+.PHONY: deploy-robustness
+deploy-robustness: deploy-dual-stack-simple ## Deploy dual-stack-simple topology (shared).
+
+.PHONY: test-robustness
+test-robustness: ## Run e2e tests for robustness suite (fault injection).
+	$(call run-specs,suite:robustness)
+
+.PHONY: undeploy-robustness
+undeploy-robustness: undeploy-dual-stack-simple ## Undeploy dual-stack-simple topology (shared).
+
+#-------------------------------------------------------------------------------
+# Topology: shared-appnetwork-ds (shared; no spec tree of its own)
+#-------------------------------------------------------------------------------
+
 
 # NOTE: shared-appnetwork-ds reuses VLAN 300/400 + ASN 64514/64515 (with an IPv6
 # overlay). It is therefore mutually exclusive with the IPv4 shared-appnetwork
@@ -334,308 +688,85 @@ undeploy-shared-appnetwork-ds: ## Undeploy shared-appnetwork-ds topology.
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-shared-appnet-ds --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
-#################################################################################
-##@ Suite: sctp-multihoming
-################################################################################
+#-------------------------------------------------------------------------------
+# scaling  [reuses shared-appnetwork-ds]
+#-------------------------------------------------------------------------------
 
-.PHONY: sctp-multihoming
-sctp-multihoming: deploy-sctp-multihoming test-sctp-multihoming ## Deploy and test sctp-multihoming suite.
 
-.PHONY: deploy-sctp-multihoming
-deploy-sctp-multihoming: cluster ## Deploy sctp-multihoming topology.
-	$(call deploy-suite,e2e-sctp-multihoming,$(shell pwd)/suites/sctp-multihoming,sctp-multihoming,sllbr-sctp-gw1 sllbr-sctp-gw2)
+# Endpoint Scaling reuses the shared-appnetwork-ds topology (like low-mtu reuses
+# ipv4-simple). The spec is Serial and carries the 'dual-stack' label, so it runs
+# as part of the dual-stack suite on the dual-stack runner. These targets are
+# kept for running the scaling tests standalone locally.
 
-.PHONY: test-sctp-multihoming
-test-sctp-multihoming: ## Run e2e tests for sctp-multihoming suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="SCTP Multihoming" $(GINKGO_FLAGS)
+.PHONY: scaling
+scaling: deploy-scaling test-scaling ## Deploy and test scaling suite.
 
-.PHONY: undeploy-sctp-multihoming
-undeploy-sctp-multihoming: ## Undeploy sctp-multihoming topology.
-	@NS=e2e-sctp-multihoming; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-sctp-multihoming --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+.PHONY: deploy-scaling
+deploy-scaling: deploy-shared-appnetwork-ds ## Deploy shared-appnetwork-ds topology (shared).
 
-###############################################################################
-##@ Suite: low-mtu
-################################################################################
+.PHONY: test-scaling
+test-scaling: ## Run e2e tests for scaling suite.
+	$(call run-specs,suite:scaling)
 
-.PHONY: low-mtu
-low-mtu: deploy-low-mtu test-low-mtu ## Deploy and test low-mtu suite.
+.PHONY: undeploy-scaling
+undeploy-scaling: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology (shared).
 
-.PHONY: deploy-low-mtu
-deploy-low-mtu: deploy-ipv4-simple ## Deploy ipv4-simple topology.
+#-------------------------------------------------------------------------------
+# node-drain  [reuses shared-appnetwork-ds]
+#-------------------------------------------------------------------------------
 
-.PHONY: test-low-mtu
-test-low-mtu: ## Run PMTU discovery tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Low MTU" $(GINKGO_FLAGS)
 
-.PHONY: undeploy-low-mtu
-undeploy-low-mtu: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
+# Node Drain reuses the shared-appnetwork-ds topology (like Endpoint Scaling).
+# The spec is Serial and carries the 'dual-stack' label, so it runs as part of
+# the dual-stack suite on the dual-stack runner. It requires a cluster with at
+# least 4 worker nodes (the default Kind cluster config provides 4). These
+# targets are kept for running the node-drain test standalone locally.
 
-################################################################################
-##@ Suite: TCP-AO
-################################################################################
+.PHONY: node-drain
+node-drain: deploy-node-drain test-node-drain ## Deploy and test node-drain suite.
 
-.PHONY: tcp-ao
-tcp-ao: deploy-tcp-ao test-tcp-ao ## Deploy and test TCP-AO suite.
+.PHONY: deploy-node-drain
+deploy-node-drain: deploy-shared-appnetwork-ds ## Deploy shared-appnetwork-ds topology (shared).
 
-.PHONY: deploy-tcp-ao
-deploy-tcp-ao: cluster ## Deploy tcp-ao topology.
-	$(call deploy-suite,e2e-tcp-ao,$(shell pwd)/suites/tcp-ao,tcp-ao,sllbr-gw-t1 sllbr-gw-t2)
+.PHONY: test-node-drain
+test-node-drain: ## Run e2e tests for node-drain suite.
+	$(call run-specs,suite:node-drain)
 
-.PHONY: test-tcp-ao
-test-tcp-ao: ## Run e2e tests for tcp-ao suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="TCP-AO" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-tcp-ao
-undeploy-tcp-ao: ## Undeploy tcp-ao topology.
-	@NS=e2e-tcp-ao; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-tcp-ao --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+.PHONY: undeploy-node-drain
+undeploy-node-drain: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology (shared).
 
 ################################################################################
-##@ Suite: MD5 (deprecated RFC2385)
+##@ CI aggregates
 ################################################################################
+#
+# Used by .github/workflows/e2e.yaml: one runner per IP family deploys every
+# suite of that family and runs them with --label-filter=<family> -p.
+#
 
-# Deprecated: MD5 (RFC2385) is a weak, legacy BGP authentication mechanism with
-# no key rotation, superseded by TCP-AO (RFC5925). This suite guards the
-# deprecated MD5 path. gw-md1 peers on VLAN 1400 (ASN 64523) and gw-md2 on VLAN
-# 1500 (ASN 64524); the simulated DCGW (vpn-gateway) matches with a `password`
-# line per peer (see hack/vpn-gateway/bird-gw.conf).
+#-------------------------------------------------------------------------------
+# ipv4  (all IPv4 suites)
+#-------------------------------------------------------------------------------
 
-.PHONY: md5
-md5: deploy-md5 test-md5 ## Deploy and test MD5 suite (deprecated).
-
-.PHONY: deploy-md5
-deploy-md5: cluster ## Deploy md5 topology (deprecated).
-	$(call deploy-suite,e2e-md5,$(shell pwd)/suites/md5,md5,sllbr-gw-md1 sllbr-gw-md2)
-
-.PHONY: test-md5
-test-md5: ## Run e2e tests for md5 suite (deprecated).
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="MD5" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-md5
-undeploy-md5: ## Undeploy md5 topology (deprecated).
-	@NS=e2e-md5; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-md5 --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-################################################################################
-##@ Suite: client-v6
-################################################################################
-
-# Target-initiated (client) traffic over IPv6: application Pods connect from the
-# VIP to an external server simulated on the VPN gateway (fd00:200:90::100).
-# gw-c6 peers on VLAN 1600 (ASN 64525). Part of SUITES_IPV6.
-
-.PHONY: client-v6
-client-v6: deploy-client-v6 test-client-v6 ## Deploy and test client-v6 suite.
-
-.PHONY: deploy-client-v6
-deploy-client-v6: cluster ## Deploy client-v6 topology.
-	$(call deploy-suite,e2e-client-v6,$(shell pwd)/suites/client-v6,client-v6,sllbr-gw-c6)
-
-.PHONY: test-client-v6
-test-client-v6: ## Run e2e tests for client-v6 suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Client IPv6" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-client-v6
-undeploy-client-v6: ## Undeploy client-v6 topology.
-	@NS=e2e-client-v6; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-client-v6 --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-################################################################################
-##@ Suite: resiliency
-################################################################################
-
-.PHONY: resiliency
-resiliency: deploy-resiliency test-resiliency ## Deploy and test resiliency suite.
-
-.PHONY: deploy-resiliency
-deploy-resiliency: deploy-ipv4-simple ## Deploy ipv4-simple topology.
-
-.PHONY: test-resiliency
-test-resiliency: ## Run process recovery tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Resiliency" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-resiliency
-undeploy-resiliency: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
-
-################################################################################
-##@ Suite: bgp
-################################################################################
-
-.PHONY: bgp
-bgp: deploy-bgp test-bgp ## Deploy and test BGP VIP advertisement suite.
-
-.PHONY: deploy-bgp
-deploy-bgp: deploy-ipv4-simple ## Deploy ipv4-simple topology.
-
-.PHONY: test-bgp
-test-bgp: ## Run BGP VIP advertisement tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="E2E BGP VIP Advertisement" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-bgp
-undeploy-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
-
-################################################################################
-##@ Suite: non-default-bgp
-################################################################################
-
-# Verifies the LB router accepts non-default/specific BGP routes (not just the
-# default route) and installs them into the kernel breakout table. Reuses the
-# ipv4-simple topology; the simulated DCGW (vpn-gateway) announces specific
-# blackhole prefixes from hack/vpn-gateway/bird-filler-net.conf alongside the
-# default route (see hack/vpn-gateway/bird-gw.conf).
-
-.PHONY: non-default-bgp
-non-default-bgp: deploy-non-default-bgp test-non-default-bgp ## Deploy and test non-default BGP routes suite.
-
-.PHONY: deploy-non-default-bgp
-deploy-non-default-bgp: deploy-ipv4-simple ## Deploy ipv4-simple topology.
-
-.PHONY: test-non-default-bgp
-test-non-default-bgp: ## Run non-default BGP route acceptance tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Non-Default BGP Routes" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-non-default-bgp
-undeploy-non-default-bgp: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
-
-################################################################################
-##@ Suite: traffic-exclusion
-################################################################################
-
-.PHONY: traffic-exclusion
-traffic-exclusion: deploy-traffic-exclusion test-traffic-exclusion ## Deploy and test traffic-exclusion suite.
-
-.PHONY: deploy-traffic-exclusion
-deploy-traffic-exclusion: deploy-ipv4-simple ## Deploy ipv4-simple topology.
-
-.PHONY: test-traffic-exclusion
-test-traffic-exclusion: ## Run NotReady target traffic exclusion tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Traffic Exclusion" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-traffic-exclusion
-undeploy-traffic-exclusion: undeploy-ipv4-simple ## Undeploy ipv4-simple topology.
-
-################################################################################
-##@ Suite: pod-cache-label
-################################################################################
-
-.PHONY: pod-cache-label
-pod-cache-label: deploy-pod-cache-label test-pod-cache-label ## Deploy and test pod-cache-label suite.
-
-.PHONY: deploy-pod-cache-label
-deploy-pod-cache-label: cluster ## Deploy pod-cache-label topology.
-	$(call deploy-suite,e2e-pod-cache-label,$(shell pwd)/suites/pod-cache-label,pod-cache-label,sllbr-gw-pcl)
-
-.PHONY: test-pod-cache-label
-test-pod-cache-label: ## Run e2e tests for pod-cache-label suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Pod Cache Label" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-pod-cache-label
-undeploy-pod-cache-label: ## Undeploy pod-cache-label topology.
-	@NS=e2e-pod-cache-label; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-pod-cache-label --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-#################################################################################
-##@ Suite: dual-stack
-################################################################################
-
-.PHONY: dual-stack-simple
-dual-stack-simple: deploy-dual-stack-simple test-dual-stack-simple ## Deploy and test dual-stack suite.
-
-.PHONY: deploy-dual-stack-simple
-deploy-dual-stack-simple: cluster ## Deploy dual-stack topology.
-	$(call deploy-suite,e2e-dual-stack-simple,$(shell pwd)/suites/dual-stack-simple,dual-stack-simple,sllbr-gw-ds)
-
-.PHONY: test-dual-stack-simple
-test-dual-stack-simple: ## Run e2e tests for dual-stack suite.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Dual Stack" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-dual-stack-simple
-undeploy-dual-stack-simple: ## Undeploy dual-stack topology.
-	@NS=e2e-dual-stack-simple; \
-	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-dual-stack-simple --ignore-not-found=true; \
-	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
-
-################################################################################
-##@ Suite: readiness-gates
-################################################################################
-
-.PHONY: readiness-gates
-readiness-gates: deploy-readiness-gates test-readiness-gates ## Deploy and test readiness-gates suite.
-
-.PHONY: deploy-readiness-gates
-deploy-readiness-gates: deploy-dual-stack-simple ## Deploy readiness-gates topology (reuses dual-stack-simple).
-
-.PHONY: test-readiness-gates
-test-readiness-gates: ## Run e2e readiness gates tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Readiness Gates" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-readiness-gates
-undeploy-readiness-gates: undeploy-dual-stack-simple ## Undeploy readiness-gates topology (same as dual-stack-simple).
-
-################################################################################
-##@ Suite: robustness
-################################################################################
-
-.PHONY: robustness
-robustness: deploy-robustness test-robustness ## Deploy and test robustness suite.
-
-.PHONY: deploy-robustness
-deploy-robustness: deploy-dual-stack-simple ## Deploy robustness topology (reuses dual-stack-simple).
-
-.PHONY: test-robustness
-test-robustness: ## Run e2e robustness (fault-injection/recovery) tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Robustness" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-robustness
-undeploy-robustness: undeploy-dual-stack-simple ## Undeploy robustness topology (same as dual-stack-simple).
-
-###############################################################################
-##@ All ipv4 suites
-################################################################################
 
 .PHONY: ipv4
-ipv4: deploy-ipv4 test-ipv4 ## Deploy and test all ipv4 suites.
+ipv4: deploy-ipv4 test-ipv4 ## Deploy and test all IPv4 suites.
 
 .PHONY: deploy-ipv4
 deploy-ipv4: ## Deploy all IPv4 suites.
 	@for suite in $(SUITES_IPV4); do $(MAKE) deploy-$$suite || exit 1; done
 
 .PHONY: test-ipv4
-test-ipv4: ## Run all IPv4 e2e tests in parallel.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=ipv4 $(GINKGO_FLAGS)
+test-ipv4: ## Run e2e tests for all IPv4 suites (parallel).
+	$(call run-specs,ipv4,-p)
 
 .PHONY: undeploy-ipv4
 undeploy-ipv4: ## Undeploy all IPv4 suites.
 	@for suite in $(SUITES_IPV4); do $(MAKE) undeploy-$$suite; done
 
-################################################################################
-##@ All dual-stack suites
-################################################################################
+#-------------------------------------------------------------------------------
+# ipv6  (all IPv6 suites)
+#-------------------------------------------------------------------------------
 
-.PHONY: dual-stack
-dual-stack: deploy-dual-stack test-dual-stack ## Deploy and test all dual-stack suites.
-
-.PHONY: deploy-dual-stack
-deploy-dual-stack: ## Deploy all dual-stack suites.
-	@for suite in $(SUITES_DS); do $(MAKE) deploy-$$suite || exit 1; done
-
-.PHONY: test-dual-stack
-test-dual-stack: ## Run all dual-stack e2e tests in parallel.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=dual-stack $(GINKGO_FLAGS)
-
-.PHONY: undeploy-dual-stack
-undeploy-dual-stack: ## Undeploy all dual-stack suites.
-	@for suite in $(SUITES_DS); do $(MAKE) undeploy-$$suite; done
-
-################################################################################
-##@ All IPv6 suites
-################################################################################
 
 .PHONY: ipv6
 ipv6: deploy-ipv6 test-ipv6 ## Deploy and test all IPv6 suites.
@@ -645,59 +776,41 @@ deploy-ipv6: ## Deploy all IPv6 suites.
 	@for suite in $(SUITES_IPV6); do $(MAKE) deploy-$$suite || exit 1; done
 
 .PHONY: test-ipv6
-test-ipv6: ## Run all IPv6 e2e tests in parallel.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v -p --tags=e2e --label-filter=ipv6 $(GINKGO_FLAGS)
+test-ipv6: ## Run e2e tests for all IPv6 suites (parallel).
+	$(call run-specs,ipv6,-p)
 
 .PHONY: undeploy-ipv6
 undeploy-ipv6: ## Undeploy all IPv6 suites.
 	@for suite in $(SUITES_IPV6); do $(MAKE) undeploy-$$suite; done
 
-################################################################################
-##@ Suite: Endpoint Scaling
-################################################################################
+#-------------------------------------------------------------------------------
+# dual-stack  (all dual-stack suites)
+#-------------------------------------------------------------------------------
 
-# Endpoint Scaling reuses the shared-appnetwork-ds topology (like low-mtu reuses
-# ipv4-simple). The spec is Serial and carries the 'dual-stack' label, so it runs
-# as part of the dual-stack suite on the dual-stack runner. These targets are
-# kept for running the scaling tests standalone locally.
 
-.PHONY: deploy-scaling
-deploy-scaling: deploy-shared-appnetwork-ds ## Deploy shared-appnetwork-ds topology.
+.PHONY: dual-stack
+dual-stack: deploy-dual-stack test-dual-stack ## Deploy and test all dual-stack suites.
 
-.PHONY: test-scaling
-test-scaling: ## Run Endpoint Scaling tests.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Endpoint Scaling" $(GINKGO_FLAGS)
+.PHONY: deploy-dual-stack
+deploy-dual-stack: ## Deploy all dual-stack suites.
+	@for suite in $(SUITES_DS); do $(MAKE) deploy-$$suite || exit 1; done
 
-.PHONY: undeploy-scaling
-undeploy-scaling: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology.
+.PHONY: test-dual-stack
+test-dual-stack: ## Run e2e tests for all dual-stack suites (parallel).
+	$(call run-specs,dual-stack,-p)
 
-################################################################################
-##@ Suite: Node Drain
-################################################################################
-
-# Node Drain reuses the shared-appnetwork-ds topology (like Endpoint Scaling).
-# The spec is Serial and carries the 'dual-stack' label, so it runs as part of
-# the dual-stack suite on the dual-stack runner. It requires a cluster with at
-# least 4 worker nodes (the default Kind cluster config provides 4). These
-# targets are kept for running the node-drain test standalone locally.
-
-.PHONY: node-drain
-node-drain: deploy-node-drain test-node-drain ## Deploy and run the Node Drain test.
-
-.PHONY: deploy-node-drain
-deploy-node-drain: deploy-shared-appnetwork-ds ## Deploy shared-appnetwork-ds topology.
-
-.PHONY: test-node-drain
-test-node-drain: ## Run Node Drain test.
-	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Node Drain" $(GINKGO_FLAGS)
-
-.PHONY: undeploy-node-drain
-undeploy-node-drain: undeploy-shared-appnetwork-ds ## Undeploy shared-appnetwork-ds topology.
-
+.PHONY: undeploy-dual-stack
+undeploy-dual-stack: ## Undeploy all dual-stack suites.
+	@for suite in $(SUITES_DS); do $(MAKE) undeploy-$$suite; done
 
 ################################################################################
-##@ Suite: openshift-crc
+##@ OpenShift CRC
 ################################################################################
+
+#-------------------------------------------------------------------------------
+# openshift-crc
+#-------------------------------------------------------------------------------
+
 
 # OpenShift CRC registry configuration.
 # OCP_REGISTRY_HOST: external route hostname for docker push (from host).
@@ -778,10 +891,9 @@ deploy-openshift-crc:
 	@echo "OpenShift CRC suite deployed successfully"
 
 .PHONY: test-openshift-crc
+test-openshift-crc: export E2E_VPN_GATEWAY_EXEC = $(KUBECTL) exec -n $(OCP_NAMESPACE) vpn-gateway --
 test-openshift-crc: ## Run e2e tests for openshift-crc suite.
-	cd $(PROJECT_ROOT)/test/e2e && \
-	E2E_VPN_GATEWAY_EXEC="$(KUBECTL) exec -n $(OCP_NAMESPACE) vpn-gateway --" \
-	go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="OpenShift CRC" $(GINKGO_FLAGS)
+	$(call run-specs,suite:openshift-crc)
 
 .PHONY: undeploy-openshift-crc
 undeploy-openshift-crc: ## Undeploy openshift-crc topology.

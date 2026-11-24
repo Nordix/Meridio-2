@@ -83,8 +83,8 @@ jobs:
       matrix:
         suite:
           - ipv4
-          - dual-stack
           - ipv6
+          - dual-stack
         k8s_version:
           - v1.32.2
           - v1.31.6
@@ -95,10 +95,10 @@ jobs:
             image: v1.31.6@sha256:28b7cbb993dfe093c76641a0c95807637213c9109b761f1d422c2400e22b8e87
           - suite: ipv4
             kind_config: test/e2e/kind-cluster/kind.yaml
-          - suite: dual-stack
-            kind_config: test/e2e/kind-cluster/kind.yaml
           - suite: ipv6
             kind_config: test/e2e/kind-cluster/kind-ipv6.yaml
+          - suite: dual-stack
+            kind_config: test/e2e/kind-cluster/kind.yaml
     steps:
       - uses: actions/checkout@v6
         with:

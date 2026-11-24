@@ -56,7 +56,7 @@ import (
 // drive the shared VPN gateway, so the tree is Serial (never concurrent with
 // other specs under `ginkgo -p`) and Ordered (deterministic sequence). State is
 // fully restored via DeferCleanup.
-var _ = Describe("E2E BGP VIP Advertisement", Label("ipv4"), Serial, Ordered, func() {
+var _ = Describe("E2E BGP VIP Advertisement", Label(labelSuiteBGP, labelIPv4), Serial, Ordered, func() {
 	const (
 		namespace      = "e2e-ipv4-simple"
 		targetApp      = "target-m"

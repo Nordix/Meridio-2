@@ -34,6 +34,13 @@ import (
 // - Suites deployed via Makefile (make deploy-<suite>)
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
+
+	// Global Eventually budgets, set here and nowhere else: container bodies
+	// run during tree construction, so SetDefault* calls inside a Describe are
+	// global last-writer-wins rather than scoped. See test/e2e/CONVENTIONS.md.
+	SetDefaultEventuallyTimeout(defaultEventuallyTimeout)
+	SetDefaultEventuallyPollingInterval(defaultEventuallyPolling)
+
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting meridio-2 e2e test suite\n")
 	RunSpecs(t, "e2e suite")
 }

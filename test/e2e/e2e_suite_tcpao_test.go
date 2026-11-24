@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 
 	e2eutils "github.com/nordix/meridio-2/test/e2e/utils"
 	"github.com/nordix/meridio-2/test/utils"
@@ -37,6 +36,7 @@ var tcpaoTestCases = []suiteTestCase{
 		namespace:      "e2e-tcp-ao",
 		targetApp:      "target-tao",
 		targetReplicas: 2,
+		suiteLabel:     labelSuiteTCPAO,
 		gateways: []gwTestCase{
 			{name: "gw-t1", vip: "60.0.0.1", targets: 2, dgName: "dg-t1"},
 			{name: "gw-t2", vip: "60.0.0.2", targets: 2, dgName: "dg-t2"},
@@ -65,13 +65,10 @@ func parseSinceFromShowProtocols(showProtocols, gwName string) string {
 	return since
 }
 
-var _ = Describe("E2E TCP-AO Test Suite", Label("ipv4"), func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
+var _ = Describe("E2E TCP-AO Test Suite", Label(labelIPv4), func() {
 	for _, suite := range tcpaoTestCases {
 		suite := suite
-		Describe(suite.name, Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
 			Context("Deployment for TCP-AO", func() {
 				for _, gw := range suite.gateways {
 					gw := gw

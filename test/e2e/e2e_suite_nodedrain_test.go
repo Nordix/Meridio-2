@@ -309,7 +309,7 @@ func drainNode(node string) {
 	Expect(err).NotTo(HaveOccurred(), "drain node %s", node)
 }
 
-var _ = Describe("Node Drain", Label("dual-stack"), Serial, Ordered, func() {
+var _ = Describe("Node Drain", Label(labelSuiteNodeDrain, labelDualStack), Serial, Ordered, func() {
 	var (
 		selection      drainNodeSelection
 		restartsBefore int
@@ -317,9 +317,6 @@ var _ = Describe("Node Drain", Label("dual-stack"), Serial, Ordered, func() {
 	)
 
 	BeforeAll(func() {
-		SetDefaultEventuallyTimeout(5 * time.Minute)
-		SetDefaultEventuallyPollingInterval(2 * time.Second)
-
 		// Hard environment precondition: the Node Drain scenario requires at
 		// least nodeDrainMinWorkers schedulable workers to co-locate an LB pod
 		// (and ideally the controller-manager) with a target endpoint. The e2e

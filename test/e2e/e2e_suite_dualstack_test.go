@@ -26,9 +26,7 @@ var dualStackTestCase = suiteTestCase{
 	},
 }
 
-var _ = Describe("Dual Stack", Label("dual-stack"), Ordered, func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
+var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack), Ordered, func() {
 
 	suite := dualStackTestCase
 

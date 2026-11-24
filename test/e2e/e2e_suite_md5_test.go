@@ -22,7 +22,6 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
-	"time"
 
 	e2eutils "github.com/nordix/meridio-2/test/e2e/utils"
 	"github.com/nordix/meridio-2/test/utils"
@@ -40,6 +39,7 @@ var md5TestCases = []suiteTestCase{
 		namespace:      "e2e-md5",
 		targetApp:      "target-md5",
 		targetReplicas: 2,
+		suiteLabel:     labelSuiteMD5,
 		gateways: []gwTestCase{
 			{name: "gw-md1", vip: "80.0.0.1", targets: 2, dgName: "dg-md1"},
 			{name: "gw-md2", vip: "80.0.0.2", targets: 2, dgName: "dg-md2"},
@@ -48,13 +48,10 @@ var md5TestCases = []suiteTestCase{
 }
 
 // Deprecated: this suite exercises the deprecated BGP MD5 (RFC2385) mechanism.
-var _ = Describe("E2E MD5 Test Suite", Label("ipv4"), func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
+var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 	for _, suite := range md5TestCases {
 		suite := suite
-		Describe(suite.name, Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
 			Context("Deployment for MD5", func() {
 				for _, gw := range suite.gateways {
 					gw := gw

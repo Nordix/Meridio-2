@@ -32,9 +32,10 @@ import (
 )
 
 var lowMTUTestCase = suiteTestCase{
-	name:      "Low MTU",
-	namespace: "e2e-ipv4-simple",
-	targetApp: "target-m",
+	name:       "Low MTU",
+	namespace:  "e2e-ipv4-simple",
+	targetApp:  "target-m",
+	suiteLabel: labelSuiteLowMTU,
 	gateways: []gwTestCase{
 		{name: "gw-m1", vip: "40.0.0.1", targets: 2},
 	},
@@ -46,10 +47,7 @@ var lowMTUTestCase = suiteTestCase{
 //
 // Pinned to the ipv4-simple topology (shared with the BGP and Resiliency
 // suites), so it is Serial to avoid running concurrently under `ginkgo -p`.
-var _ = Describe(lowMTUTestCase.name, Label("ipv4"), Serial, Ordered, func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
+var _ = Describe(lowMTUTestCase.name, Label(lowMTUTestCase.suiteLabel, labelIPv4), Serial, Ordered, func() {
 	suite := lowMTUTestCase
 
 	Context("Deployment", func() {

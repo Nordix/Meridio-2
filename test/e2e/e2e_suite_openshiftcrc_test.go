@@ -52,9 +52,7 @@ var openshiftCRCTestCase = suiteTestCase{
 	},
 }
 
-var _ = Describe("OpenShift CRC", Label("openshift-crc"), Ordered, func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
+var _ = Describe("OpenShift CRC", Label(labelSuiteOpenShiftCRC), Ordered, func() {
 
 	suite := openshiftCRCTestCase
 

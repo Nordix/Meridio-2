@@ -47,7 +47,7 @@ import (
 // (router_probe_interval, 60 s by default, and a new route counts as just
 // probed), so whether clients pass on an LB without the ICMPv6 type filter
 // depends on timing. The LB's IPv6 output-rule counter is the deterministic check.
-var _ = Describe("Client IPv6", Label("ipv6", "client-v6"), Ordered, func() {
+var _ = Describe("Client IPv6", Label(labelSuiteClientV6, labelIPv6), Ordered, func() {
 	const (
 		namespace     = "e2e-client-v6"
 		gatewayName   = "gw-c6"
@@ -128,61 +128,63 @@ var _ = Describe("Client IPv6", Label("ipv6", "client-v6"), Ordered, func() {
 		})
 	})
 
-	It("all targets reach the external server from the VIP concurrently, without ICMPv6 queued to nfqlb", func() {
-		// All clients start at the same time, as independent application Pods
-		// would. Their first packets trigger concurrent VIP-sourced Neighbor
-		// Solicitations, and each Pod must still get its own Neighbor
-		// Advertisement (possibly after an ND retransmit).
-		type result struct {
-			hosts map[string]int
-			lost  int
-			err   error
-		}
-		pods := make([]string, instances)
-		for i := range instances {
-			pods[i] = e2eutils.GetPodName(namespace, fmt.Sprintf("instance=i%d", i))
-			Expect(pods[i]).NotTo(BeEmpty(), "no running Pod for instance i%d", i)
-		}
-
-		results := make([]result, instances)
-		var wg sync.WaitGroup
-		for i, pod := range pods {
-			wg.Add(1)
-			go func() {
-				defer GinkgoRecover()
-				defer wg.Done()
-				h, l, err := e2eutils.RunCtrafficClientInPod(namespace, pod, "example-target",
-					serverAddress, vip+"/128", nconn, clientDuration, clientExecTimeout)
-				results[i] = result{hosts: h, lost: l, err: err}
-			}()
-		}
-		wg.Wait()
-
-		// Report every target's outcome, not just the first failure.
-		var failures []string
-		for i, r := range results {
-			switch {
-			case r.err != nil:
-				failures = append(failures, fmt.Sprintf("i%d (%s): %v", i, pods[i], r.err))
-			case r.lost > 0:
-				failures = append(failures, fmt.Sprintf("i%d (%s): %d failed connects", i, pods[i], r.lost))
-			case len(r.hosts) == 0:
-				failures = append(failures, fmt.Sprintf("i%d (%s): no connections established", i, pods[i]))
+	Context("Traffic", func() {
+		It("should reach the external server from the VIP on all targets, with no ICMPv6 queued to nfqlb", func() {
+			// All clients start at the same time, as independent application Pods
+			// would. Their first packets trigger concurrent VIP-sourced Neighbor
+			// Solicitations, and each Pod must still get its own Neighbor
+			// Advertisement (possibly after an ND retransmit).
+			type result struct {
+				hosts map[string]int
+				lost  int
+				err   error
 			}
-		}
+			pods := make([]string, instances)
+			for i := range instances {
+				pods[i] = e2eutils.GetPodName(namespace, fmt.Sprintf("instance=i%d", i))
+				Expect(pods[i]).NotTo(BeEmpty(), "no running Pod for instance i%d", i)
+			}
 
-		// No ICMPv6 errors or Echo Replies are expected in this suite, so the IPv6
-		// queue rule must not have counted anything. Without the ICMPv6 type filter
-		// it counts the Neighbor Advertisements and probes the LB sends to the VIP.
-		// Checked in the same spec so one run reports both symptoms.
-		queued, err := e2eutils.LBOutputIPv6QueuedPackets(namespace, lbPod)
-		Expect(err).NotTo(HaveOccurred())
-		if queued != queuedBaseline {
-			failures = append(failures, fmt.Sprintf(
-				"LB queued %d locally generated ICMPv6 packets addressed to the VIP to nfqlb",
-				queued-queuedBaseline))
-		}
+			results := make([]result, instances)
+			var wg sync.WaitGroup
+			for i, pod := range pods {
+				wg.Add(1)
+				go func() {
+					defer GinkgoRecover()
+					defer wg.Done()
+					h, l, err := e2eutils.RunCtrafficClientInPod(namespace, pod, "example-target",
+						serverAddress, vip+"/128", nconn, clientDuration, clientExecTimeout)
+					results[i] = result{hosts: h, lost: l, err: err}
+				}()
+			}
+			wg.Wait()
 
-		Expect(failures).To(BeEmpty(), "client IPv6 checks failed")
+			// Report every target's outcome, not just the first failure.
+			var failures []string
+			for i, r := range results {
+				switch {
+				case r.err != nil:
+					failures = append(failures, fmt.Sprintf("i%d (%s): %v", i, pods[i], r.err))
+				case r.lost > 0:
+					failures = append(failures, fmt.Sprintf("i%d (%s): %d failed connects", i, pods[i], r.lost))
+				case len(r.hosts) == 0:
+					failures = append(failures, fmt.Sprintf("i%d (%s): no connections established", i, pods[i]))
+				}
+			}
+
+			// No ICMPv6 errors or Echo Replies are expected in this suite, so the IPv6
+			// queue rule must not have counted anything. Without the ICMPv6 type filter
+			// it counts the Neighbor Advertisements and probes the LB sends to the VIP.
+			// Checked in the same spec so one run reports both symptoms.
+			queued, err := e2eutils.LBOutputIPv6QueuedPackets(namespace, lbPod)
+			Expect(err).NotTo(HaveOccurred())
+			if queued != queuedBaseline {
+				failures = append(failures, fmt.Sprintf(
+					"LB queued %d locally generated ICMPv6 packets addressed to the VIP to nfqlb",
+					queued-queuedBaseline))
+			}
+
+			Expect(failures).To(BeEmpty(), "client IPv6 checks failed")
+		})
 	})
 })

@@ -45,7 +45,7 @@ import (
 // route-m1's destinationPorts to ["any"] and restores the baseline
 // (["5000-5001"]) in DeferCleanup, so it neither depends on nor perturbs the
 // other ipv4 specs. Serial ensures it does not run concurrently with them.
-var _ = Describe("Any Port Conversion", Label("ipv4"), Serial, Ordered, func() {
+var _ = Describe("Any Port Conversion", Label(labelSuiteAnyPort, labelIPv4), Serial, Ordered, func() {
 	const (
 		namespace = "e2e-ipv4-simple"
 		routeName = "route-m1"

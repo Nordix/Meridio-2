@@ -46,7 +46,7 @@ const (
 	rgVIPv6       = "fd00:cafe:4::1"
 )
 
-var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func() {
+var _ = Describe("Readiness Gates", Label(labelSuiteReadinessGates, labelDualStack), Serial, Ordered, func() {
 	var lbPods []string
 
 	BeforeAll(func() {
@@ -128,11 +128,11 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 		// This catches infrastructure issues (route sync, NDP, nftables) early.
 		Eventually(func() error {
 			return e2eutils.Ping(rgVIPv4)
-		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+		}).WithTimeout(30*time.Second).WithPolling(2*time.Second).
 			Should(Succeed(), "IPv4 VIP should be reachable from VPN gateway")
 		Eventually(func() error {
 			return e2eutils.Ping(rgVIPv6)
-		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+		}).WithTimeout(30*time.Second).WithPolling(2*time.Second).
 			Should(Succeed(), "IPv6 VIP should be reachable from VPN gateway")
 	})
 
@@ -166,7 +166,7 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 		// IPv4 traffic should fail (no healthy IPv4 path)
 		Eventually(func() error { return e2eutils.Ping(rgVIPv4) }).
-			WithTimeout(15 * time.Second).WithPolling(2 * time.Second).
+			WithTimeout(15*time.Second).WithPolling(2*time.Second).
 			ShouldNot(Succeed(), "IPv4 ping should fail with all IPv4 gates False")
 
 		// IPv6 traffic continues flowing
@@ -218,7 +218,7 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 		// IPv6 traffic should fail (no healthy IPv6 path)
 		Eventually(func() error { return e2eutils.Ping(rgVIPv6) }).
-			WithTimeout(15 * time.Second).WithPolling(2 * time.Second).
+			WithTimeout(15*time.Second).WithPolling(2*time.Second).
 			ShouldNot(Succeed(), "IPv6 ping should fail with all IPv6 gates False")
 
 		// IPv4 also still down (from TC3)
@@ -270,7 +270,7 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 		// IPv4 traffic resumes
 		Eventually(func() error { return e2eutils.Ping(rgVIPv4) }).
-			WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+			WithTimeout(30*time.Second).WithPolling(2*time.Second).
 			Should(Succeed(), "IPv4 ping should resume after recovery")
 	})
 
@@ -301,7 +301,7 @@ var _ = Describe("Readiness Gates", Label("dual-stack"), Serial, Ordered, func()
 
 		// IPv6 traffic resumes
 		Eventually(func() error { return e2eutils.Ping(rgVIPv6) }).
-			WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+			WithTimeout(30*time.Second).WithPolling(2*time.Second).
 			Should(Succeed(), "IPv6 ping should resume after recovery")
 	})
 })

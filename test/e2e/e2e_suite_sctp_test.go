@@ -27,6 +27,9 @@ type sctpSuiteTestCase struct {
 	targetApp      string
 	targetReplicas int
 	gateways       []sctpGwTestCase
+	// suiteLabel is the suite:<name> selector for this test case; see
+	// e2e_conventions_test.go.
+	suiteLabel string
 }
 
 var sctpTestCases = []sctpSuiteTestCase{
@@ -35,6 +38,7 @@ var sctpTestCases = []sctpSuiteTestCase{
 		namespace:      "e2e-sctp-multihoming",
 		targetApp:      "sctp-target",
 		targetReplicas: 1,
+		suiteLabel:     labelSuiteSCTPMultihoming,
 		gateways: []sctpGwTestCase{
 			{name: "sctp-gw1", vip: "30.0.0.1", dgName: "sctp-dg1"},
 			{name: "sctp-gw2", vip: "30.0.0.2", dgName: "sctp-dg2"},
@@ -42,13 +46,10 @@ var sctpTestCases = []sctpSuiteTestCase{
 	},
 }
 
-var _ = Describe("E2E SCTP Multihoming Suites", Label("ipv4"), func() {
-	SetDefaultEventuallyTimeout(5 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
-
+var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 	for _, suite := range sctpTestCases {
 		suite := suite
-		Describe(suite.name, Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
 			Context("Deployment", func() {
 				for _, gw := range suite.gateways {
 					gw := gw

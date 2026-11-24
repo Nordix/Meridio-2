@@ -220,7 +220,8 @@ run it back-to-back with `deploy-openshift-crc` in the same invocation.** Waitin
 two between deployment and testing has been observed to reduce intermittent IPv6 traffic
 failures more consistently than retrying the test itself.
 
-`test-openshift-crc` runs the `OpenShift CRC` Ginkgo suite (`--focus="OpenShift CRC"`), covering:
+`test-openshift-crc` runs the `OpenShift CRC` Ginkgo suite
+(`--label-filter='suite:openshift-crc'`), covering:
 - Gateway Accepted/Programmed, status.addresses (dual-stack VIPs), LB Pods deployed
 - DistributionGroup Available, target Pods Running, ENC Ready, LB connectivity readiness gates
 - ICMP reachability on both VIPs

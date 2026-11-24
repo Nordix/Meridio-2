@@ -41,7 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Pod Cache Label", Ordered, Label("ipv4"), func() {
+var _ = Describe("Pod Cache Label", Label(labelSuitePodCacheLabel, labelIPv4), Ordered, func() {
 	const (
 		namespace   = "e2e-pod-cache-label"
 		gatewayName = "gw-pcl"
@@ -49,9 +49,6 @@ var _ = Describe("Pod Cache Label", Ordered, Label("ipv4"), func() {
 		cacheLabel  = "meridio-2.nordix.org/managed"
 		cacheLabelV = "true"
 	)
-
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
 
 	var (
 		k8sClient      client.Client

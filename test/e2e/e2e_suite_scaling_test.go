@@ -291,11 +291,8 @@ func scaleStep(oldN, newN int) {
 	})
 }
 
-var _ = Describe("Endpoint Scaling", Label("dual-stack"), Serial, Ordered, func() {
+var _ = Describe("Endpoint Scaling", Label(labelSuiteScaling, labelDualStack), Serial, Ordered, func() {
 	BeforeAll(func() {
-		SetDefaultEventuallyTimeout(5 * time.Minute)
-		SetDefaultEventuallyPollingInterval(2 * time.Second)
-
 		By("verifying gateways are Programmed")
 		for _, gw := range []string{"gw-bds1", "gw-bds2"} {
 			gw := gw
