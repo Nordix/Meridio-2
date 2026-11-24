@@ -224,6 +224,21 @@ func (nfqlbf *nfqlbFlow) GetByteMatches() []string {
 	return nfqlbf.ByteMatches
 }
 
+// MarshalLog implements logr.Marshaler (see Flow). Keys match the other Flow
+// implementations rather than nfqlb's flow-list JSON names.
+func (nfqlbf *nfqlbFlow) MarshalLog() any {
+	return map[string]any{
+		"name":        nfqlbf.Name,
+		"priority":    nfqlbf.Priority,
+		"protocols":   nfqlbf.Protocols,
+		"srcs":        nfqlbf.SourceCIDRs,
+		"dsts":        nfqlbf.DestinationCIDRs,
+		"sports":      nfqlbf.SourcePortRange,
+		"dports":      nfqlbf.DestinationPortRanges,
+		"byteMatches": nfqlbf.ByteMatches,
+	}
+}
+
 func parseFlows(flowList string) ([]*nfqlbFlow, error) {
 	nfqlbFlows := []*nfqlbFlow{}
 
@@ -258,6 +273,11 @@ type Flow interface {
 	GetPriority() int32
 	// Bytes in L4 header
 	GetByteMatches() []string
+	// MarshalLog returns the value logged for this flow. Flows are logged as
+	// "flow", <Flow> by AddFlow/DeleteFlow; without this, zap's reflection
+	// encoder would render an implementation with only unexported fields
+	// (such as an adapter around an API object) as {}.
+	logr.Marshaler
 }
 
 // Instance represents a nfqlb instance instantiated with nfqlb init.
