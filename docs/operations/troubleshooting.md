@@ -369,7 +369,7 @@ table inet meridio-lb {
 	chain output {
 		type filter hook output priority filter; policy accept;
 		meta l4proto icmp ip daddr @ipv4-vips counter packets 0 bytes 0 queue to 0-3
-		ip6 daddr @ipv6-vips icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-reply } counter packets 0 bytes 0 queue to 0-3
+		ip6 daddr @ipv6-vips icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-request, echo-reply } counter packets 0 bytes 0 queue to 0-3
 	}
 
 	chain snat-local {
@@ -382,7 +382,7 @@ table inet meridio-lb {
 
 - `ipv4-vips` / `ipv6-vips` sets contain VIPs from L34Route `destinationCIDRs`
 - `prerouting` chain queues VIP-destined traffic to nfqueue 0-3 for NFQLB processing
-- `output` chain queues locally-originated ICMP/ICMPv6 to VIPs — primarily needed for generating ICMP Fragmentation Needed / Packet Too Big replies back to endpoints when forwarded packets hit MTU limits on the external network. For IPv6 only error messages and Echo Reply are queued; Neighbor Discovery is left to the kernel (see [IPv6 target cannot resolve its LB next hop](#ipv6-target-cannot-resolve-its-lb-next-hop))
+- `output` chain queues locally-originated ICMP/ICMPv6 to VIPs — primarily needed for generating ICMP Fragmentation Needed / Packet Too Big replies back to endpoints when forwarded packets hit MTU limits on the external network. For IPv6 only error messages, Echo Request and Echo Reply are queued; Neighbor Discovery is left to the kernel (see [IPv6 target cannot resolve its LB next hop](#ipv6-target-cannot-resolve-its-lb-next-hop))
 - Packet/byte counters help verify traffic is reaching the LB
 
 Note: `nft` gets `NET_ADMIN` from its file capabilities only when it is the command run by `kubectl exec` (as above). Started from a shell inside the container it fails with "Operation not permitted", because `allowPrivilegeEscalation: false` (no-new-privs) limits file capabilities to what the calling process already holds. For interactive use, use an ephemeral container or nsenter instead.

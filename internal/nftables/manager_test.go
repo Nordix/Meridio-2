@@ -283,7 +283,7 @@ func TestBuildOutputIPv6Exprs(t *testing.T) {
 	assert.Equal(t, uint16(4), q.Total)
 }
 
-// TestSteeredICMPv6Types pins the queued ICMPv6 types: error messages and Echo Reply only.
+// TestSteeredICMPv6Types pins the queued ICMPv6 types: error messages, Echo Request and Echo Reply.
 // Neighbor Discovery (types 133-137) must never be queued to nfqlb.
 func TestSteeredICMPv6Types(t *testing.T) {
 	assert.ElementsMatch(t, []netipv6.ICMPType{
@@ -291,6 +291,7 @@ func TestSteeredICMPv6Types(t *testing.T) {
 		netipv6.ICMPTypePacketTooBig,
 		netipv6.ICMPTypeTimeExceeded,
 		netipv6.ICMPTypeParameterProblem,
+		netipv6.ICMPTypeEchoRequest,
 		netipv6.ICMPTypeEchoReply,
 	}, steeredICMPv6Types)
 

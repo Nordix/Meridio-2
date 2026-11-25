@@ -294,6 +294,11 @@ func (m *Manager) createOutputChain() error {
 //     Parameter Problem are hashed on the outer addresses, so with several targets they may land
 //     on a different target.
 //   - Echo Reply to a VIP-sourced ping of an LB address. It is hashed the same way.
+//   - Echo Request from the LB Pod to a VIP (for example an operator pinging the VIP), so that
+//     a target answers it as with IPv4, whose output rule queues all ICMP. nfqlb matches it as
+//     a ping and hashes it including the Echo identifier. This only applies when the LB Pod
+//     has a route covering the VIP (for example a default route on the primary network): the
+//     route lookup happens before the output hook, so without one the ping fails at the socket.
 //
 // Neighbor Discovery must not be queued. When an application Pod resolves its LB next hop
 // for a packet it sends from the VIP (a connection it initiates, or a reply to inbound
@@ -307,6 +312,7 @@ var steeredICMPv6Types = []netipv6.ICMPType{
 	netipv6.ICMPTypePacketTooBig,
 	netipv6.ICMPTypeTimeExceeded,
 	netipv6.ICMPTypeParameterProblem,
+	netipv6.ICMPTypeEchoRequest,
 	netipv6.ICMPTypeEchoReply,
 }
 
