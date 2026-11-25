@@ -731,24 +731,6 @@ func TestTcpAoConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("empty keychain returns empty", func(t *testing.T) {
-		spec := &meridio2v1alpha1.BgpTcpAoSpec{Keychain: []meridio2v1alpha1.TcpAoKeyChain{}}
-		if got, err := tcpAoConfig(spec, nil); err != nil || got != "" {
-			t.Errorf("expected empty, got %q (err %v)", got, err)
-		}
-	})
-
-	t.Run("missing password skips key", func(t *testing.T) {
-		spec := &meridio2v1alpha1.BgpTcpAoSpec{
-			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
-				{SendId: 1, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
-			},
-		}
-		if got, err := tcpAoConfig(spec, map[uint8]string{}); err != nil || got != "" {
-			t.Errorf("expected empty when password missing, got %q (err %v)", got, err)
-		}
-	})
-
 	t.Run("single key", func(t *testing.T) {
 		spec := &meridio2v1alpha1.BgpTcpAoSpec{
 			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
@@ -869,6 +851,55 @@ func TestTcpAoConfig(t *testing.T) {
 	})
 }
 
+// TestTcpAoConfigFailsClosed verifies that a TCP-AO spec without usable key
+// material is an error rather than a peer rendered without authentication.
+func TestTcpAoConfigFailsClosed(t *testing.T) {
+	t.Run("empty keychain returns error", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{Keychain: []meridio2v1alpha1.TcpAoKeyChain{}}
+		if got, err := tcpAoConfig(spec, nil); err == nil {
+			t.Errorf("expected error, got %q", got)
+		}
+	})
+
+	t.Run("no resolved keys returns error", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
+			},
+		}
+		for name, passwords := range map[string]map[uint8]string{
+			"nil map":   nil,
+			"empty map": {},
+		} {
+			if got, err := tcpAoConfig(spec, passwords); err == nil {
+				t.Errorf("%s: expected error, got %q", name, got)
+			}
+		}
+	})
+
+	t.Run("partially resolved keychain returns error", func(t *testing.T) {
+		spec := &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, RecvId: 1, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k1"},
+				{SendId: 2, RecvId: 2, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k2"},
+			},
+		}
+		got, err := tcpAoConfig(spec, map[uint8]string{1: "secret1"})
+		if err == nil {
+			t.Fatalf("expected error, got %q", got)
+		}
+		if got != "" {
+			t.Errorf("no config must be returned alongside an error, got %q", got)
+		}
+		if !strings.Contains(err.Error(), "send id 2") {
+			t.Errorf("error should name the unresolved key: %v", err)
+		}
+		if strings.Contains(err.Error(), "secret1") {
+			t.Errorf("error must not include key material: %v", err)
+		}
+	})
+}
+
 // TestMd5Config covers the deprecated BGP MD5 (RFC2385) rendering helper.
 //
 //nolint:staticcheck // SA1019: this test exercises the deprecated MD5 mechanism.
@@ -879,10 +910,12 @@ func TestMd5Config(t *testing.T) {
 		}
 	})
 
-	t.Run("missing password returns empty", func(t *testing.T) {
+	// MD5 requested but no key must never render a peer without
+	// authentication: fail closed.
+	t.Run("missing password returns error", func(t *testing.T) {
 		spec := &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"}
-		if got, err := md5Config(spec, ""); err != nil || got != "" {
-			t.Errorf("expected empty when password unresolved, got %q (err %v)", got, err)
+		if got, err := md5Config(spec, ""); err == nil {
+			t.Errorf("expected error when password unresolved, got %q", got)
 		}
 	})
 
@@ -1135,4 +1168,74 @@ func TestGenerateConfigWithMd5(t *testing.T) {
 	if strings.Contains(conf, "authentication ao;") {
 		t.Error("unexpected TCP-AO block in MD5-only config")
 	}
+}
+
+// TestGenerateConfigFailsClosedOnMissingAuth verifies that a GatewayRouter
+// requesting authentication is never rendered without it, even when the caller
+// passes no resolved key material for the router.
+//
+//nolint:staticcheck // SA1019: this test exercises the deprecated MD5 mechanism.
+func TestGenerateConfigFailsClosedOnMissingAuth(t *testing.T) {
+	newRouter := func(auth *meridio2v1alpha1.BgpAuthentication) *meridio2v1alpha1.GatewayRouter {
+		return &meridio2v1alpha1.GatewayRouter{
+			Name: "gw-auth",
+			Spec: meridio2v1alpha1.GatewayRouterSpec{
+				Interface: "eth0",
+				Address:   "10.0.0.1",
+				BGP: &meridio2v1alpha1.BgpSpec{
+					RemoteASN:      65000,
+					LocalASN:       65001,
+					HoldTime:       "240s",
+					LocalPort:      new(uint16(179)),
+					RemotePort:     new(uint16(179)),
+					Authentication: auth,
+				},
+			},
+		}
+	}
+	tcpAoAuth := &meridio2v1alpha1.BgpAuthentication{
+		Type: meridio2v1alpha1.BgpAuthTypeTcpAo,
+		TcpAo: &meridio2v1alpha1.BgpTcpAoSpec{
+			Keychain: []meridio2v1alpha1.TcpAoKeyChain{
+				{SendId: 1, RecvId: 1, Algorithm: "hmac sha256", SecretName: "s", SecretKey: "k"},
+			},
+		},
+	}
+	md5Auth := &meridio2v1alpha1.BgpAuthentication{
+		Type: meridio2v1alpha1.BgpAuthTypeMd5,
+		Md5:  &meridio2v1alpha1.BgpMd5Spec{SecretName: "s", SecretKey: "k"},
+	}
+
+	cases := map[string]struct {
+		auth     *meridio2v1alpha1.BgpAuthentication
+		resolved map[string]ResolvedAuth
+	}{
+		"tcp-ao, router absent from resolved auth": {tcpAoAuth, nil},
+		"tcp-ao, no keys resolved":                 {tcpAoAuth, map[string]ResolvedAuth{"gw-auth": {}}},
+		"md5, router absent from resolved auth":    {md5Auth, nil},
+		"md5, empty password":                      {md5Auth, map[string]ResolvedAuth{"gw-auth": {}}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			b := &Bird{}
+			conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{newRouter(tc.auth)}, tc.resolved)
+			if err == nil {
+				t.Fatalf("expected error, got config:\n%s", conf)
+			}
+			if !strings.Contains(err.Error(), `router "gw-auth"`) {
+				t.Errorf("error should name the router: %v", err)
+			}
+		})
+	}
+
+	t.Run("no authentication requested renders without error", func(t *testing.T) {
+		b := &Bird{}
+		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{newRouter(nil)}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(conf, "authentication ao;") || strings.Contains(conf, "password ") {
+			t.Errorf("unexpected authentication in config:\n%s", conf)
+		}
+	})
 }

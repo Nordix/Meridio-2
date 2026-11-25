@@ -386,16 +386,27 @@ func formatBFDInterfaceParams(spec meridio2v1alpha1.BfdSpec) string {
 	}, " ")
 }
 
+// tcpAoConfig renders the TCP-AO block for a GatewayRouter, or "" when the
+// spec requests no TCP-AO (nil spec). Once TCP-AO is requested it fails closed:
+// every keychain entry must have a resolved key that passes ValidateTcpAoKey,
+// otherwise an error is returned rather than rendering a session with fewer
+// keys or none at all. See md5Config for how these render-side errors relate
+// to the controller-side checks.
 func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]string) (string, error) {
-	if tcpAo == nil || len(tcpAo.Keychain) == 0 {
+	if tcpAo == nil {
 		return "", nil
+	}
+	// The API requires at least one key; an empty keychain here would render
+	// a peer without authentication.
+	if len(tcpAo.Keychain) == 0 {
+		return "", errors.New("TCP-AO requested but the keychain is empty")
 	}
 
 	keys := make([]tcpAoKeyData, 0, len(tcpAo.Keychain))
 	for _, key := range tcpAo.Keychain {
 		password, ok := passwords[key.SendId]
 		if !ok {
-			continue
+			return "", fmt.Errorf("TCP-AO key send id %d: no resolved key", key.SendId)
 		}
 		// Defense-in-depth: the caller validates before populating passwords,
 		// but enforce the gate here too so a corrupt key can never reach the
@@ -413,10 +424,6 @@ func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]strin
 		})
 	}
 
-	if len(keys) == 0 {
-		return "", nil
-	}
-
 	slices.SortFunc(keys, func(a, b tcpAoKeyData) int {
 		return cmp.Compare(a.SendId, b.SendId)
 	})
@@ -427,9 +434,23 @@ func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]strin
 	return buf.String(), nil
 }
 
+// md5Config renders the MD5 password line for a GatewayRouter, or "" when the
+// spec requests no MD5 (nil spec). Once MD5 is requested it fails closed: a
+// missing (empty) or unusable key is an error, never a peer rendered without
+// authentication.
+//
+// Two layers check keys and they deliberately fail differently. The controller
+// (resolvePasswords) catches every condition a user can cause, such as a
+// missing Secret or a bad value: it logs, keeps the previous BIRD config and
+// waits for the next watch event, with no error returned. Errors from this
+// function propagate through Configure as a failed reconcile with exponential
+// backoff, which is right only for conditions that can arise from an internal
+// bug. So do not move a user-caused check from the controller into the
+// renderers, or a bad Secret turns into a hot error loop.
+//
 //nolint:staticcheck // SA1019: this code implements the deprecated MD5 mechanism.
 func md5Config(md5 *meridio2v1alpha1.BgpMd5Spec, password string) (string, error) {
-	if md5 == nil || password == "" {
+	if md5 == nil {
 		return "", nil
 	}
 	// The key is emitted verbatim between double quotes, so a key that does
@@ -472,7 +493,7 @@ func birdBytestring(s string) string {
 // length (maxKeyLength) constraints apply. The returned error text never
 // includes the key value, so it is safe to log.
 func ValidateTcpAoKey(key string) error {
-	return validateKeyLength(key)
+	return validateKeyCommon(key)
 }
 
 // ValidateMd5Key reports why a resolved MD5 key value cannot be used, or nil
@@ -481,10 +502,11 @@ func ValidateTcpAoKey(key string) error {
 // md5KeyBytesAllowed). The returned error text never includes the key value, so
 // it is safe to log.
 //
-// Deprecated: MD5 (RFC2385) is a weak, legacy mechanism superseded by TCP-AO
-// (RFC5925). This validator exists only to guard the deprecated MD5 path.
+// MD5 (RFC2385) is a weak, legacy mechanism superseded by TCP-AO (RFC5925).
+// This validator exists only to guard the MD5 path, and is the only correct way
+// to validate an MD5 key.
 func ValidateMd5Key(key string) error {
-	if err := validateKeyLength(key); err != nil {
+	if err := validateKeyCommon(key); err != nil {
 		return err
 	}
 	if !md5KeyBytesAllowed(key) {
@@ -493,9 +515,9 @@ func ValidateMd5Key(key string) error {
 	return nil
 }
 
-// validateKeyLength enforces the constraints common to both mechanisms: a key
+// validateKeyCommon enforces the constraints common to both mechanisms: a key
 // must be non-empty and at most maxKeyLength bytes.
-func validateKeyLength(key string) error {
+func validateKeyCommon(key string) error {
 	switch {
 	case key == "":
 		return errors.New("empty value")
