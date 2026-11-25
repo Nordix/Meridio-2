@@ -24,6 +24,7 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
+	netipv6 "golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
 )
 
@@ -260,23 +261,75 @@ func (m *Manager) createOutputChain() error {
 		},
 	})
 
-	// IPv6 rule: meta l4proto icmpv6 ip6 daddr @ipv6-vips counter queue num X-Y fanout
+	// IPv6 rule: meta l4proto icmpv6 ip6 daddr @ipv6-vips icmpv6 type { ... } counter queue num X-Y fanout
+	// Only the types in steeredICMPv6Types are queued; see there for why Neighbor Discovery
+	// must stay out of nfqlb.
+	typeSet := &nftables.Set{
+		Table:     m.table,
+		Anonymous: true,
+		Constant:  true,
+		KeyType:   nftables.TypeICMP6Type,
+	}
+	typeElems := make([]nftables.SetElement, 0, len(steeredICMPv6Types))
+	for _, t := range steeredICMPv6Types {
+		typeElems = append(typeElems, nftables.SetElement{Key: []byte{byte(t)}})
+	}
+	if err := m.conn.AddSet(typeSet, typeElems); err != nil {
+		return fmt.Errorf("failed to create ICMPv6 type set: %w", err)
+	}
 	m.ipv6OutRule = m.conn.AddRule(&nftables.Rule{
 		Table: m.table,
 		Chain: m.outputChain,
-		Exprs: []expr.Any{
-			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.AF_INET6}},
-			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_ICMPV6}},
-			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 24, Len: 16},
-			&expr.Lookup{SourceRegister: 1, SetName: m.ipv6Set.Name, SetID: m.ipv6Set.ID},
-			&expr.Counter{},
-			&expr.Queue{Num: m.queueNum, Total: m.queueTotal, Flag: 0},
-		},
+		Exprs: buildOutputIPv6Exprs(m.ipv6Set, typeSet, m.queueNum, m.queueTotal),
 	})
 
 	return m.conn.Flush()
+}
+
+// steeredICMPv6Types are the locally generated ICMPv6 types addressed to a VIP that the output
+// chain queues to nfqlb, so that they reach a target rather than being routed by the LB:
+//   - Error messages the LB generates for VIP-sourced packets it forwards on behalf of a target
+//     (for example Packet Too Big when the external MTU is smaller). nfqlb steers Destination
+//     Unreachable and Packet Too Big using the embedded original header. Time Exceeded and
+//     Parameter Problem are hashed on the outer addresses, so with several targets they may land
+//     on a different target.
+//   - Echo Reply to a VIP-sourced ping of an LB address. It is hashed the same way.
+//
+// Neighbor Discovery must not be queued. When an application Pod resolves its LB next hop
+// for a packet it sends from the VIP (a connection it initiates, or a reply to inbound
+// traffic), the kernel sources the Neighbor Solicitation from the VIP, so the LB's Neighbor
+// Advertisement is addressed to the VIP. With --promiscuous_ping, nfqlb matches any ICMPv6
+// other than Destination Unreachable and Packet Too Big to the highest priority flow covering
+// the VIP and load-balances it to a target instead of the Pod that solicited. Left to the
+// kernel, the NA follows the neighbor entry the NS just created and reaches the right Pod.
+var steeredICMPv6Types = []netipv6.ICMPType{
+	netipv6.ICMPTypeDestinationUnreachable,
+	netipv6.ICMPTypePacketTooBig,
+	netipv6.ICMPTypeTimeExceeded,
+	netipv6.ICMPTypeParameterProblem,
+	netipv6.ICMPTypeEchoReply,
+}
+
+// buildOutputIPv6Exprs builds the nftables expressions for the IPv6 output rule.
+// Matches: IPv6, ICMPv6, dst IS VIP, ICMPv6 type in typeSet.
+// Action: count and queue to nfqlb.
+func buildOutputIPv6Exprs(ipv6Set, typeSet *nftables.Set, queueNum, queueTotal uint16) []expr.Any {
+	return []expr.Any{
+		// Match IPv6
+		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.AF_INET6}},
+		// Match ICMPv6
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_ICMPV6}},
+		// dst IS VIP (IPv6 dst at offset 24, 16 bytes)
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 24, Len: 16},
+		&expr.Lookup{SourceRegister: 1, SetName: ipv6Set.Name, SetID: ipv6Set.ID},
+		// ICMPv6 type in the steered set
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 1},
+		&expr.Lookup{SourceRegister: 1, SetName: typeSet.Name, SetID: typeSet.ID},
+		&expr.Counter{},
+		&expr.Queue{Num: queueNum, Total: queueTotal, Flag: 0},
+	}
 }
 
 // createPMTUDChain creates the PMTU discovery chain.

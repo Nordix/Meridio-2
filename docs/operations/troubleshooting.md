@@ -369,7 +369,7 @@ table inet meridio-lb {
 	chain output {
 		type filter hook output priority filter; policy accept;
 		meta l4proto icmp ip daddr @ipv4-vips counter packets 0 bytes 0 queue to 0-3
-		meta l4proto ipv6-icmp ip6 daddr @ipv6-vips counter packets 0 bytes 0 queue to 0-3
+		ip6 daddr @ipv6-vips icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-reply } counter packets 0 bytes 0 queue to 0-3
 	}
 
 	chain snat-local {
@@ -382,10 +382,10 @@ table inet meridio-lb {
 
 - `ipv4-vips` / `ipv6-vips` sets contain VIPs from L34Route `destinationCIDRs`
 - `prerouting` chain queues VIP-destined traffic to nfqueue 0-3 for NFQLB processing
-- `output` chain queues locally-originated ICMP/ICMPv6 to VIPs — primarily needed for generating ICMP Fragmentation Needed / Packet Too Big replies back to endpoints when forwarded packets hit MTU limits on the external network
+- `output` chain queues locally-originated ICMP/ICMPv6 to VIPs — primarily needed for generating ICMP Fragmentation Needed / Packet Too Big replies back to endpoints when forwarded packets hit MTU limits on the external network. For IPv6 only error messages and Echo Reply are queued; Neighbor Discovery is left to the kernel (see [IPv6 target cannot resolve its LB next hop](#ipv6-target-cannot-resolve-its-lb-next-hop))
 - Packet/byte counters help verify traffic is reaching the LB
 
-Note: `nft` requires `NET_ADMIN` and `allowPrivilegeEscalation: true` as explained. Alternatively, use nsenter instead.
+Note: `nft` gets `NET_ADMIN` from its file capabilities only when it is the command run by `kubectl exec` (as above). Started from a shell inside the container it fails with "Operation not permitted", because `allowPrivilegeEscalation: false` (no-new-privs) limits file capabilities to what the calling process already holds. For interactive use, use an ephemeral container or nsenter instead.
 
 ### Check nfqueue status
 
@@ -552,6 +552,27 @@ kubectl exec -n <ns> <pod> -c <sidecar> -- ip route show table <table-id>
 ```
 
 Expected: default route with next-hops pointing to SLLBR Pod IPs (ECMP if multiple LB Pods).
+
+### IPv6 target cannot resolve its LB next hop
+
+Symptom: over IPv6, VIP-sourced traffic from some application Pods behind an LB fails while it works from others. This covers connections the Pods initiate (client use cases) as well as their replies to inbound connections. IPv4 is not affected. The failing packets never leave the Pod. The failures can be transient (see the router reachability probe below), and with several LB replicas they can be limited to the flows that use an unresolved LB.
+
+Check the neighbor entry for the LB next hop in a failing Pod:
+
+```bash
+kubectl exec -n <ns> <pod> -c <sidecar> -- ip -6 neigh show dev <interface>
+```
+
+A next hop stuck in `INCOMPLETE` or `FAILED` matches this problem. When a Pod resolves its next hop while sending from the VIP (including a reply to inbound traffic), the linux kernel sources the Neighbor Solicitation from the VIP, so the LB's Neighbor Advertisement is addressed to the VIP. Older LB versions (up to v0.0.10) queued all ICMPv6 to VIPs to NFQLB in the `output` chain, which load-balanced the Advertisement to one target instead of the soliciting Pod. A growing counter on the IPv6 `output` rule (see [Check nftables](#check-nftables)) without an `icmpv6 type { ... }` match confirms an affected LB.
+
+On an affected LB the failure is intermittent: some application Pods resolve their LB next hop anyway, others stay stuck. This depends on a second kernel mechanism in the application Pod, the router reachability probe:
+
+- When IPv6 forwarding is disabled in the application Pod (`net.ipv6.conf.all.forwarding=0`, the default) and the node kernel is built with `CONFIG_IPV6_ROUTER_PREF`, sending a packet through an unresolved LB next hop can trigger an extra Neighbor Solicitation. It is sourced from the application Pod's link-local address, not from the VIP, so the LB's Neighbor Advertisement goes straight back to that Pod and the next hop resolves.
+- The probe is rate-limited per route by `net.ipv6.conf.<interface>.router_probe_interval` in the application Pod (default 60 s), and a newly created route counts as just probed. The sidecar creates the route via the LB when it configures the Pod, so an application that starts sending within that interval gets no probe.
+- Once the application Pod has an `INCOMPLETE` or `FAILED` entry for the LB next hop, it probes only if the entry has not changed for `router_probe_interval`. Every new resolution attempt changes the entry, so an application Pod that keeps sending from the VIP through that next hop can stay stuck indefinitely. `FAILED` entries are only garbage-collected when the node-wide IPv6 neighbor table holds at least `net.ipv6.neigh.default.gc_thresh1` entries (default 128); after that, the next packet can probe.
+- With several LB replicas, the application Pod's route has one next hop per LB. Route selection skips a next hop whose entry is `FAILED`, so return traffic moves to an LB the Pod did resolve. Since no traffic refreshes the skipped entry any more, the probe resolves it after `router_probe_interval`. With a single LB, or when the Pod resolved no LB, it has no next hop to fall back to.
+
+Upgrading the LB is the fix. Until then, an application Pod recovers if it stops sending from the VIP for longer than `router_probe_interval`: the next packet then triggers a probe. Deleting the stuck entry in the application Pod's network namespace (for example with `nsenter` on the node) also lets the next packet probe, provided the route is older than `router_probe_interval` and no probe was sent on it during that interval.
 
 ### Sidecar in backoff
 
