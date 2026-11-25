@@ -31,7 +31,7 @@ var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack),
 	suite := dualStackTestCase
 
 	Context("Deployment", func() {
-		It("should have Gateway Accepted", func() {
+		It("should have the Gateway Accepted", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "gateway", "gw-ds", "-n", suite.namespace,
 					"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
@@ -41,7 +41,7 @@ var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack),
 			}).Should(Succeed())
 		})
 
-		It("should have Gateway Programmed", func() {
+		It("should have the Gateway Programmed", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "gateway", "gw-ds", "-n", suite.namespace,
 					"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
@@ -51,7 +51,7 @@ var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack),
 			}).Should(Succeed())
 		})
 
-		It("should have Gateway status.addresses with both IPv4 and IPv6 VIPs", func() {
+		It("should populate Gateway status.addresses with both IPv4 and IPv6 VIPs", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "gateway", "gw-ds", "-n", suite.namespace,
 					"-o", "jsonpath={.status.addresses[*].value}")
@@ -73,7 +73,7 @@ var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack),
 			}).Should(Succeed())
 		})
 
-		It("should have DistributionGroup Available", func() {
+		It("should have the DistributionGroup Available", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "distg", "dg-ds", "-n", suite.namespace,
 					"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}")
@@ -215,7 +215,7 @@ var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack),
 			}).Should(Succeed())
 		})
 
-		It("should have ECMP routes to LB pods in both IP families", func() {
+		It("should have ECMP routes to LB Pods in both IP families", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 					"-l", "app=target-ds", "--field-selector=status.phase=Running",
@@ -265,7 +265,7 @@ var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack),
 			}).Should(Succeed())
 		})
 
-		It("should have LB pods with connectivity readiness gates", func() {
+		It("should have LB Pods with connectivity readiness gates", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 					"-l", "gateway.networking.k8s.io/gateway-name=gw-ds",
@@ -338,48 +338,42 @@ var _ = Describe("Dual Stack", Label(labelSuiteDualStackSimple, labelDualStack),
 			}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
-		Context("ICMP reachability", func() {
-			It("handles IPv4 ping on VIP", func() {
-				Eventually(func() error { return e2eutils.Ping("40.0.0.1") }).
-					WithTimeout(30 * time.Second).Should(Succeed())
-			})
-
-			It("handles IPv6 ping on VIP", func() {
-				Eventually(func() error { return e2eutils.Ping("fd00:cafe:4::1") }).
-					WithTimeout(30 * time.Second).Should(Succeed())
-			})
+		It("[IPv4] should answer ICMP ping on the VIP", func() {
+			Eventually(func() error { return e2eutils.Ping("40.0.0.1") }).
+				WithTimeout(30 * time.Second).Should(Succeed())
 		})
 
-		Context("IPv6 load balancing", func() {
-			It("distributes TCP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("fd00:cafe:4::1", 5000, "tcp", 100)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(lostConn).To(BeZero(), "no connections should be lost")
-				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
-			})
-
-			It("distributes UDP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("fd00:cafe:4::1", 5001, "udp", 100)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(lostConn).To(BeZero(), "no connections should be lost")
-				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
-			})
+		It("[IPv6] should answer ICMP ping on the VIP", func() {
+			Eventually(func() error { return e2eutils.Ping("fd00:cafe:4::1") }).
+				WithTimeout(30 * time.Second).Should(Succeed())
 		})
 
-		Context("IPv4 load balancing", func() {
-			It("distributes TCP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("40.0.0.1", 5000, "tcp", 100)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(lostConn).To(BeZero(), "no connections should be lost")
-				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
-			})
+		It("[IPv6] should distribute TCP traffic across targets", func() {
+			lastingConn, lostConn, err := e2eutils.SendTraffic("fd00:cafe:4::1", 5000, "tcp", 100)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lostConn).To(BeZero(), "no connections should be lost")
+			Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
+		})
 
-			It("distributes UDP traffic across targets", func() {
-				lastingConn, lostConn, err := e2eutils.SendTraffic("40.0.0.1", 5001, "udp", 100)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(lostConn).To(BeZero(), "no connections should be lost")
-				Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
-			})
+		It("[IPv6] should distribute UDP traffic across targets", func() {
+			lastingConn, lostConn, err := e2eutils.SendTraffic("fd00:cafe:4::1", 5001, "udp", 100)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lostConn).To(BeZero(), "no connections should be lost")
+			Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
+		})
+
+		It("[IPv4] should distribute TCP traffic across targets", func() {
+			lastingConn, lostConn, err := e2eutils.SendTraffic("40.0.0.1", 5000, "tcp", 100)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lostConn).To(BeZero(), "no connections should be lost")
+			Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
+		})
+
+		It("[IPv4] should distribute UDP traffic across targets", func() {
+			lastingConn, lostConn, err := e2eutils.SendTraffic("40.0.0.1", 5001, "udp", 100)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lostConn).To(BeZero(), "no connections should be lost")
+			Expect(len(lastingConn)).To(Equal(2), "expected 2 targets, got: %v", lastingConn)
 		})
 	})
 })

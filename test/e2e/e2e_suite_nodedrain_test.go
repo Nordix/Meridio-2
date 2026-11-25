@@ -377,146 +377,152 @@ var _ = Describe("Node Drain", Label(labelSuiteNodeDrain, labelDualStack), Seria
 	})
 
 	// Step 3: establish steady state and verify traffic is stable.
-	It("establishes a steady state with 4 endpoints and stable traffic", func() {
-		verifyNodeDrainHealthy(nodeDrainEndpoints, 90*time.Second, 2*time.Second)
-		restartsBefore = mustMaxRestartCount()
+	Context("Deployment", func() {
+		It("should establish a steady state with 4 endpoints and stable traffic", func() {
+			verifyNodeDrainHealthy(nodeDrainEndpoints, 90*time.Second, 2*time.Second)
+			restartsBefore = mustMaxRestartCount()
+		})
+
+		// Step 4 + 5: cordon then drain a co-located node, verify recovery.
 	})
 
-	// Step 4 + 5: cordon then drain a co-located node, verify recovery.
-	It("reschedules endpoints and keeps the service alive across a worker node drain", func() {
-		By("selecting a node to drain (Tier 1: LB+controller+target, Tier 2: LB+target, Tier 3: target)")
-		logPodPlacement()
-		var err error
-		selection, err = selectDrainNode()
-		Expect(err).NotTo(HaveOccurred())
-		GinkgoWriter.Printf("selected node %q via Tier %d (hostsController=%v)\n",
-			selection.node, selection.tier, selection.hostsController)
+	Context("Disruption", func() {
+		It("should reschedule endpoints and keep the service alive across a worker node drain", func() {
+			By("selecting a node to drain (Tier 1: LB+controller+target, Tier 2: LB+target, Tier 3: target)")
+			logPodPlacement()
+			var err error
+			selection, err = selectDrainNode()
+			Expect(err).NotTo(HaveOccurred())
+			GinkgoWriter.Printf("selected node %q via Tier %d (hostsController=%v)\n",
+				selection.node, selection.tier, selection.hostsController)
 
-		// Coverage enforcement. The whole point of this test is to drain a node
-		// that takes down an LB pod (and ideally the controller-manager) along
-		// with a target endpoint. On the guaranteed >= nodeDrainMinWorkers
-		// cluster, selection must reach at least Tier 2 (LB + target
-		// co-located); a fall to Tier 3 (target only) means no LB eviction is
-		// exercised, so the run would pass green without testing its core
-		// scenario — fail loudly instead.
-		Expect(selection.tier).To(BeNumerically("<=", 2),
-			"node selection fell to Tier %d (target-only): no LB pod was co-located "+
-				"with a target, so this run would not exercise LB eviction. On the "+
-				"required %d-worker cluster this indicates an environment/scheduling "+
-				"problem rather than acceptable degradation.",
-			selection.tier, nodeDrainMinWorkers)
+			// Coverage enforcement. The whole point of this test is to drain a node
+			// that takes down an LB pod (and ideally the controller-manager) along
+			// with a target endpoint. On the guaranteed >= nodeDrainMinWorkers
+			// cluster, selection must reach at least Tier 2 (LB + target
+			// co-located); a fall to Tier 3 (target only) means no LB eviction is
+			// exercised, so the run would pass green without testing its core
+			// scenario — fail loudly instead.
+			Expect(selection.tier).To(BeNumerically("<=", 2),
+				"node selection fell to Tier %d (target-only): no LB pod was co-located "+
+					"with a target, so this run would not exercise LB eviction. On the "+
+					"required %d-worker cluster this indicates an environment/scheduling "+
+					"problem rather than acceptable degradation.",
+				selection.tier, nodeDrainMinWorkers)
 
-		// Tier 2 (LB + target but no controller-manager co-located) is accepted:
-		// controller co-location is less deterministic, and controller-recovery
-		// is asserted conditionally below only when it was co-located. Make the
-		// reduced coverage obvious in the run log.
-		if selection.tier == 2 {
-			GinkgoWriter.Printf("WARNING: node selection reached Tier 2 (LB+target) but not Tier 1: " +
-				"the controller-manager was not co-located with a drained LB+target node, so this " +
-				"run does NOT exercise controller-manager recovery. LB eviction and endpoint " +
-				"reschedule are still covered.\n")
-		}
+			// Tier 2 (LB + target but no controller-manager co-located) is accepted:
+			// controller co-location is less deterministic, and controller-recovery
+			// is asserted conditionally below only when it was co-located. Make the
+			// reduced coverage obvious in the run log.
+			if selection.tier == 2 {
+				GinkgoWriter.Printf("WARNING: node selection reached Tier 2 (LB+target) but not Tier 1: " +
+					"the controller-manager was not co-located with a drained LB+target node, so this " +
+					"run does NOT exercise controller-manager recovery. LB eviction and endpoint " +
+					"reschedule are still covered.\n")
+			}
 
-		if selection.hostsController {
-			controllerPod = e2eutils.GetPodName(scalingNamespace, controllerLabel)
-			Expect(controllerPod).NotTo(BeEmpty(),
-				"controller-manager pod should exist on/for the selected node")
-		}
+			if selection.hostsController {
+				controllerPod = e2eutils.GetPodName(scalingNamespace, controllerLabel)
+				Expect(controllerPod).NotTo(BeEmpty(),
+					"controller-manager pod should exist on/for the selected node")
+			}
 
-		By("starting long-lived in-flight traffic for every gateway/family concurrently")
-		handles := make([]*e2eutils.TrafficHandle, len(scalingGateways))
-		for i, gw := range scalingGateways {
-			h, startErr := e2eutils.StartTraffic(gw.vip, gw.tcpPort, "tcp",
-				nodeDrainConnCount, nodeDrainTrafficDuration, nodeDrainRetries)
-			Expect(startErr).NotTo(HaveOccurred(), "start traffic for %s (%s)", gw.name, gw.vip)
-			handles[i] = h
-		}
+			By("starting long-lived in-flight traffic for every gateway/family concurrently")
+			handles := make([]*e2eutils.TrafficHandle, len(scalingGateways))
+			for i, gw := range scalingGateways {
+				h, startErr := e2eutils.StartTraffic(gw.vip, gw.tcpPort, "tcp",
+					nodeDrainConnCount, nodeDrainTrafficDuration, nodeDrainRetries)
+				Expect(startErr).NotTo(HaveOccurred(), "start traffic for %s (%s)", gw.name, gw.vip)
+				handles[i] = h
+			}
 
-		time.Sleep(nodeDrainSettleBeforeDrain)
+			time.Sleep(nodeDrainSettleBeforeDrain)
 
-		// Record the exact suite workload pods living on the node before draining,
-		// so the drain can be proven to have evicted them (not merely inferred
-		// from downstream health).
-		podsOnNodeBefore := workloadPodsOnNode(selection.node)
-		GinkgoWriter.Printf("workload pods on %s before drain: %v\n",
-			selection.node, podsOnNodeBefore)
-		Expect(podsOnNodeBefore).NotTo(BeEmpty(),
-			"selected node %s should host at least one suite workload pod before draining",
-			selection.node)
+			// Record the exact suite workload pods living on the node before draining,
+			// so the drain can be proven to have evicted them (not merely inferred
+			// from downstream health).
+			podsOnNodeBefore := workloadPodsOnNode(selection.node)
+			GinkgoWriter.Printf("workload pods on %s before drain: %v\n",
+				selection.node, podsOnNodeBefore)
+			Expect(podsOnNodeBefore).NotTo(BeEmpty(),
+				"selected node %s should host at least one suite workload pod before draining",
+				selection.node)
 
-		// Cordon then drain the selected node.
-		cordonNode(selection.node)
-		drainNode(selection.node)
+			// Cordon then drain the selected node.
+			cordonNode(selection.node)
+			drainNode(selection.node)
 
-		// Acceptance (drain effect): the node must be emptied of the suite's
-		// workload pods. This proves the drain evicted them rather than the
-		// test inferring it from a later healthy state.
-		By("verifying the drained node is emptied of suite workload pods")
-		Eventually(func(g Gomega) {
-			remaining := workloadPodsOnNode(selection.node)
-			g.Expect(remaining).To(BeEmpty(),
-				"no suite workload pod should remain on drained node %s, still present: %v",
-				selection.node, remaining)
-		}).WithTimeout(3 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
-
-		By("waiting for all in-flight traffic runs to finish (traffic kept flowing)")
-		for i, gw := range scalingGateways {
-			hosts, _, waitErr := handles[i].Wait()
-			Expect(waitErr).NotTo(HaveOccurred(), "wait traffic for %s (%s)", gw.name, gw.vip)
-			// Stateless Maglev: established-flow disruption during the drain is
-			// expected and not bounded. Only require that traffic kept flowing
-			// through the transition (connections were served by endpoints).
-			Expect(len(hosts)).To(BeNumerically(">", 0),
-				"%s on %s: no traffic was served during the drain (hosts: %v)",
-				gw.family, gw.name, hosts)
-		}
-
-		// Acceptance: on drain, pods reschedule to other nodes and reach Ready.
-		By("verifying the endpoint count is restored on the remaining nodes")
-		Eventually(func(g Gomega) {
-			g.Expect(runningTargetCount(g)).To(Equal(nodeDrainEndpoints))
-		}).WithTimeout(3 * time.Minute).Should(Succeed())
-
-		By("verifying no rescheduled endpoint landed back on the drained node")
-		Eventually(func(g Gomega) {
-			nodes := e2eutils.NodesForPods(scalingNamespace, "app="+scalingTargetApp)
-			_, stillThere := nodes[selection.node]
-			g.Expect(stillThere).To(BeFalse(),
-				"no target endpoint should be scheduled on cordoned node %s", selection.node)
-			g.Expect(len(nodes)).To(BeNumerically(">", 0))
-		}).WithTimeout(3 * time.Minute).Should(Succeed())
-
-		// Acceptance: data path restored (steady-state health + traffic).
-		By("verifying full recovery: health + traffic across all gateways/families")
-		verifyNodeDrainHealthy(nodeDrainEndpoints, 3*time.Minute, 3*time.Second)
-
-		// Assert controller-manager recovery when the drained node hosted it.
-		if selection.hostsController {
-			By("verifying the controller-manager rescheduled and became Ready again")
-			var newControllerPod string
+			// Acceptance (drain effect): the node must be emptied of the suite's
+			// workload pods. This proves the drain evicted them rather than the
+			// test inferring it from a later healthy state.
+			By("verifying the drained node is emptied of suite workload pods")
 			Eventually(func(g Gomega) {
-				newControllerPod = e2eutils.GetPodName(scalingNamespace, controllerLabel)
-				g.Expect(newControllerPod).NotTo(BeEmpty(),
-					"a controller-manager pod should exist after the drain")
-				g.Expect(e2eutils.IsPodReady(scalingNamespace, newControllerPod)).To(BeTrue())
-				g.Expect(e2eutils.GetPodNode(scalingNamespace, newControllerPod)).
-					NotTo(Equal(selection.node),
-						"controller-manager should be rescheduled off the drained node")
+				remaining := workloadPodsOnNode(selection.node)
+				g.Expect(remaining).To(BeEmpty(),
+					"no suite workload pod should remain on drained node %s, still present: %v",
+					selection.node, remaining)
 			}).WithTimeout(3 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
 
-			By("confirming the rescheduled controller-manager did not crash-loop")
-			Expect(e2eutils.GetContainerRestarts(scalingNamespace, newControllerPod, controllerContainer)).
-				To(BeNumerically("==", 0),
-					"rescheduled controller-manager should not have crashed")
-		}
-	})
+			By("waiting for all in-flight traffic runs to finish (traffic kept flowing)")
+			for i, gw := range scalingGateways {
+				hosts, _, waitErr := handles[i].Wait()
+				Expect(waitErr).NotTo(HaveOccurred(), "wait traffic for %s (%s)", gw.name, gw.vip)
+				// Stateless Maglev: established-flow disruption during the drain is
+				// expected and not bounded. Only require that traffic kept flowing
+				// through the transition (connections were served by endpoints).
+				Expect(len(hosts)).To(BeNumerically(">", 0),
+					"%s on %s: no traffic was served during the drain (hosts: %v)",
+					gw.family, gw.name, hosts)
+			}
 
-	// Acceptance: no container restarts on the surviving/rescheduled targets.
-	It("does not restart any surviving target container during the drain", func() {
-		Eventually(func(g Gomega) {
-			g.Expect(maxTargetRestartCount(g)).To(Equal(restartsBefore),
-				"no target container should restart due to the node drain")
-		}).Should(Succeed())
+			// Acceptance: on drain, pods reschedule to other nodes and reach Ready.
+			By("verifying the endpoint count is restored on the remaining nodes")
+			Eventually(func(g Gomega) {
+				g.Expect(runningTargetCount(g)).To(Equal(nodeDrainEndpoints))
+			}).WithTimeout(3 * time.Minute).Should(Succeed())
+
+			By("verifying no rescheduled endpoint landed back on the drained node")
+			Eventually(func(g Gomega) {
+				nodes := e2eutils.NodesForPods(scalingNamespace, "app="+scalingTargetApp)
+				_, stillThere := nodes[selection.node]
+				g.Expect(stillThere).To(BeFalse(),
+					"no target endpoint should be scheduled on cordoned node %s", selection.node)
+				g.Expect(len(nodes)).To(BeNumerically(">", 0))
+			}).WithTimeout(3 * time.Minute).Should(Succeed())
+
+			// Acceptance: data path restored (steady-state health + traffic).
+			By("verifying full recovery: health + traffic across all gateways/families")
+			verifyNodeDrainHealthy(nodeDrainEndpoints, 3*time.Minute, 3*time.Second)
+
+			// Assert controller-manager recovery when the drained node hosted it.
+			if selection.hostsController {
+				By("verifying the controller-manager rescheduled and became Ready again")
+				var newControllerPod string
+				Eventually(func(g Gomega) {
+					newControllerPod = e2eutils.GetPodName(scalingNamespace, controllerLabel)
+					g.Expect(newControllerPod).NotTo(BeEmpty(),
+						"a controller-manager pod should exist after the drain")
+					g.Expect(e2eutils.IsPodReady(scalingNamespace, newControllerPod)).To(BeTrue())
+					g.Expect(e2eutils.GetPodNode(scalingNamespace, newControllerPod)).
+						NotTo(Equal(selection.node),
+							"controller-manager should be rescheduled off the drained node")
+				}).WithTimeout(3 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
+
+				By("confirming the rescheduled controller-manager did not crash-loop")
+				Expect(e2eutils.GetContainerRestarts(scalingNamespace, newControllerPod, controllerContainer)).
+					To(BeNumerically("==", 0),
+						"rescheduled controller-manager should not have crashed")
+			}
+		})
+
+		// Acceptance: no container restarts on the surviving/rescheduled targets.
+		It("should not restart any surviving target container during the drain", func() {
+			Eventually(func(g Gomega) {
+				g.Expect(maxTargetRestartCount(g)).To(Equal(restartsBefore),
+					"no target container should restart due to the node drain")
+			}).Should(Succeed())
+		})
+
 	})
 
 	AfterAll(func() {

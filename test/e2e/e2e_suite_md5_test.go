@@ -48,14 +48,16 @@ var md5TestCases = []suiteTestCase{
 }
 
 // Deprecated: this suite exercises the deprecated BGP MD5 (RFC2385) mechanism.
-var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
+// Each table entry becomes its own top-level tree, so the report reads
+// "<Suite> > <Phase> > <spec>" with no wrapper level.
+func init() {
 	for _, suite := range md5TestCases {
 		suite := suite
-		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
-			Context("Deployment for MD5", func() {
+		Describe(suite.name, Label(suite.suiteLabel, labelIPv4), Ordered, func() {
+			Context("Deployment", func() {
 				for _, gw := range suite.gateways {
 					gw := gw
-					It(fmt.Sprintf("should have %s Accepted", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Accepted", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
@@ -65,7 +67,7 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s Programmed", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Programmed", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
@@ -75,7 +77,7 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
+					It(fmt.Sprintf("[%s] should deploy an LB Pod", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -86,7 +88,7 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s LB Pod containers ready", gw.name), func() {
+					It(fmt.Sprintf("[%s] should have all LB Pod containers ready", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -99,10 +101,10 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 				}
 			})
 
-			Context("BGP configuration ready with MD5 for Bird", func() {
+			Context("Authentication", func() {
 				for _, gw := range suite.gateways {
 					gw := gw
-					It(fmt.Sprintf("should have MD5 configured in BIRD for %s", gw.name), func() {
+					It(fmt.Sprintf("[%s] should have MD5 configured in BIRD", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -119,7 +121,7 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 							g.Expect(out).To(ContainSubstring(`password "my-secure-md5-key-string";`))
 						}).Should(Succeed())
 					})
-					It(fmt.Sprintf("BGP is Up %s", gw.name), func() {
+					It(fmt.Sprintf("[%s] should have the BGP session Established", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -141,14 +143,14 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 				}
 			})
 
-			Context("Traffic flows through MD5 authenticated sessions", func() {
+			Context("Traffic", func() {
 				for _, gw := range suite.gateways {
 					gw := gw
-					It(fmt.Sprintf("should reach %s VIP via ping", gw.name), func() {
+					It(fmt.Sprintf("[%s] should answer ICMP ping on the VIP", gw.name), func() {
 						Eventually(func() error { return e2eutils.Ping(gw.vip) }).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should distribute %s TCP traffic across targets", gw.name), func() {
+					It(fmt.Sprintf("[%s] should distribute TCP traffic across targets", gw.name), func() {
 						lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
 						Expect(err).NotTo(HaveOccurred())
 						Expect(lostConn).To(BeZero())
@@ -157,7 +159,7 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 				}
 			})
 
-			Context("MD5 enforcement (negative test)", func() {
+			Context("Negative", func() {
 				It("should lose BGP session when Secret has wrong key", func() {
 					gw := suite.gateways[0]
 
@@ -210,4 +212,4 @@ var _ = Describe("E2E MD5 Test Suite", Label(labelIPv4), func() {
 			})
 		})
 	}
-})
+}

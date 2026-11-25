@@ -68,242 +68,254 @@ var _ = Describe("Readiness Gates", Label(labelSuiteReadinessGates, labelDualSta
 		}
 	})
 
-	It("LB Pods should have both readiness gates declared and conditions True", func() {
-		for _, pod := range lbPods {
-			cmd := exec.Command("kubectl", "get", "pod", pod, "-n", rgNamespace, "-o", "json")
-			out, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
+	Context("Deployment", func() {
+		It("should declare both readiness gates on LB Pods with conditions True", func() {
+			for _, pod := range lbPods {
+				cmd := exec.Command("kubectl", "get", "pod", pod, "-n", rgNamespace, "-o", "json")
+				out, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
 
-			var p struct {
-				Spec struct {
-					ReadinessGates []struct {
-						ConditionType string `json:"conditionType"`
-					} `json:"readinessGates"`
-				} `json:"spec"`
-				Status struct {
-					Conditions []struct {
-						Type   string `json:"type"`
-						Status string `json:"status"`
-					} `json:"conditions"`
-				} `json:"status"`
-			}
-			Expect(utils.ParseJSON(out, &p)).To(Succeed())
+				var p struct {
+					Spec struct {
+						ReadinessGates []struct {
+							ConditionType string `json:"conditionType"`
+						} `json:"readinessGates"`
+					} `json:"spec"`
+					Status struct {
+						Conditions []struct {
+							Type   string `json:"type"`
+							Status string `json:"status"`
+						} `json:"conditions"`
+					} `json:"status"`
+				}
+				Expect(utils.ParseJSON(out, &p)).To(Succeed())
 
-			gateTypes := []string{}
-			for _, g := range p.Spec.ReadinessGates {
-				gateTypes = append(gateTypes, g.ConditionType)
-			}
-			Expect(gateTypes).To(ContainElement(rgGateIPv4))
-			Expect(gateTypes).To(ContainElement(rgGateIPv6))
+				gateTypes := []string{}
+				for _, g := range p.Spec.ReadinessGates {
+					gateTypes = append(gateTypes, g.ConditionType)
+				}
+				Expect(gateTypes).To(ContainElement(rgGateIPv4))
+				Expect(gateTypes).To(ContainElement(rgGateIPv6))
 
-			// Gates should already be True (deployment succeeded)
-			for _, c := range p.Status.Conditions {
-				if c.Type == rgGateIPv4 || c.Type == rgGateIPv6 {
-					Expect(c.Status).To(Equal("True"),
-						"Pod %s gate %s should be True", pod, c.Type)
+				// Gates should already be True (deployment succeeded)
+				for _, c := range p.Status.Conditions {
+					if c.Type == rgGateIPv4 || c.Type == rgGateIPv6 {
+						Expect(c.Status).To(Equal("True"),
+							"Pod %s gate %s should be True", pod, c.Type)
+					}
 				}
 			}
-		}
+		})
+
+		It("should include all healthy LB Pod IPs in ENC next-hops for both IP families", func() {
+			ipv4IPs := rgGetLBIPs(rgInterface, false)
+			ipv6IPs := rgGetLBIPs(rgInterface, true)
+			Expect(ipv4IPs).To(HaveLen(2), "Expected 2 LB IPv4 IPs")
+			Expect(ipv6IPs).To(HaveLen(2), "Expected 2 LB IPv6 IPs")
+
+			targetPod := rgGetTargetPod()
+			Eventually(func() []string {
+				return rgGetENCNextHops(targetPod)
+			}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+				Should(ContainElements(ipv4IPs))
+			Eventually(func() []string {
+				return rgGetENCNextHops(targetPod)
+			}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+				Should(ContainElements(ipv6IPs))
+		})
+
 	})
 
-	It("ENC next-hops should include all healthy LB Pod IPs for both IP families", func() {
-		ipv4IPs := rgGetLBIPs(rgInterface, false)
-		ipv6IPs := rgGetLBIPs(rgInterface, true)
-		Expect(ipv4IPs).To(HaveLen(2), "Expected 2 LB IPv4 IPs")
-		Expect(ipv6IPs).To(HaveLen(2), "Expected 2 LB IPv6 IPs")
+	Context("Traffic", func() {
+		It("should have end-to-end reachability for both IPv4 and IPv6 VIPs", func() {
+			// Verify traffic works before running disruptive tests.
+			// This catches infrastructure issues (route sync, NDP, nftables) early.
+			Eventually(func() error {
+				return e2eutils.Ping(rgVIPv4)
+			}).WithTimeout(30*time.Second).WithPolling(2*time.Second).
+				Should(Succeed(), "IPv4 VIP should be reachable from VPN gateway")
+			Eventually(func() error {
+				return e2eutils.Ping(rgVIPv6)
+			}).WithTimeout(30*time.Second).WithPolling(2*time.Second).
+				Should(Succeed(), "IPv6 VIP should be reachable from VPN gateway")
+		})
 
-		targetPod := rgGetTargetPod()
-		Eventually(func() []string {
-			return rgGetENCNextHops(targetPod)
-		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
-			Should(ContainElements(ipv4IPs))
-		Eventually(func() []string {
-			return rgGetENCNextHops(targetPod)
-		}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
-			Should(ContainElements(ipv6IPs))
 	})
 
-	It("should have end-to-end reachability for both IPv4 and IPv6 VIPs", func() {
-		// Verify traffic works before running disruptive tests.
-		// This catches infrastructure issues (route sync, NDP, nftables) early.
-		Eventually(func() error {
-			return e2eutils.Ping(rgVIPv4)
-		}).WithTimeout(30*time.Second).WithPolling(2*time.Second).
-			Should(Succeed(), "IPv4 VIP should be reachable from VPN gateway")
-		Eventually(func() error {
-			return e2eutils.Ping(rgVIPv6)
-		}).WithTimeout(30*time.Second).WithPolling(2*time.Second).
-			Should(Succeed(), "IPv6 VIP should be reachable from VPN gateway")
-	})
+	Context("Disruption", func() {
+		It("should set ipv4 gate False and exclude Pod from IPv4 next-hops when IPv4 BGP drops", func() {
+			// Disable IPv4 BGP on both LB Pods to cause full IPv4 degradation
+			for _, pod := range lbPods {
+				rgBirdctl(pod, "disable", rgProtocolV4)
+			}
 
-	It("should set ipv4 gate False and exclude Pod from IPv4 next-hops when IPv4 BGP drops", func() {
-		// Disable IPv4 BGP on both LB Pods to cause full IPv4 degradation
-		for _, pod := range lbPods {
-			rgBirdctl(pod, "disable", rgProtocolV4)
-		}
+			// Both Pods should have IPv4 gate False, IPv6 gate unaffected
+			for _, pod := range lbPods {
+				Eventually(func() string {
+					return rgGetGateCondition(pod, rgGateIPv4)
+				}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).
+					Should(Equal("False"))
+				Expect(rgGetGateCondition(pod, rgGateIPv6)).To(Equal("True"))
+			}
 
-		// Both Pods should have IPv4 gate False, IPv6 gate unaffected
-		for _, pod := range lbPods {
-			Eventually(func() string {
-				return rgGetGateCondition(pod, rgGateIPv4)
-			}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).
+			// All IPv4 IPs excluded from ENC next-hops, IPv6 IPs remain
+			targetPod := rgGetTargetPod()
+			for _, pod := range lbPods {
+				podIPv4 := rgGetSinglePodIP(pod, rgInterface, false)
+				podIPv6 := rgGetSinglePodIP(pod, rgInterface, true)
+				Eventually(func() []string {
+					return rgGetENCNextHops(targetPod)
+				}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+					ShouldNot(ContainElement(podIPv4))
+				hops := rgGetENCNextHops(targetPod)
+				Expect(hops).To(ContainElement(podIPv6))
+			}
+
+			// IPv4 traffic should fail (no healthy IPv4 path)
+			Eventually(func() error { return e2eutils.Ping(rgVIPv4) }).
+				WithTimeout(15*time.Second).WithPolling(2*time.Second).
+				ShouldNot(Succeed(), "IPv4 ping should fail with all IPv4 gates False")
+
+			// IPv6 traffic continues flowing
+			Expect(e2eutils.Ping(rgVIPv6)).To(Succeed(), "IPv6 ping should still work")
+		})
+
+		It("should not change the ipv4 gate status on a link flap", func() {
+			disruptedPod := lbPods[0]
+
+			rgBirdctl(disruptedPod, "enable", rgProtocolV4)
+			time.Sleep(1 * time.Second)
+			rgBirdctl(disruptedPod, "disable", rgProtocolV4)
+
+			Consistently(func() string {
+				return rgGetGateCondition(disruptedPod, rgGateIPv4)
+			}).WithTimeout(5 * time.Second).WithPolling(1 * time.Second).
 				Should(Equal("False"))
-			Expect(rgGetGateCondition(pod, rgGateIPv6)).To(Equal("True"))
-		}
 
-		// All IPv4 IPs excluded from ENC next-hops, IPv6 IPs remain
-		targetPod := rgGetTargetPod()
-		for _, pod := range lbPods {
-			podIPv4 := rgGetSinglePodIP(pod, rgInterface, false)
-			podIPv6 := rgGetSinglePodIP(pod, rgInterface, true)
-			Eventually(func() []string {
-				return rgGetENCNextHops(targetPod)
-			}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
-				ShouldNot(ContainElement(podIPv4))
-			hops := rgGetENCNextHops(targetPod)
-			Expect(hops).To(ContainElement(podIPv6))
-		}
+			// IPv4 traffic still blocked (flap did not restore the path)
+			Expect(e2eutils.Ping(rgVIPv4)).NotTo(Succeed(), "IPv4 ping should still fail after flap")
+			// IPv6 unaffected
+			Expect(e2eutils.Ping(rgVIPv6)).To(Succeed(), "IPv6 ping should still work")
+		})
 
-		// IPv4 traffic should fail (no healthy IPv4 path)
-		Eventually(func() error { return e2eutils.Ping(rgVIPv4) }).
-			WithTimeout(15*time.Second).WithPolling(2*time.Second).
-			ShouldNot(Succeed(), "IPv4 ping should fail with all IPv4 gates False")
+		It("should set ipv6 gate False when IPv6 BGP drops", func() {
+			// Disable IPv6 BGP on both LB Pods to cause full IPv6 degradation
+			for _, pod := range lbPods {
+				rgBirdctl(pod, "disable", rgProtocolV6)
+			}
 
-		// IPv6 traffic continues flowing
-		Expect(e2eutils.Ping(rgVIPv6)).To(Succeed(), "IPv6 ping should still work")
-	})
+			// Both Pods should have IPv6 gate False, IPv4 still False (from TC3)
+			for _, pod := range lbPods {
+				Eventually(func() string {
+					return rgGetGateCondition(pod, rgGateIPv6)
+				}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).
+					Should(Equal("False"))
+				Expect(rgGetGateCondition(pod, rgGateIPv4)).To(Equal("False"))
+			}
 
-	It("link flap should not change ipv4 gate status", func() {
-		disruptedPod := lbPods[0]
+			// All IPv6 IPs excluded from ENC next-hops
+			targetPod := rgGetTargetPod()
+			for _, pod := range lbPods {
+				podIPv6 := rgGetSinglePodIP(pod, rgInterface, true)
+				Eventually(func() []string {
+					return rgGetENCNextHops(targetPod)
+				}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+					ShouldNot(ContainElement(podIPv6))
+			}
 
-		rgBirdctl(disruptedPod, "enable", rgProtocolV4)
-		time.Sleep(1 * time.Second)
-		rgBirdctl(disruptedPod, "disable", rgProtocolV4)
+			// IPv6 traffic should fail (no healthy IPv6 path)
+			Eventually(func() error { return e2eutils.Ping(rgVIPv6) }).
+				WithTimeout(15*time.Second).WithPolling(2*time.Second).
+				ShouldNot(Succeed(), "IPv6 ping should fail with all IPv6 gates False")
 
-		Consistently(func() string {
-			return rgGetGateCondition(disruptedPod, rgGateIPv4)
-		}).WithTimeout(5 * time.Second).WithPolling(1 * time.Second).
-			Should(Equal("False"))
+			// IPv4 also still down (from TC3)
+			Expect(e2eutils.Ping(rgVIPv4)).NotTo(Succeed(), "IPv4 ping should still fail")
+		})
 
-		// IPv4 traffic still blocked (flap did not restore the path)
-		Expect(e2eutils.Ping(rgVIPv4)).NotTo(Succeed(), "IPv4 ping should still fail after flap")
-		// IPv6 unaffected
-		Expect(e2eutils.Ping(rgVIPv6)).To(Succeed(), "IPv6 ping should still work")
-	})
+		It("should not change the ipv6 gate status on a link flap", func() {
+			disruptedPod := lbPods[0]
 
-	It("should set ipv6 gate False when IPv6 BGP drops", func() {
-		// Disable IPv6 BGP on both LB Pods to cause full IPv6 degradation
-		for _, pod := range lbPods {
-			rgBirdctl(pod, "disable", rgProtocolV6)
-		}
+			rgBirdctl(disruptedPod, "enable", rgProtocolV6)
+			time.Sleep(1 * time.Second)
+			rgBirdctl(disruptedPod, "disable", rgProtocolV6)
 
-		// Both Pods should have IPv6 gate False, IPv4 still False (from TC3)
-		for _, pod := range lbPods {
-			Eventually(func() string {
-				return rgGetGateCondition(pod, rgGateIPv6)
-			}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).
+			Consistently(func() string {
+				return rgGetGateCondition(disruptedPod, rgGateIPv6)
+			}).WithTimeout(5 * time.Second).WithPolling(1 * time.Second).
 				Should(Equal("False"))
-			Expect(rgGetGateCondition(pod, rgGateIPv4)).To(Equal("False"))
-		}
 
-		// All IPv6 IPs excluded from ENC next-hops
-		targetPod := rgGetTargetPod()
-		for _, pod := range lbPods {
-			podIPv6 := rgGetSinglePodIP(pod, rgInterface, true)
-			Eventually(func() []string {
-				return rgGetENCNextHops(targetPod)
-			}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
-				ShouldNot(ContainElement(podIPv6))
-		}
+			// Traffic still blocked on both families
+			Expect(e2eutils.Ping(rgVIPv6)).NotTo(Succeed(), "IPv6 ping should still fail after flap")
+			Expect(e2eutils.Ping(rgVIPv4)).NotTo(Succeed(), "IPv4 ping should still fail")
+		})
 
-		// IPv6 traffic should fail (no healthy IPv6 path)
-		Eventually(func() error { return e2eutils.Ping(rgVIPv6) }).
-			WithTimeout(15*time.Second).WithPolling(2*time.Second).
-			ShouldNot(Succeed(), "IPv6 ping should fail with all IPv6 gates False")
-
-		// IPv4 also still down (from TC3)
-		Expect(e2eutils.Ping(rgVIPv4)).NotTo(Succeed(), "IPv4 ping should still fail")
 	})
 
-	It("link flap should not change ipv6 gate status", func() {
-		disruptedPod := lbPods[0]
+	Context("Recovery", func() {
+		It("should restore ipv4 gate True and re-include Pod after IPv4 BGP recovery", func() {
+			// Re-enable IPv4 BGP on both Pods
+			for _, pod := range lbPods {
+				rgBirdctl(pod, "enable", rgProtocolV4)
+			}
 
-		rgBirdctl(disruptedPod, "enable", rgProtocolV6)
-		time.Sleep(1 * time.Second)
-		rgBirdctl(disruptedPod, "disable", rgProtocolV6)
+			// Both Pods should recover IPv4 gate to True
+			for _, pod := range lbPods {
+				Eventually(func() string {
+					return rgGetGateCondition(pod, rgGateIPv4)
+				}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
+					Should(Equal("True"))
+				// IPv6 still False (disabled in TC5)
+				Expect(rgGetGateCondition(pod, rgGateIPv6)).To(Equal("False"))
+			}
 
-		Consistently(func() string {
-			return rgGetGateCondition(disruptedPod, rgGateIPv6)
-		}).WithTimeout(5 * time.Second).WithPolling(1 * time.Second).
-			Should(Equal("False"))
+			// All IPv4 IPs re-included in ENC next-hops
+			targetPod := rgGetTargetPod()
+			for _, pod := range lbPods {
+				podIPv4 := rgGetSinglePodIP(pod, rgInterface, false)
+				Eventually(func() []string {
+					return rgGetENCNextHops(targetPod)
+				}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+					Should(ContainElement(podIPv4))
+			}
 
-		// Traffic still blocked on both families
-		Expect(e2eutils.Ping(rgVIPv6)).NotTo(Succeed(), "IPv6 ping should still fail after flap")
-		Expect(e2eutils.Ping(rgVIPv4)).NotTo(Succeed(), "IPv4 ping should still fail")
+			// IPv4 traffic resumes
+			Eventually(func() error { return e2eutils.Ping(rgVIPv4) }).
+				WithTimeout(30*time.Second).WithPolling(2*time.Second).
+				Should(Succeed(), "IPv4 ping should resume after recovery")
+		})
+
+		It("should restore ipv6 gate True and re-include Pod after IPv6 BGP recovery", func() {
+			// Re-enable IPv6 BGP on both Pods
+			for _, pod := range lbPods {
+				rgBirdctl(pod, "enable", rgProtocolV6)
+			}
+
+			// Both Pods should recover IPv6 gate to True
+			for _, pod := range lbPods {
+				Eventually(func() string {
+					return rgGetGateCondition(pod, rgGateIPv6)
+				}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
+					Should(Equal("True"))
+				Expect(rgGetGateCondition(pod, rgGateIPv4)).To(Equal("True"))
+			}
+
+			// All IPv6 IPs re-included in ENC next-hops
+			targetPod := rgGetTargetPod()
+			for _, pod := range lbPods {
+				podIPv6 := rgGetSinglePodIP(pod, rgInterface, true)
+				Eventually(func() []string {
+					return rgGetENCNextHops(targetPod)
+				}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
+					Should(ContainElement(podIPv6))
+			}
+
+			// IPv6 traffic resumes
+			Eventually(func() error { return e2eutils.Ping(rgVIPv6) }).
+				WithTimeout(30*time.Second).WithPolling(2*time.Second).
+				Should(Succeed(), "IPv6 ping should resume after recovery")
+		})
 	})
 
-	It("should restore ipv4 gate True and re-include Pod after IPv4 BGP recovery", func() {
-		// Re-enable IPv4 BGP on both Pods
-		for _, pod := range lbPods {
-			rgBirdctl(pod, "enable", rgProtocolV4)
-		}
-
-		// Both Pods should recover IPv4 gate to True
-		for _, pod := range lbPods {
-			Eventually(func() string {
-				return rgGetGateCondition(pod, rgGateIPv4)
-			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
-				Should(Equal("True"))
-			// IPv6 still False (disabled in TC5)
-			Expect(rgGetGateCondition(pod, rgGateIPv6)).To(Equal("False"))
-		}
-
-		// All IPv4 IPs re-included in ENC next-hops
-		targetPod := rgGetTargetPod()
-		for _, pod := range lbPods {
-			podIPv4 := rgGetSinglePodIP(pod, rgInterface, false)
-			Eventually(func() []string {
-				return rgGetENCNextHops(targetPod)
-			}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
-				Should(ContainElement(podIPv4))
-		}
-
-		// IPv4 traffic resumes
-		Eventually(func() error { return e2eutils.Ping(rgVIPv4) }).
-			WithTimeout(30*time.Second).WithPolling(2*time.Second).
-			Should(Succeed(), "IPv4 ping should resume after recovery")
-	})
-
-	It("should restore ipv6 gate True and re-include Pod after IPv6 BGP recovery", func() {
-		// Re-enable IPv6 BGP on both Pods
-		for _, pod := range lbPods {
-			rgBirdctl(pod, "enable", rgProtocolV6)
-		}
-
-		// Both Pods should recover IPv6 gate to True
-		for _, pod := range lbPods {
-			Eventually(func() string {
-				return rgGetGateCondition(pod, rgGateIPv6)
-			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
-				Should(Equal("True"))
-			Expect(rgGetGateCondition(pod, rgGateIPv4)).To(Equal("True"))
-		}
-
-		// All IPv6 IPs re-included in ENC next-hops
-		targetPod := rgGetTargetPod()
-		for _, pod := range lbPods {
-			podIPv6 := rgGetSinglePodIP(pod, rgInterface, true)
-			Eventually(func() []string {
-				return rgGetENCNextHops(targetPod)
-			}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).
-				Should(ContainElement(podIPv6))
-		}
-
-		// IPv6 traffic resumes
-		Eventually(func() error { return e2eutils.Ping(rgVIPv6) }).
-			WithTimeout(30*time.Second).WithPolling(2*time.Second).
-			Should(Succeed(), "IPv6 ping should resume after recovery")
-	})
 })
 
 // rgBirdctl runs a birdc command on the router container of an LB Pod.

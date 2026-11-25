@@ -72,122 +72,128 @@ var _ = Describe("Pod Cache Label", Label(labelSuitePodCacheLabel, labelIPv4), O
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	It("Gateway should be Accepted", func() {
-		Eventually(func(g Gomega) {
-			cmd := exec.Command("kubectl", "get", "gateway", gatewayName, "-n", namespace,
-				"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
-			out, err := utils.Run(cmd)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(Equal("True"))
-		}).Should(Succeed())
-	})
+	Context("Deployment", func() {
+		It("should have the Gateway Accepted", func() {
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "gateway", gatewayName, "-n", namespace,
+					"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("True"))
+			}).Should(Succeed())
+		})
 
-	It("Gateway should be Programmed", func() {
-		Eventually(func(g Gomega) {
-			cmd := exec.Command("kubectl", "get", "gateway", gatewayName, "-n", namespace,
-				"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
-			out, err := utils.Run(cmd)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(Equal("True"))
-		}).Should(Succeed())
-	})
+		It("should have the Gateway Programmed", func() {
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "gateway", gatewayName, "-n", namespace,
+					"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("True"))
+			}).Should(Succeed())
+		})
 
-	It("LB Deployment pods have the cache label", func() {
-		ctx := context.Background()
+		It("should have the cache label on the LB Deployment Pods", func() {
+			ctx := context.Background()
 
-		// Find LB Pods for the gateway
-		Eventually(func() bool {
-			pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gatewayName),
-			})
-			if err != nil || len(pods.Items) == 0 {
-				return false
-			}
-			for _, pod := range pods.Items {
-				if pod.Labels[cacheLabel] != cacheLabelV {
+			// Find LB Pods for the gateway
+			Eventually(func() bool {
+				pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+					LabelSelector: fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gatewayName),
+				})
+				if err != nil || len(pods.Items) == 0 {
 					return false
 				}
-			}
-			return pods.Items[0].Status.Phase == corev1.PodRunning
-		}).Should(BeTrue(),
-			"LB Pods should be Running and have the cache label")
-	})
-
-	It("creates ENC for labeled app Pod with non-empty next-hops", func() {
-		ctx := context.Background()
-
-		// Wait for labeled Pod to be Running
-		Eventually(func() bool {
-			pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: "variant=labeled",
-			})
-			if err != nil || len(pods.Items) == 0 {
-				return false
-			}
-			labeledPodName = pods.Items[0].Name
-			return pods.Items[0].Status.Phase == corev1.PodRunning
-		}).Should(BeTrue(),
-			"Labeled app Pod should be Running")
-
-		// Verify ENC exists with non-empty next-hops (proves LB Pod is visible)
-		Eventually(func() bool {
-			enc := &meridio2v1alpha1.EndpointNetworkConfiguration{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
-				Name: labeledPodName, Namespace: namespace,
-			}, enc); err != nil {
-				return false
-			}
-			for _, gw := range enc.Spec.Gateways {
-				for _, domain := range gw.Domains {
-					if len(domain.NextHops) > 0 {
-						return true
+				for _, pod := range pods.Items {
+					if pod.Labels[cacheLabel] != cacheLabelV {
+						return false
 					}
 				}
-			}
-			return false
-		}).Should(BeTrue(),
-			"ENC should exist for labeled Pod with non-empty next-hops")
-	})
+				return pods.Items[0].Status.Phase == corev1.PodRunning
+			}).Should(BeTrue(),
+				"LB Pods should be Running and have the cache label")
+		})
 
-	It("does NOT create ENC for unlabeled app Pod", func() {
-		ctx := context.Background()
+		It("should create an ENC with non-empty next-hops for a labeled app Pod", func() {
+			ctx := context.Background()
 
-		// Wait for unlabeled Pod to be Running
-		var unlabeledPodName string
-		Eventually(func() bool {
-			pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: "variant=unlabeled",
-			})
-			if err != nil || len(pods.Items) == 0 {
+			// Wait for labeled Pod to be Running
+			Eventually(func() bool {
+				pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+					LabelSelector: "variant=labeled",
+				})
+				if err != nil || len(pods.Items) == 0 {
+					return false
+				}
+				labeledPodName = pods.Items[0].Name
+				return pods.Items[0].Status.Phase == corev1.PodRunning
+			}).Should(BeTrue(),
+				"Labeled app Pod should be Running")
+
+			// Verify ENC exists with non-empty next-hops (proves LB Pod is visible)
+			Eventually(func() bool {
+				enc := &meridio2v1alpha1.EndpointNetworkConfiguration{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name: labeledPodName, Namespace: namespace,
+				}, enc); err != nil {
+					return false
+				}
+				for _, gw := range enc.Spec.Gateways {
+					for _, domain := range gw.Domains {
+						if len(domain.NextHops) > 0 {
+							return true
+						}
+					}
+				}
 				return false
-			}
-			unlabeledPodName = pods.Items[0].Name
-			return pods.Items[0].Status.Phase == corev1.PodRunning
-		}).Should(BeTrue(),
-			"Unlabeled app Pod should be Running")
+			}).Should(BeTrue(),
+				"ENC should exist for labeled Pod with non-empty next-hops")
+		})
 
-		// Verify ENC does NOT exist
-		Consistently(func() error {
-			enc := &meridio2v1alpha1.EndpointNetworkConfiguration{}
-			return k8sClient.Get(ctx, types.NamespacedName{
-				Name: unlabeledPodName, Namespace: namespace,
-			}, enc)
-		}).WithTimeout(10*time.Second).WithPolling(2*time.Second).ShouldNot(Succeed(),
-			"ENC should NOT be created for unlabeled Pod")
+		It("should not create an ENC for an unlabeled app Pod", func() {
+			ctx := context.Background()
+
+			// Wait for unlabeled Pod to be Running
+			var unlabeledPodName string
+			Eventually(func() bool {
+				pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+					LabelSelector: "variant=unlabeled",
+				})
+				if err != nil || len(pods.Items) == 0 {
+					return false
+				}
+				unlabeledPodName = pods.Items[0].Name
+				return pods.Items[0].Status.Phase == corev1.PodRunning
+			}).Should(BeTrue(),
+				"Unlabeled app Pod should be Running")
+
+			// Verify ENC does NOT exist
+			Consistently(func() error {
+				enc := &meridio2v1alpha1.EndpointNetworkConfiguration{}
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Name: unlabeledPodName, Namespace: namespace,
+				}, enc)
+			}).WithTimeout(10*time.Second).WithPolling(2*time.Second).ShouldNot(Succeed(),
+				"ENC should NOT be created for unlabeled Pod")
+		})
+
 	})
 
-	It("VIP is reachable via ICMP", func() {
-		Eventually(func() error { return e2eutils.Ping(vip) }).
-			Should(Succeed(), "VIP should be reachable from VPN gateway")
-	})
+	Context("Traffic", func() {
+		It("should answer ICMP ping on the VIP", func() {
+			Eventually(func() error { return e2eutils.Ping(vip) }).
+				Should(Succeed(), "VIP should be reachable from VPN gateway")
+		})
 
-	It("distributes TCP traffic only to labeled target", func() {
-		lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", 50)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(lostConn).To(BeZero(), "no connections should be lost")
-		Expect(lastingConn).To(HaveLen(1),
-			"traffic should reach exactly 1 target (labeled only), got: %v", lastingConn)
-		Expect(lastingConn).To(HaveKey(labeledPodName),
-			"traffic should only reach the labeled Pod %q, got: %v", labeledPodName, lastingConn)
+		It("should distribute TCP traffic only to the labeled target", func() {
+			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, 5000, "tcp", 50)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lostConn).To(BeZero(), "no connections should be lost")
+			Expect(lastingConn).To(HaveLen(1),
+				"traffic should reach exactly 1 target (labeled only), got: %v", lastingConn)
+			Expect(lastingConn).To(HaveKey(labeledPodName),
+				"traffic should only reach the labeled Pod %q, got: %v", labeledPodName, lastingConn)
+		})
+
 	})
 })

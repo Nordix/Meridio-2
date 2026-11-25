@@ -89,7 +89,7 @@ var _ = Describe("Any Port Conversion", Label(labelSuiteAnyPort, labelIPv4), Ser
 		})
 	})
 
-	It("programs a working all-ports match when destinationPorts is \"any\"", func() {
+	It("should program a working all-ports match when destinationPorts is \"any\"", func() {
 		By(`patching route-m1 destinationPorts to ["any"]`)
 		Expect(patchDestinationPorts(`["any"]`)).To(Succeed())
 

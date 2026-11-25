@@ -103,7 +103,7 @@ var _ = Describe("Non-Default BGP Routes", Label(labelSuiteNonDefaultBGP, labelI
 		}).Should(Succeed())
 	})
 
-	Context("deployment", func() {
+	Context("Deployment", func() {
 		It("should have the Gateway Programmed", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "gateway", nonDefaultGateway, "-n", nonDefaultNamespace,
@@ -127,7 +127,7 @@ var _ = Describe("Non-Default BGP Routes", Label(labelSuiteNonDefaultBGP, labelI
 		})
 	})
 
-	Context("non-default route acceptance", func() {
+	Context("Non-default route", func() {
 		It("should accept the non-default prefix into BIRD as a BGP-learned route", func() {
 			Eventually(func(g Gomega) {
 				out, err := e2eutils.RouterBirdcShowRoute(nonDefaultNamespace, pod, nonDefaultPrefix)
@@ -156,7 +156,7 @@ var _ = Describe("Non-Default BGP Routes", Label(labelSuiteNonDefaultBGP, labelI
 		})
 	})
 
-	Context("default route coexistence", func() {
+	Context("Default route", func() {
 		It("should still accept the default route from the same peer", func() {
 			Eventually(func(g Gomega) {
 				out, err := e2eutils.RouterBirdcShowRoute(nonDefaultNamespace, pod, defaultPrefix)

@@ -46,14 +46,16 @@ var sctpTestCases = []sctpSuiteTestCase{
 	},
 }
 
-var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
+// Each table entry becomes its own top-level tree, so the report reads
+// "<Suite> > <Phase> > <spec>" with no wrapper level.
+func init() {
 	for _, suite := range sctpTestCases {
 		suite := suite
-		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel, labelIPv4), Ordered, func() {
 			Context("Deployment", func() {
 				for _, gw := range suite.gateways {
 					gw := gw
-					It(fmt.Sprintf("should have %s Accepted", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Accepted", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
@@ -63,7 +65,7 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s Programmed", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Programmed", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
@@ -73,7 +75,7 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
+					It(fmt.Sprintf("[%s] should deploy an LB Pod", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -84,7 +86,7 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s LB Pod containers ready", gw.name), func() {
+					It(fmt.Sprintf("[%s] should have all LB Pod containers ready", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -96,7 +98,7 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 					})
 				}
 
-				It("should have Gateway status.addresses populated with VIPs", func() {
+				It("should populate Gateway status.addresses with the VIPs", func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						Eventually(func(g Gomega) {
@@ -122,7 +124,7 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 					}
 				})
 
-				It(fmt.Sprintf("should create %d ENCs (one per target pod)", suite.targetReplicas), func() {
+				It(fmt.Sprintf("should create %s, one per target Pod", countOf(suite.targetReplicas, "ENC")), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "enc", "-n", suite.namespace,
 							"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
@@ -171,7 +173,7 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 					}
 				})
 
-				It(fmt.Sprintf("should have %d target Pods running with sidecar", suite.targetReplicas), func() {
+				It(fmt.Sprintf("should have %s running with a sidecar", countOf(suite.targetReplicas, "target Pod")), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 							"-l", fmt.Sprintf("app=%s", suite.targetApp), "--field-selector=status.phase=Running",
@@ -205,76 +207,71 @@ var _ = Describe("E2E SCTP Multihoming Suites", Label(labelIPv4), func() {
 					}
 				})
 
-				Context("ICMP reachability", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("handles ping on "+gw.name+" VIP", func() {
-							Expect(e2eutils.Ping(gw.vip)).To(Succeed())
-						})
-					}
-				})
-
-				Context("SCTP multihoming", func() {
-					It("maintains zero loss with saturated bidirectional traffic", func() {
-						By("running NetPerfMeter SCTP test for 30 seconds")
-
-						// Start NetPerfMeter in background
-						done := make(chan *e2eutils.NetPerfMeterResult, 1)
-						errCh := make(chan error, 1)
-
-						go func() {
-							result, err := e2eutils.RunNetPerfMeterClient(e2eutils.NetPerfMeterConfig{
-								Target:     suite.gateways[0].vip + ":9000",
-								LocalAddrs: []string{"200.100.0.100", "200.100.1.100"},
-								Protocol:   "sctp",
-								Duration:   30,
-								FrameRate:  "const0",
-								FrameSize:  "const1400",
-							})
-							done <- result
-							if err != nil {
-								errCh <- err
-							}
-						}()
-
-						By("waiting for SCTP association to establish")
-						var details string
-						Eventually(func(g Gomega) {
-							found, d, err := e2eutils.CheckSCTPAssociationWithVIPs(
-								9000,
-								[]string{"200.100.0.100", "200.100.1.100"},
-								[]string{suite.gateways[0].vip, suite.gateways[1].vip},
-							)
-							g.Expect(err).NotTo(HaveOccurred())
-							g.Expect(found).To(BeTrue(), "SCTP association not found with all local addresses and VIPs")
-							details = d
-						}).Should(Succeed())
-						GinkgoWriter.Printf("SCTP association found:\n%s\n", details)
-
-						By("waiting for NetPerfMeter to complete")
-						var result *e2eutils.NetPerfMeterResult
-						select {
-						case result = <-done:
-							GinkgoWriter.Printf("NetPerfMeter completed\n")
-						case <-time.After(35 * time.Second):
-							Fail("NetPerfMeter timed out")
-						}
-
-						By("validating zero packet and frame loss")
-						GinkgoWriter.Printf("NetPerfMeter results:\n")
-						GinkgoWriter.Printf("  Transmitted: %d bytes\n", result.TransmittedBytes)
-						GinkgoWriter.Printf("  Received: %d bytes\n", result.ReceivedBytes)
-						GinkgoWriter.Printf("  Packet Loss: %d\n", result.PacketLoss)
-						GinkgoWriter.Printf("  Frame Loss: %d\n", result.FrameLoss)
-
-						Expect(result.TransmittedBytes).To(BeNumerically(">", 0))
-						Expect(result.ReceivedBytes).To(BeNumerically(">", 0))
-						Expect(result.PacketLoss).To(Equal(0))
-						Expect(result.FrameLoss).To(Equal(0))
+				for _, gw := range suite.gateways {
+					gw := gw
+					It(fmt.Sprintf("[%s] should answer ICMP ping on the VIP", gw.name), func() {
+						Expect(e2eutils.Ping(gw.vip)).To(Succeed())
 					})
+				}
 
+				It("should maintain zero SCTP loss with saturated bidirectional traffic", func() {
+					By("running NetPerfMeter SCTP test for 30 seconds")
+
+					// Start NetPerfMeter in background
+					done := make(chan *e2eutils.NetPerfMeterResult, 1)
+					errCh := make(chan error, 1)
+
+					go func() {
+						result, err := e2eutils.RunNetPerfMeterClient(e2eutils.NetPerfMeterConfig{
+							Target:     suite.gateways[0].vip + ":9000",
+							LocalAddrs: []string{"200.100.0.100", "200.100.1.100"},
+							Protocol:   "sctp",
+							Duration:   30,
+							FrameRate:  "const0",
+							FrameSize:  "const1400",
+						})
+						done <- result
+						if err != nil {
+							errCh <- err
+						}
+					}()
+
+					By("waiting for SCTP association to establish")
+					var details string
+					Eventually(func(g Gomega) {
+						found, d, err := e2eutils.CheckSCTPAssociationWithVIPs(
+							9000,
+							[]string{"200.100.0.100", "200.100.1.100"},
+							[]string{suite.gateways[0].vip, suite.gateways[1].vip},
+						)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(found).To(BeTrue(), "SCTP association not found with all local addresses and VIPs")
+						details = d
+					}).Should(Succeed())
+					GinkgoWriter.Printf("SCTP association found:\n%s\n", details)
+
+					By("waiting for NetPerfMeter to complete")
+					var result *e2eutils.NetPerfMeterResult
+					select {
+					case result = <-done:
+						GinkgoWriter.Printf("NetPerfMeter completed\n")
+					case <-time.After(35 * time.Second):
+						Fail("NetPerfMeter timed out")
+					}
+
+					By("validating zero packet and frame loss")
+					GinkgoWriter.Printf("NetPerfMeter results:\n")
+					GinkgoWriter.Printf("  Transmitted: %d bytes\n", result.TransmittedBytes)
+					GinkgoWriter.Printf("  Received: %d bytes\n", result.ReceivedBytes)
+					GinkgoWriter.Printf("  Packet Loss: %d\n", result.PacketLoss)
+					GinkgoWriter.Printf("  Frame Loss: %d\n", result.FrameLoss)
+
+					Expect(result.TransmittedBytes).To(BeNumerically(">", 0))
+					Expect(result.ReceivedBytes).To(BeNumerically(">", 0))
+					Expect(result.PacketLoss).To(Equal(0))
+					Expect(result.FrameLoss).To(Equal(0))
 				})
 			})
 		})
 	}
-})
+}

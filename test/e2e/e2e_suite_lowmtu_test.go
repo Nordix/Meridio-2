@@ -53,7 +53,7 @@ var _ = Describe(lowMTUTestCase.name, Label(lowMTUTestCase.suiteLabel, labelIPv4
 	Context("Deployment", func() {
 		for _, gw := range suite.gateways {
 			gw := gw
-			It(fmt.Sprintf("should have %s Accepted", gw.name), func() {
+			It(fmt.Sprintf("[%s] should be Accepted", gw.name), func() {
 				Eventually(func(g Gomega) {
 					cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 						"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
@@ -63,7 +63,7 @@ var _ = Describe(lowMTUTestCase.name, Label(lowMTUTestCase.suiteLabel, labelIPv4
 				}).Should(Succeed())
 			})
 
-			It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
+			It(fmt.Sprintf("[%s] should deploy an LB Pod", gw.name), func() {
 				Eventually(func(g Gomega) {
 					cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 						"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -84,25 +84,21 @@ var _ = Describe(lowMTUTestCase.name, Label(lowMTUTestCase.suiteLabel, labelIPv4
 			}
 		})
 
-		Context("ICMP reachability", func() {
-			for _, gw := range suite.gateways {
-				gw := gw
-				It("handles ping on "+gw.name+" VIP", func() {
-					Eventually(func() error { return e2eutils.Ping(gw.vip) }).
-						WithTimeout(30 * time.Second).Should(Succeed())
-				})
-			}
-		})
+		for _, gw := range suite.gateways {
+			gw := gw
+			It(fmt.Sprintf("[%s] should answer ICMP ping on the VIP", gw.name), func() {
+				Eventually(func() error { return e2eutils.Ping(gw.vip) }).
+					WithTimeout(30 * time.Second).Should(Succeed())
+			})
+		}
 
-		Context("PMTU discovery", func() {
-			for _, gw := range suite.gateways {
-				gw := gw
-				It("returns ICMP Frag Needed from VIP on "+gw.name+" (1400 bytes > 1200 MTU)", func() {
-					// 1400 payload + 28 headers = 1428 > 1200 MTU.
-					// LB must return ICMP Frag Needed with VIP as source (not LB pod IP).
-					Expect(e2eutils.VerifyPMTU(gw.vip, 1400)).To(Succeed())
-				})
-			}
-		})
+		for _, gw := range suite.gateways {
+			gw := gw
+			It(fmt.Sprintf("[%s] should return ICMP Frag Needed from the VIP (1400 bytes > 1200 MTU)", gw.name), func() {
+				// 1400 payload + 28 headers = 1428 > 1200 MTU.
+				// LB must return ICMP Frag Needed with VIP as source (not LB pod IP).
+				Expect(e2eutils.VerifyPMTU(gw.vip, 1400)).To(Succeed())
+			})
+		}
 	})
 })

@@ -233,7 +233,7 @@ func scaleStep(oldN, newN int) {
 		restartsBefore = mustMaxRestartCount()
 	})
 
-	It(fmt.Sprintf("keeps traffic flowing while scaling to target (all gateways/families) during %d->%d", oldN, newN), func() {
+	It(fmt.Sprintf("should keep traffic flowing on all gateways/families while scaling %d->%d", oldN, newN), func() {
 		By("starting long-lived in-flight traffic for every gateway/family concurrently")
 		handles := make([]*e2eutils.TrafficHandle, len(scalingGateways))
 		for i, gw := range scalingGateways {
@@ -261,7 +261,7 @@ func scaleStep(oldN, newN int) {
 		}
 	})
 
-	It(fmt.Sprintf("load balances new connections across the %d endpoints after %d->%d", newN, oldN, newN), func() {
+	It(fmt.Sprintf("should load balance new connections across the %d endpoints after %d->%d", newN, oldN, newN), func() {
 		wantCoverage := minCoverage(newN)
 		for _, gw := range scalingGateways {
 			gw := gw
@@ -283,7 +283,7 @@ func scaleStep(oldN, newN int) {
 		}
 	})
 
-	It(fmt.Sprintf("does not restart any target container during %d->%d", oldN, newN), func() {
+	It(fmt.Sprintf("should not restart any target container during %d->%d", oldN, newN), func() {
 		Eventually(func(g Gomega) {
 			g.Expect(maxTargetRestartCount(g)).To(Equal(restartsBefore),
 				"no target container should restart during %d->%d", oldN, newN)
@@ -345,13 +345,9 @@ var _ = Describe("Endpoint Scaling", Label(labelSuiteScaling, labelDualStack), S
 	// step and a bigger multi-instance jump.
 	// Acceptance criteria: established connections continue (bounded), new
 	// endpoints receive new connections after Ready, no container restarts.
-	Context("Scale-out (single step then bigger jump, up to max)", func() {
-		Context(fmt.Sprintf("single-instance step %d->%d", scalingMinReplicas, scalingMinReplicas+1), func() {
-			scaleStep(scalingMinReplicas, scalingMinReplicas+1)
-		})
-		Context(fmt.Sprintf("bigger jump %d->%d", scalingMinReplicas+1, scalingMaxReplicas), func() {
-			scaleStep(scalingMinReplicas+1, scalingMaxReplicas)
-		})
+	Context("Scale-out", func() {
+		scaleStep(scalingMinReplicas, scalingMinReplicas+1)
+		scaleStep(scalingMinReplicas+1, scalingMaxReplicas)
 	})
 
 	// Scale-in with traffic continuity.
@@ -359,12 +355,8 @@ var _ = Describe("Endpoint Scaling", Label(labelSuiteScaling, labelDualStack), S
 	// step and a bigger multi-instance jump.
 	// Acceptance criteria: connections on removed endpoints drain/terminate as
 	// designed while surviving/new connections continue (bounded), no restarts.
-	Context("Scale-in (single step then bigger jump, down to min)", func() {
-		Context(fmt.Sprintf("single-instance step %d->%d", scalingMaxReplicas, scalingMaxReplicas-1), func() {
-			scaleStep(scalingMaxReplicas, scalingMaxReplicas-1)
-		})
-		Context(fmt.Sprintf("bigger jump %d->%d", scalingMaxReplicas-1, scalingMinReplicas), func() {
-			scaleStep(scalingMaxReplicas-1, scalingMinReplicas)
-		})
+	Context("Scale-in", func() {
+		scaleStep(scalingMaxReplicas, scalingMaxReplicas-1)
+		scaleStep(scalingMaxReplicas-1, scalingMinReplicas)
 	})
 })

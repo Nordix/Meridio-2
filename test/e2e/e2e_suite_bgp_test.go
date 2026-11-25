@@ -56,7 +56,7 @@ import (
 // drive the shared VPN gateway, so the tree is Serial (never concurrent with
 // other specs under `ginkgo -p`) and Ordered (deterministic sequence). State is
 // fully restored via DeferCleanup.
-var _ = Describe("E2E BGP VIP Advertisement", Label(labelSuiteBGP, labelIPv4), Serial, Ordered, func() {
+var _ = Describe("BGP", Label(labelSuiteBGP, labelIPv4), Serial, Ordered, func() {
 	const (
 		namespace      = "e2e-ipv4-simple"
 		targetApp      = "target-m"
@@ -100,111 +100,114 @@ var _ = Describe("E2E BGP VIP Advertisement", Label(labelSuiteBGP, labelIPv4), S
 			Should(Succeed())
 	})
 
-	It("advertises the VIP to the DCGW over BGP with LB Pod next-hops", func() {
-		By("verifying the VIP is received on the DCGW via BGP")
-		Eventually(func(g Gomega) {
-			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
-			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
-			g.Expect(ok).To(BeTrue(), "VIP %s should be received on the DCGW via BGP", prefix)
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
+	Context("VIP advertisement", func() {
+		It("should advertise the VIP to the DCGW with LB Pod next-hops", func() {
+			By("verifying the VIP is received on the DCGW via BGP")
+			Eventually(func(g Gomega) {
+				ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+				g.Expect(ok).To(BeTrue(), "VIP %s should be received on the DCGW via BGP", prefix)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
+				Should(Succeed())
 
-		By("verifying the VIP is installed with at least one ECMP next-hop")
-		// One next-hop per LB Pod (ECMP). We assert at least one rather than an
-		// exact count, since LB replica count is independent of the application
-		// target count.
-		Eventually(func(g Gomega) {
-			nextHops, err := e2eutils.VPNGatewayRouteNextHops(prefix)
-			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW next-hops for %s failed", prefix)
-			g.Expect(len(nextHops)).To(BeNumerically(">=", 1),
-				"expected at least one ECMP next-hop for %s", prefix)
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
+			By("verifying the VIP is installed with at least one ECMP next-hop")
+			// One next-hop per LB Pod (ECMP). We assert at least one rather than an
+			// exact count, since LB replica count is independent of the application
+			// target count.
+			Eventually(func(g Gomega) {
+				nextHops, err := e2eutils.VPNGatewayRouteNextHops(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW next-hops for %s failed", prefix)
+				g.Expect(len(nextHops)).To(BeNumerically(">=", 1),
+					"expected at least one ECMP next-hop for %s", prefix)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).
+				Should(Succeed())
+		})
+
+		It("should withdraw the VIP from the DCGW when app replicas are 0", func() {
+			By("scaling the target Deployment to 0 replicas")
+			Expect(bgpScaleDeployment(clientset, namespace, targetApp, 0)).To(Succeed())
+
+			By("waiting for all target pods to terminate")
+			Eventually(func() int {
+				return bgpCountRunningTargets(clientset, namespace, targetLabel)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeZero())
+
+			By("verifying the VIP is withdrawn from the DCGW")
+			Eventually(func(g Gomega) {
+				ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+				g.Expect(ok).To(BeFalse(), "%s should be withdrawn once no targets exist", prefix)
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+				Should(Succeed())
+		})
+
+		It("should re-advertise the VIP to the DCGW when app replicas are restored", func() {
+			By("restoring replicas so pods exist and are Ready again")
+			Expect(bgpScaleDeployment(clientset, namespace, targetApp, targetReplicas)).To(Succeed())
+			Eventually(func() int {
+				return bgpCountReadyTargets(clientset, namespace, targetLabel)
+			}).WithTimeout(120 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
+
+			By("verifying the VIP is advertised again with ready pods")
+			Eventually(func(g Gomega) {
+				ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+				g.Expect(ok).To(BeTrue(), "%s should be re-advertised once targets exist again", prefix)
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+				Should(Succeed())
+		})
+
+		It("should withdraw the VIP from the DCGW when all backing Pods become NotReady", func() {
+			// Flip the running pods to NotReady in place by removing the readiness
+			// file the probe checks (see targets.yaml). This simulates the app's
+			// readiness probe starting to fail at runtime — no rollout, same pods.
+			// All endpoints go Ready=false, so the LB removes the lb-ready file and
+			// the router withdraws the VIP.
+			By("removing /tmp/ready on all target pods to fail their readiness probe")
+			Expect(bgpExecAllTargets(clientset, namespace, targetLabel, "rm", "-f", "/tmp/ready")).To(Succeed())
+
+			By("waiting for all target pods to become NotReady (still Running)")
+			Eventually(func() int {
+				return bgpCountReadyTargets(clientset, namespace, targetLabel)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeZero())
+
+			By("verifying the VIP is withdrawn from the DCGW")
+			Eventually(func(g Gomega) {
+				ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+				g.Expect(ok).To(BeFalse(), "%s should be withdrawn when all pods are NotReady", prefix)
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+				Should(Succeed())
+		})
+
+		It("should re-advertise the VIP to the DCGW when Pods become Ready again", func() {
+			By("re-creating /tmp/ready on all target pods to pass their readiness probe")
+			Expect(bgpExecAllTargets(clientset, namespace, targetLabel, "touch", "/tmp/ready")).To(Succeed())
+
+			By("waiting for all target pods to become Ready")
+			Eventually(func() int {
+				return bgpCountReadyTargets(clientset, namespace, targetLabel)
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
+
+			By("verifying the VIP is re-advertised to the DCGW")
+			Eventually(func(g Gomega) {
+				ok, err := e2eutils.VPNGatewayHasRoute(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
+				g.Expect(ok).To(BeTrue(), "%s should be re-advertised once pods are Ready", prefix)
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+				Should(Succeed())
+
+			By("verifying ECMP next-hops are present again on the DCGW")
+			Eventually(func(g Gomega) {
+				nextHops, err := e2eutils.VPNGatewayRouteNextHops(prefix)
+				g.Expect(err).NotTo(HaveOccurred(), "querying DCGW next-hops for %s failed", prefix)
+				g.Expect(len(nextHops)).To(BeNumerically(">=", 1),
+					"expected at least one ECMP next-hop for %s after recovery", prefix)
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
+				Should(Succeed())
+		})
 	})
 
-	It("withdraws VIP from DCGW when app replicas=0", func() {
-		By("scaling the target Deployment to 0 replicas")
-		Expect(bgpScaleDeployment(clientset, namespace, targetApp, 0)).To(Succeed())
-
-		By("waiting for all target pods to terminate")
-		Eventually(func() int {
-			return bgpCountRunningTargets(clientset, namespace, targetLabel)
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeZero())
-
-		By("verifying the VIP is withdrawn from the DCGW")
-		Eventually(func(g Gomega) {
-			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
-			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
-			g.Expect(ok).To(BeFalse(), "%s should be withdrawn once no targets exist", prefix)
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
-	})
-
-	It("re-advertises VIP to DCGW when app replicas are restored", func() {
-		By("restoring replicas so pods exist and are Ready again")
-		Expect(bgpScaleDeployment(clientset, namespace, targetApp, targetReplicas)).To(Succeed())
-		Eventually(func() int {
-			return bgpCountReadyTargets(clientset, namespace, targetLabel)
-		}).WithTimeout(120 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
-
-		By("verifying the VIP is advertised again with ready pods")
-		Eventually(func(g Gomega) {
-			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
-			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
-			g.Expect(ok).To(BeTrue(), "%s should be re-advertised once targets exist again", prefix)
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
-	})
-
-	It("withdraws VIP from DCGW when all backing pods become NotReady", func() {
-		// Flip the running pods to NotReady in place by removing the readiness
-		// file the probe checks (see targets.yaml). This simulates the app's
-		// readiness probe starting to fail at runtime — no rollout, same pods.
-		// All endpoints go Ready=false, so the LB removes the lb-ready file and
-		// the router withdraws the VIP.
-		By("removing /tmp/ready on all target pods to fail their readiness probe")
-		Expect(bgpExecAllTargets(clientset, namespace, targetLabel, "rm", "-f", "/tmp/ready")).To(Succeed())
-
-		By("waiting for all target pods to become NotReady (still Running)")
-		Eventually(func() int {
-			return bgpCountReadyTargets(clientset, namespace, targetLabel)
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeZero())
-
-		By("verifying the VIP is withdrawn from the DCGW")
-		Eventually(func(g Gomega) {
-			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
-			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
-			g.Expect(ok).To(BeFalse(), "%s should be withdrawn when all pods are NotReady", prefix)
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
-	})
-
-	It("re-advertises VIP to DCGW when pods become Ready again", func() {
-		By("re-creating /tmp/ready on all target pods to pass their readiness probe")
-		Expect(bgpExecAllTargets(clientset, namespace, targetLabel, "touch", "/tmp/ready")).To(Succeed())
-
-		By("waiting for all target pods to become Ready")
-		Eventually(func() int {
-			return bgpCountReadyTargets(clientset, namespace, targetLabel)
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Equal(targetReplicas))
-
-		By("verifying the VIP is re-advertised to the DCGW")
-		Eventually(func(g Gomega) {
-			ok, err := e2eutils.VPNGatewayHasRoute(prefix)
-			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW for %s failed", prefix)
-			g.Expect(ok).To(BeTrue(), "%s should be re-advertised once pods are Ready", prefix)
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
-
-		By("verifying ECMP next-hops are present again on the DCGW")
-		Eventually(func(g Gomega) {
-			nextHops, err := e2eutils.VPNGatewayRouteNextHops(prefix)
-			g.Expect(err).NotTo(HaveOccurred(), "querying DCGW next-hops for %s failed", prefix)
-			g.Expect(len(nextHops)).To(BeNumerically(">=", 1),
-				"expected at least one ECMP next-hop for %s after recovery", prefix)
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).
-			Should(Succeed())
-	})
 })
 
 // bgpScaleDeployment sets the replica count of a Deployment via the scale subresource.

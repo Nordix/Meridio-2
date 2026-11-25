@@ -95,8 +95,8 @@ var _ = Describe("Robustness", Label(labelSuiteRobustness, labelDualStack), Seri
 	// afterward. This test does not assert zero-disruption *during* the
 	// outage window itself (no traffic is generated concurrently with the
 	// restart) — only that nothing is left broken once the new Pod is Ready.
-	Context("Controller-manager", func() {
-		It("restarts cleanly, resumes reconciling, and the data path is healthy again afterward", func() {
+	Context("Recovery", func() {
+		It("[controller-manager] should restart cleanly, resume reconciling and leave the data path healthy", func() {
 			By("finding the controller-manager Pod")
 			controllerPod := e2eutils.GetPodName(robNamespace, robControllerLabel)
 			Expect(controllerPod).NotTo(BeEmpty(), "controller-manager Pod should exist")

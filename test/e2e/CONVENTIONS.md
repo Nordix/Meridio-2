@@ -19,25 +19,45 @@ Every suite uses the same three levels:
 <Suite Identity>  >  <Phase>  >  [<subject>] should <assertion>
 ```
 
-A fixed arity keeps JUnit names comparable across suites. Do not add or drop a
-level; if a phase needs sub-grouping, fold the distinction into the leaf text.
+Keeping the arity the same across suites is what makes JUnit names comparable.
+Do not add a fourth level: if a phase needs sub-grouping (per protocol, per IP
+family), fold the distinction into the leaf text instead — `Traffic > [IPv6]
+should distribute TCP traffic across targets`, not `Traffic > IPv6 load
+balancing > should distribute TCP traffic across targets`.
 
 ### Level 1 — suite identity
 
-Title Case, no `E2E` and no `Test Suite(s)` suffix (the Ginkgo suite is already
-named `e2e suite`). The name matches the deployable topology the specs need, as
-exposed by `make deploy-<name>`:
+Sentence/Title Case as the name reads naturally, with no `E2E` and no
+`Test Suite(s)` suffix: the Ginkgo suite is already called `e2e suite` and the
+report is already an e2e report, so both are pure noise that pushes the
+informative part of every JUnit name to the right. The name matches the
+deployable topology the specs need, as exposed by `make deploy-<name>`:
 
 ```go
 var _ = Describe("Shared App Network", Label(labelSuiteSharedAppnetwork, labelIPv4), Ordered, func() {
 ```
 
-Where one file drives several topologies from a table, the table entry's name is
-the level-1 name — do not wrap it in an extra outer container.
+Where one file drives several topologies from a table, each table entry is its
+own top-level tree — do not wrap them in a shared outer container, since that
+adds a level to some suites and not others. Go has no package-level loop, so
+build those trees from `init()`:
+
+```go
+func init() {
+    for _, suite := range testCases {
+        suite := suite
+        Describe(suite.name, Label(suite.suiteLabel, labelIPv4), Ordered, func() {
+            ...
+        })
+    }
+}
+```
 
 ### Level 2 — phase
 
-Title Case, drawn from a closed vocabulary:
+Sentence case: capitalise the first word only (`Deployment`, `VIP advertisement`),
+never Title-Case every word. Prefer this core vocabulary whenever it applies, so
+that the same kind of assertion lands under the same phase name in every suite:
 
 | Phase        | Contents                                                        |
 | ------------ | --------------------------------------------------------------- |
@@ -48,8 +68,18 @@ Title Case, drawn from a closed vocabulary:
 | `Negative`   | assertions that something is correctly rejected or withdrawn     |
 | `Comparison` | assertions that relate two previously measured outcomes          |
 
+A suite may add its own phase when it genuinely has a domain-specific stage that
+none of the above describes — `Authentication`, `Key rotation`, `Scale-out`,
+`Detection with BFD`. Do not invent a synonym for a core phase.
+
 Do not append the suite name to a phase (`Deployment`, not `Deployment for MD5`)
-— level 1 already carries it.
+— level 1 already carries it. Do not use a phase that merely restates the
+subject (`Controller-manager`); put the subject in the leaf bracket instead.
+
+Where a suite is a single scenario rather than a progression (`Any Port
+Conversion`, `Resiliency`), omit the phase level: a one-spec suite with an
+invented phase reads worse than the two-level name, and there is nothing to
+group. Everything else uses all three levels.
 
 ### Level 3 — leaf
 
@@ -65,15 +95,21 @@ in a **leading bracket** so the report groups and sorts predictably:
 
 ```go
 It(fmt.Sprintf("[%s] should be Accepted", gw.name), ...)
+It("[IPv6] should distribute TCP traffic across targets", ...)
 ```
 
 Not mid-sentence (`should have gw-a1 Accepted`) and not trailing
 (`BGP is Up gw-t1`). Where the parameterization is a clean matrix, prefer
 `DescribeTable`/`Entry` and let Ginkgo format it.
 
-Avoid: `Gateway should be Accepted` (subject duplicated from the container),
+Use the bracket only where specs are actually generated or would otherwise
+collide. A single-gateway suite says `should have the Gateway Accepted`; there is
+only one Gateway, so naming it adds nothing.
+
+Avoid: `Gateway should be Accepted` (subject before the verb),
 `baseline: all targets receive traffic` (prefix instead of grammar),
-`does NOT create ENC` (shouting), `VIP is reachable via ICMP` (declarative).
+`does NOT create ENC` (shouting), `VIP is reachable via ICMP` (declarative),
+`handles ping on gw-a1 VIP` (not a `should`).
 
 ## 2. Labels
 

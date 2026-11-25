@@ -222,7 +222,7 @@ var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Seri
 	// setup failure (Gateway never Programmed, ENC never Ready, VIP
 	// unreachable) is caught here rather than surfacing as a confusing BGP
 	// timeout in the phases below. Runs first thanks to Ordered.
-	Context("deployment and traffic", func() {
+	Context("Deployment", func() {
 		It("should have the Gateway Accepted", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "gateway", bfdGateway, "-n", bfdNamespace,
@@ -243,7 +243,7 @@ var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Seri
 			}).Should(Succeed())
 		})
 
-		It("should have the LB Pod containers ready", func() {
+		It("should have all LB Pod containers ready", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pods", "-n", bfdNamespace,
 					"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", bfdGateway),
@@ -254,7 +254,7 @@ var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Seri
 			}).Should(Succeed())
 		})
 
-		It("should have the Gateway status.addresses populated with the VIP", func() {
+		It("should populate Gateway status.addresses with the VIP", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "gateway", bfdGateway, "-n", bfdNamespace,
 					"-o", "jsonpath={.status.addresses[*].value}")
@@ -288,7 +288,7 @@ var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Seri
 			}).Should(Succeed())
 		})
 
-		It(fmt.Sprintf("should have %d target Pods running", bfdTargetReplicas), func() {
+		It(fmt.Sprintf("should have %s running", countOf(bfdTargetReplicas, "target Pod")), func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pods", "-n", bfdNamespace,
 					"-l", fmt.Sprintf("app=%s", bfdTargetApp), "--field-selector=status.phase=Running",
@@ -299,10 +299,14 @@ var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Seri
 			}).Should(Succeed())
 		})
 
-		It("should reach the VIP via ping", func() {
+	})
+
+	Context("Traffic", func() {
+		It("should answer ICMP ping on the VIP", func() {
 			Eventually(func() error { return e2eutils.Ping(bfdVIP) }).
 				WithTimeout(30 * time.Second).Should(Succeed())
 		})
+
 		It("should distribute TCP traffic across targets", func() {
 			lastingConn, lostConn, err := e2eutils.SendTraffic(bfdVIP, 5000, "tcp", bfdTrafficConns)
 			Expect(err).NotTo(HaveOccurred())
@@ -320,7 +324,7 @@ var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Seri
 		})
 	})
 
-	Context("BFD enabled", func() {
+	Context("Detection with BFD", func() {
 		It("should have BFD enabled in bird.conf", func() {
 			Eventually(func(g Gomega) {
 				conf, err := birdConf(pod)
@@ -348,7 +352,7 @@ var _ = Describe("BFD Detection", Label(labelSuiteBFDDetection, labelIPv4), Seri
 		})
 	})
 
-	Context("BFD removed", func() {
+	Context("Detection without BFD", func() {
 		It("should remove BFD from the router and keep the session Established", func() {
 			By("patching the GatewayRouter to remove the bfd block")
 			Expect(patchRouterBFD(bfdRemovePatch)).To(Succeed())

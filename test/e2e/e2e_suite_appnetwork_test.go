@@ -87,14 +87,16 @@ var ipv6TestCases = []suiteTestCase{
 	},
 }
 
-var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
+// IPv4 app-network suites. Each table entry becomes its own top-level tree,
+// so the report shows "<Suite> > <Phase> > <spec>" with no wrapper level.
+func init() {
 	for _, suite := range testCases {
 		suite := suite
-		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel, labelIPv4), Ordered, func() {
 			Context("Deployment", func() {
 				for _, gw := range suite.gateways {
 					gw := gw
-					It(fmt.Sprintf("should have %s Accepted", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Accepted", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
@@ -104,7 +106,7 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s Programmed", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Programmed", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
@@ -114,7 +116,7 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
+					It(fmt.Sprintf("[%s] should deploy an LB Pod", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -125,7 +127,7 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s LB Pod containers ready", gw.name), func() {
+					It(fmt.Sprintf("[%s] should have all LB Pod containers ready", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -137,7 +139,7 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 					})
 				}
 
-				It("should have Gateway status.addresses populated with VIPs", func() {
+				It("should populate Gateway status.addresses with the VIPs", func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						Eventually(func(g Gomega) {
@@ -163,7 +165,7 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 					}
 				})
 
-				It(fmt.Sprintf("should create %d ENCs (one per target pod)", suite.targetReplicas), func() {
+				It(fmt.Sprintf("should create %s, one per target Pod", countOf(suite.targetReplicas, "ENC")), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "enc", "-n", suite.namespace,
 							"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
@@ -211,7 +213,7 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 					}
 				})
 
-				It(fmt.Sprintf("should have %d target Pods running with sidecar", suite.targetReplicas), func() {
+				It(fmt.Sprintf("should have %s running with a sidecar", countOf(suite.targetReplicas, "target Pod")), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 							"-l", fmt.Sprintf("app=%s", suite.targetApp), "--field-selector=status.phase=Running",
@@ -245,46 +247,40 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 					}
 				})
 
-				Context("ICMP reachability", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("handles ping on "+gw.name+" VIP", func() {
-							Eventually(func() error { return e2eutils.Ping(gw.vip) }).
-								WithTimeout(30 * time.Second).Should(Succeed())
-						})
-					}
-				})
+				for _, gw := range suite.gateways {
+					gw := gw
+					It(fmt.Sprintf("[%s] should answer ICMP ping on the VIP", gw.name), func() {
+						Eventually(func() error { return e2eutils.Ping(gw.vip) }).
+							WithTimeout(30 * time.Second).Should(Succeed())
+					})
+				}
 
-				Context("TCP load balancing", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("distributes "+gw.name+" TCP traffic across targets", func() {
-							lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
-							Expect(err).NotTo(HaveOccurred())
-							Expect(lostConn).To(BeZero(), "no connections should be lost")
-							Expect(len(lastingConn)).To(Equal(gw.targets),
-								"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
-						})
-					}
-				})
+				for _, gw := range suite.gateways {
+					gw := gw
+					It(fmt.Sprintf("[%s] should distribute TCP traffic across targets", gw.name), func() {
+						lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(lostConn).To(BeZero(), "no connections should be lost")
+						Expect(len(lastingConn)).To(Equal(gw.targets),
+							"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
+					})
+				}
 
-				Context("UDP load balancing", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("distributes "+gw.name+" UDP traffic across targets", func() {
-							lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5001, "udp", 100)
-							Expect(err).NotTo(HaveOccurred())
-							Expect(lostConn).To(BeZero(), "no connections should be lost")
-							Expect(len(lastingConn)).To(Equal(gw.targets),
-								"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
-						})
-					}
-				})
+				for _, gw := range suite.gateways {
+					gw := gw
+					It(fmt.Sprintf("[%s] should distribute UDP traffic across targets", gw.name), func() {
+						lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5001, "udp", 100)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(lostConn).To(BeZero(), "no connections should be lost")
+						Expect(len(lastingConn)).To(Equal(gw.targets),
+							"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
+					})
+				}
 			})
 
 			// Sidecar restart recovery test (for suites with 2+ gateways)
 			if len(suite.gateways) >= 2 {
-				Context("Sidecar Restart Recovery", func() {
+				Context("Recovery", func() {
 					var (
 						targetPod string
 						gw1       gwTestCase // First gateway (will be preserved)
@@ -514,16 +510,17 @@ var _ = Describe("E2E Test Suites", Label(labelIPv4), func() {
 			}
 		})
 	}
-})
+}
 
-var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
+// IPv6 app-network suites.
+func init() {
 	for _, suite := range ipv6TestCases {
 		suite := suite
-		Describe(suite.name, Label(suite.suiteLabel), Ordered, func() {
+		Describe(suite.name, Label(suite.suiteLabel, labelIPv6), Ordered, func() {
 			Context("Deployment", func() {
 				for _, gw := range suite.gateways {
 					gw := gw
-					It(fmt.Sprintf("should have %s Accepted", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Accepted", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}")
@@ -533,7 +530,7 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s Programmed", gw.name), func() {
+					It(fmt.Sprintf("[%s] should be Programmed", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "gateway", gw.name, "-n", suite.namespace,
 								"-o", "jsonpath={.status.conditions[?(@.type=='Programmed')].status}")
@@ -543,7 +540,7 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should deploy LB Pod for %s", gw.name), func() {
+					It(fmt.Sprintf("[%s] should deploy an LB Pod", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -554,7 +551,7 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 						}).Should(Succeed())
 					})
 
-					It(fmt.Sprintf("should have %s LB Pod containers ready", gw.name), func() {
+					It(fmt.Sprintf("[%s] should have all LB Pod containers ready", gw.name), func() {
 						Eventually(func(g Gomega) {
 							cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 								"-l", fmt.Sprintf("gateway.networking.k8s.io/gateway-name=%s", gw.name),
@@ -566,7 +563,7 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 					})
 				}
 
-				It("should have Gateway status.addresses populated with VIPs", func() {
+				It("should populate Gateway status.addresses with the VIPs", func() {
 					for _, gw := range suite.gateways {
 						gw := gw
 						Eventually(func(g Gomega) {
@@ -592,7 +589,7 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 					}
 				})
 
-				It(fmt.Sprintf("should create %d ENCs (one per target pod)", suite.targetReplicas), func() {
+				It(fmt.Sprintf("should create %s, one per target Pod", countOf(suite.targetReplicas, "ENC")), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "enc", "-n", suite.namespace,
 							"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")
@@ -637,7 +634,7 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 					}
 				})
 
-				It(fmt.Sprintf("should have %d target Pods running with sidecar", suite.targetReplicas), func() {
+				It(fmt.Sprintf("should have %s running with a sidecar", countOf(suite.targetReplicas, "target Pod")), func() {
 					Eventually(func(g Gomega) {
 						cmd := exec.Command("kubectl", "get", "pods", "-n", suite.namespace,
 							"-l", fmt.Sprintf("app=%s", suite.targetApp), "--field-selector=status.phase=Running",
@@ -689,46 +686,40 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 					}
 				})
 
-				Context("ICMP reachability", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("handles ping on "+gw.name+" VIP", func() {
-							Eventually(func() error { return e2eutils.Ping(gw.vip) }).
-								WithTimeout(30 * time.Second).Should(Succeed())
-						})
-					}
-				})
+				for _, gw := range suite.gateways {
+					gw := gw
+					It(fmt.Sprintf("[%s] should answer ICMP ping on the VIP", gw.name), func() {
+						Eventually(func() error { return e2eutils.Ping(gw.vip) }).
+							WithTimeout(30 * time.Second).Should(Succeed())
+					})
+				}
 
-				Context("TCP load balancing", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("distributes "+gw.name+" TCP traffic across targets", func() {
-							lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
-							Expect(err).NotTo(HaveOccurred())
-							Expect(lostConn).To(BeZero(), "no connections should be lost")
-							Expect(len(lastingConn)).To(Equal(gw.targets),
-								"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
-						})
-					}
-				})
+				for _, gw := range suite.gateways {
+					gw := gw
+					It(fmt.Sprintf("[%s] should distribute TCP traffic across targets", gw.name), func() {
+						lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5000, "tcp", 100)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(lostConn).To(BeZero(), "no connections should be lost")
+						Expect(len(lastingConn)).To(Equal(gw.targets),
+							"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
+					})
+				}
 
-				Context("UDP load balancing", func() {
-					for _, gw := range suite.gateways {
-						gw := gw
-						It("distributes "+gw.name+" UDP traffic across targets", func() {
-							lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5001, "udp", 100)
-							Expect(err).NotTo(HaveOccurred())
-							Expect(lostConn).To(BeZero(), "no connections should be lost")
-							Expect(len(lastingConn)).To(Equal(gw.targets),
-								"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
-						})
-					}
-				})
+				for _, gw := range suite.gateways {
+					gw := gw
+					It(fmt.Sprintf("[%s] should distribute UDP traffic across targets", gw.name), func() {
+						lastingConn, lostConn, err := e2eutils.SendTraffic(gw.vip, 5001, "udp", 100)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(lostConn).To(BeZero(), "no connections should be lost")
+						Expect(len(lastingConn)).To(Equal(gw.targets),
+							"%s: expected %d targets, got: %v", gw.name, gw.targets, lastingConn)
+					})
+				}
 			})
 
 			// Sidecar restart recovery test (for suites with 2+ gateways)
 			if len(suite.gateways) >= 2 {
-				Context("Sidecar Restart Recovery", func() {
+				Context("Recovery", func() {
 					var (
 						targetPod string
 						gw1       gwTestCase
@@ -953,4 +944,4 @@ var _ = Describe("E2E IPv6 Test Suites", Label(labelIPv6), func() {
 			}
 		})
 	}
-})
+}

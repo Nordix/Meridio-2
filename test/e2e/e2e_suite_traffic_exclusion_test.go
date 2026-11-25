@@ -229,227 +229,233 @@ var _ = Describe("Traffic Exclusion", Label(labelSuiteTrafficExclusion, labelIPv
 		})
 	})
 
-	It("baseline: all targets receive traffic while Ready", func() {
-		// Poll: Ready conditions (Pod/Deployment/DG) do not guarantee the LB has
-		// finished programming its NFQLB targets and nftables VIP rules. Retry
-		// until real TCP traffic lands with zero loss across all targets, so this
-		// spec doubles as the data-path warm-up gate for the specs that follow.
-		// Each attempt runs ctraffic for ~10s, so ~6 attempts fit the timeout.
-		Eventually(func(g Gomega) {
-			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
-			g.Expect(lastingConn).To(HaveKey(notReadyPod),
-				"target %s should serve traffic while Ready (got: %v)", notReadyPod, lastingConn)
-			for _, pod := range readyPods {
-				g.Expect(lastingConn).To(HaveKey(pod),
-					"target %s should serve traffic while Ready (got: %v)", pod, lastingConn)
-			}
-		}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
-	})
-
-	It("excludes a NotReady target from traffic while others keep serving", func() {
-		By(fmt.Sprintf("flipping target %s to NotReady", notReadyPod))
-		Expect(setReady(notReadyPod, false)).To(Succeed())
-
-		By("waiting for the target to report NotReady (others stay Ready)")
-		Eventually(func(g Gomega) {
-			g.Expect(podReady(notReadyPod)).To(Equal("false"),
-				"target %s should be NotReady", notReadyPod)
-			for _, pod := range readyPods {
-				g.Expect(podReady(pod)).To(Equal("true"),
-					"target %s should remain Ready", pod)
-			}
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
-
-		By("verifying the control plane marks the endpoint NotReady in the LoadBalancerEndpointSlice")
-		// Control-plane checkpoint: the DG controller mirrors Pod readiness onto
-		// the endpoint's `ready` flag. Asserting it directly makes a failure
-		// easy to triage (DG controller vs. LB/nftables) rather than inferring
-		// solely from traffic-side absence.
-		Eventually(func(g Gomega) {
-			g.Expect(endpointReady(notReadyPod)).To(Equal("false"),
-				"endpoint for %s should be marked NotReady in the slice", notReadyPod)
-			for _, pod := range readyPods {
-				g.Expect(endpointReady(pod)).To(Equal("true"),
-					"endpoint for %s should stay Ready in the slice", pod)
-			}
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
-
-		By("sending traffic and asserting the NotReady target's hostname is absent")
-		// Poll: the LB needs a moment to observe the NotReady endpoint and drop
-		// it as an NFQLB target. Once excluded, no connection should ever hash to
-		// it, and no connections should be lost (Ready targets absorb them all).
-		Eventually(func(g Gomega) {
-			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
-			g.Expect(lastingConn).NotTo(HaveKey(notReadyPod),
-				"NotReady target %s must not receive traffic (got: %v)", notReadyPod, lastingConn)
-			// At least one Ready target must still be serving.
-			serving := false
-			for _, pod := range readyPods {
-				if _, ok := lastingConn[pod]; ok {
-					serving = true
-				}
-			}
-			g.Expect(serving).To(BeTrue(),
-				"at least one Ready target should keep serving (got: %v)", lastingConn)
-		}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
-
-		By("verifying the exclusion is stable (no flap re-including the target)")
-		// Guard against a transient endpoint reappearance: the excluded target
-		// must stay absent from traffic across repeated samples, not just clear
-		// once.
-		Consistently(func(g Gomega) {
-			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
-			g.Expect(lastingConn).NotTo(HaveKey(notReadyPod),
-				"NotReady target %s must stay excluded (got: %v)", notReadyPod, lastingConn)
-		}).WithTimeout(15 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
-	})
-
-	It("re-includes the target in traffic once it becomes Ready again", func() {
-		By(fmt.Sprintf("restoring readiness on target %s", notReadyPod))
-		Expect(setReady(notReadyPod, true)).To(Succeed())
-
-		By("waiting for the target to report Ready again")
-		Eventually(func(g Gomega) {
-			g.Expect(podReady(notReadyPod)).To(Equal("true"),
-				"target %s should be Ready again", notReadyPod)
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
-
-		By("verifying the control plane marks the endpoint Ready again in the LoadBalancerEndpointSlice")
-		Eventually(func(g Gomega) {
-			g.Expect(endpointReady(notReadyPod)).To(Equal("true"),
-				"endpoint for %s should be marked Ready again in the slice", notReadyPod)
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
-
-		By("sending traffic and asserting the recovered target serves again")
-		Eventually(func(g Gomega) {
-			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
-			g.Expect(lastingConn).To(HaveKey(notReadyPod),
-				"recovered target %s should receive traffic again (got: %v)", notReadyPod, lastingConn)
-		}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
-	})
-
-	It("excludes multiple NotReady targets while the rest keep serving", func() {
-		var (
-			scaledPods  []string // all 4 target Pods after scale-up
-			downPods    []string // the 2 flipped NotReady
-			upPods      []string // the 2 kept Ready
-			scaledCount = 4
-			downCount   = 2
-		)
-
-		// Restore the baseline (replicas=2, all Ready) before leaving so sibling
-		// specs and the Low MTU suite sharing these Pods see a clean state, even
-		// if an assertion below fails mid-sequence. Registered first so it runs
-		// last (LIFO), after any nested cleanup.
-		DeferCleanup(func() {
-			By("scaling the target Deployment back to baseline and restoring readiness")
-			Eventually(func(g Gomega) { scaleTargets(g, baselineReplicas) }).
-				WithTimeout(150 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
-			// Re-mark every surviving Pod Ready and refresh the outer targetPods
-			// slice the BeforeAll DeferCleanup relies on.
+	Context("Traffic", func() {
+		It("should serve traffic from every target while they are Ready", func() {
+			// Poll: Ready conditions (Pod/Deployment/DG) do not guarantee the LB has
+			// finished programming its NFQLB targets and nftables VIP rules. Retry
+			// until real TCP traffic lands with zero loss across all targets, so this
+			// spec doubles as the data-path warm-up gate for the specs that follow.
+			// Each attempt runs ctraffic for ~10s, so ~6 attempts fit the timeout.
 			Eventually(func(g Gomega) {
-				pods := runningTargetPods()
-				g.Expect(len(pods)).To(Equal(baselineReplicas))
-				for _, pod := range pods {
-					g.Expect(setReady(pod, true)).To(Succeed())
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				g.Expect(lastingConn).To(HaveKey(notReadyPod),
+					"target %s should serve traffic while Ready (got: %v)", notReadyPod, lastingConn)
+				for _, pod := range readyPods {
+					g.Expect(lastingConn).To(HaveKey(pod),
+						"target %s should serve traffic while Ready (got: %v)", pod, lastingConn)
 				}
-				targetPods = pods
-			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
-			Eventually(func(g Gomega) {
-				for _, pod := range runningTargetPods() {
-					g.Expect(podReady(pod)).To(Equal("true"))
-				}
-			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+			}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
 		})
 
-		By(fmt.Sprintf("scaling the target Deployment up to %d replicas", scaledCount))
-		Eventually(func(g Gomega) { scaleTargets(g, scaledCount) }).
-			WithTimeout(150 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+	})
 
-		By("discovering the scaled-up target Pods and marking them all Ready")
-		Eventually(func(g Gomega) {
-			scaledPods = runningTargetPods()
-			g.Expect(len(scaledPods)).To(Equal(scaledCount),
-				"expected %d running target Pods after scale-up", scaledCount)
-			for _, pod := range scaledPods {
-				g.Expect(setReady(pod, true)).To(Succeed())
-			}
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+	Context("Disruption", func() {
+		It("should exclude a NotReady target while the others keep serving", func() {
+			By(fmt.Sprintf("flipping target %s to NotReady", notReadyPod))
+			Expect(setReady(notReadyPod, false)).To(Succeed())
 
-		By("waiting for all scaled Pods to be Ready in the LoadBalancerEndpointSlice")
-		Eventually(func(g Gomega) {
-			for _, pod := range scaledPods {
-				g.Expect(podReady(pod)).To(Equal("true"), "target %s should be Ready", pod)
-				g.Expect(endpointReady(pod)).To(Equal("true"),
-					"endpoint for %s should be Ready in the slice", pod)
-			}
-		}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+			By("waiting for the target to report NotReady (others stay Ready)")
+			Eventually(func(g Gomega) {
+				g.Expect(podReady(notReadyPod)).To(Equal("false"),
+					"target %s should be NotReady", notReadyPod)
+				for _, pod := range readyPods {
+					g.Expect(podReady(pod)).To(Equal("true"),
+						"target %s should remain Ready", pod)
+				}
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
-		By("confirming all targets receive traffic before the disruption")
-		Eventually(func(g Gomega) {
-			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
-			for _, pod := range scaledPods {
-				g.Expect(lastingConn).To(HaveKey(pod),
-					"target %s should serve traffic while Ready (got: %v)", pod, lastingConn)
-			}
-		}).WithTimeout(90 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+			By("verifying the control plane marks the endpoint NotReady in the LoadBalancerEndpointSlice")
+			// Control-plane checkpoint: the DG controller mirrors Pod readiness onto
+			// the endpoint's `ready` flag. Asserting it directly makes a failure
+			// easy to triage (DG controller vs. LB/nftables) rather than inferring
+			// solely from traffic-side absence.
+			Eventually(func(g Gomega) {
+				g.Expect(endpointReady(notReadyPod)).To(Equal("false"),
+					"endpoint for %s should be marked NotReady in the slice", notReadyPod)
+				for _, pod := range readyPods {
+					g.Expect(endpointReady(pod)).To(Equal("true"),
+						"endpoint for %s should stay Ready in the slice", pod)
+				}
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
-		downPods = scaledPods[:downCount]
-		upPods = scaledPods[downCount:]
+			By("sending traffic and asserting the NotReady target's hostname is absent")
+			// Poll: the LB needs a moment to observe the NotReady endpoint and drop
+			// it as an NFQLB target. Once excluded, no connection should ever hash to
+			// it, and no connections should be lost (Ready targets absorb them all).
+			Eventually(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				g.Expect(lastingConn).NotTo(HaveKey(notReadyPod),
+					"NotReady target %s must not receive traffic (got: %v)", notReadyPod, lastingConn)
+				// At least one Ready target must still be serving.
+				serving := false
+				for _, pod := range readyPods {
+					if _, ok := lastingConn[pod]; ok {
+						serving = true
+					}
+				}
+				g.Expect(serving).To(BeTrue(),
+					"at least one Ready target should keep serving (got: %v)", lastingConn)
+			}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
 
-		By(fmt.Sprintf("flipping %d targets to NotReady: %v", downCount, downPods))
-		for _, pod := range downPods {
-			Expect(setReady(pod, false)).To(Succeed())
-		}
+			By("verifying the exclusion is stable (no flap re-including the target)")
+			// Guard against a transient endpoint reappearance: the excluded target
+			// must stay absent from traffic across repeated samples, not just clear
+			// once.
+			Consistently(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				g.Expect(lastingConn).NotTo(HaveKey(notReadyPod),
+					"NotReady target %s must stay excluded (got: %v)", notReadyPod, lastingConn)
+			}).WithTimeout(15 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+		})
 
-		By("waiting for the down targets to report NotReady in Pod status and the slice")
-		Eventually(func(g Gomega) {
+		It("should re-include the target once it becomes Ready again", func() {
+			By(fmt.Sprintf("restoring readiness on target %s", notReadyPod))
+			Expect(setReady(notReadyPod, true)).To(Succeed())
+
+			By("waiting for the target to report Ready again")
+			Eventually(func(g Gomega) {
+				g.Expect(podReady(notReadyPod)).To(Equal("true"),
+					"target %s should be Ready again", notReadyPod)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+
+			By("verifying the control plane marks the endpoint Ready again in the LoadBalancerEndpointSlice")
+			Eventually(func(g Gomega) {
+				g.Expect(endpointReady(notReadyPod)).To(Equal("true"),
+					"endpoint for %s should be marked Ready again in the slice", notReadyPod)
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+
+			By("sending traffic and asserting the recovered target serves again")
+			Eventually(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				g.Expect(lastingConn).To(HaveKey(notReadyPod),
+					"recovered target %s should receive traffic again (got: %v)", notReadyPod, lastingConn)
+			}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+		})
+
+		It("should exclude multiple NotReady targets while the rest keep serving", func() {
+			var (
+				scaledPods  []string // all 4 target Pods after scale-up
+				downPods    []string // the 2 flipped NotReady
+				upPods      []string // the 2 kept Ready
+				scaledCount = 4
+				downCount   = 2
+			)
+
+			// Restore the baseline (replicas=2, all Ready) before leaving so sibling
+			// specs and the Low MTU suite sharing these Pods see a clean state, even
+			// if an assertion below fails mid-sequence. Registered first so it runs
+			// last (LIFO), after any nested cleanup.
+			DeferCleanup(func() {
+				By("scaling the target Deployment back to baseline and restoring readiness")
+				Eventually(func(g Gomega) { scaleTargets(g, baselineReplicas) }).
+					WithTimeout(150 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+				// Re-mark every surviving Pod Ready and refresh the outer targetPods
+				// slice the BeforeAll DeferCleanup relies on.
+				Eventually(func(g Gomega) {
+					pods := runningTargetPods()
+					g.Expect(len(pods)).To(Equal(baselineReplicas))
+					for _, pod := range pods {
+						g.Expect(setReady(pod, true)).To(Succeed())
+					}
+					targetPods = pods
+				}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+				Eventually(func(g Gomega) {
+					for _, pod := range runningTargetPods() {
+						g.Expect(podReady(pod)).To(Equal("true"))
+					}
+				}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+			})
+
+			By(fmt.Sprintf("scaling the target Deployment up to %d replicas", scaledCount))
+			Eventually(func(g Gomega) { scaleTargets(g, scaledCount) }).
+				WithTimeout(150 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+
+			By("discovering the scaled-up target Pods and marking them all Ready")
+			Eventually(func(g Gomega) {
+				scaledPods = runningTargetPods()
+				g.Expect(len(scaledPods)).To(Equal(scaledCount),
+					"expected %d running target Pods after scale-up", scaledCount)
+				for _, pod := range scaledPods {
+					g.Expect(setReady(pod, true)).To(Succeed())
+				}
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+
+			By("waiting for all scaled Pods to be Ready in the LoadBalancerEndpointSlice")
+			Eventually(func(g Gomega) {
+				for _, pod := range scaledPods {
+					g.Expect(podReady(pod)).To(Equal("true"), "target %s should be Ready", pod)
+					g.Expect(endpointReady(pod)).To(Equal("true"),
+						"endpoint for %s should be Ready in the slice", pod)
+				}
+			}).WithTimeout(90 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+
+			By("confirming all targets receive traffic before the disruption")
+			Eventually(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				for _, pod := range scaledPods {
+					g.Expect(lastingConn).To(HaveKey(pod),
+						"target %s should serve traffic while Ready (got: %v)", pod, lastingConn)
+				}
+			}).WithTimeout(90 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+
+			downPods = scaledPods[:downCount]
+			upPods = scaledPods[downCount:]
+
+			By(fmt.Sprintf("flipping %d targets to NotReady: %v", downCount, downPods))
 			for _, pod := range downPods {
-				g.Expect(podReady(pod)).To(Equal("false"), "target %s should be NotReady", pod)
-				g.Expect(endpointReady(pod)).To(Equal("false"),
-					"endpoint for %s should be marked NotReady in the slice", pod)
+				Expect(setReady(pod, false)).To(Succeed())
 			}
-			for _, pod := range upPods {
-				g.Expect(podReady(pod)).To(Equal("true"), "target %s should remain Ready", pod)
-				g.Expect(endpointReady(pod)).To(Equal("true"),
-					"endpoint for %s should stay Ready in the slice", pod)
-			}
-		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
-		By("asserting both NotReady targets are excluded while the Ready ones absorb all traffic")
-		Eventually(func(g Gomega) {
-			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
-			for _, pod := range downPods {
-				g.Expect(lastingConn).NotTo(HaveKey(pod),
-					"NotReady target %s must not receive traffic (got: %v)", pod, lastingConn)
-			}
-			for _, pod := range upPods {
-				g.Expect(lastingConn).To(HaveKey(pod),
-					"Ready target %s should keep serving (got: %v)", pod, lastingConn)
-			}
-		}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+			By("waiting for the down targets to report NotReady in Pod status and the slice")
+			Eventually(func(g Gomega) {
+				for _, pod := range downPods {
+					g.Expect(podReady(pod)).To(Equal("false"), "target %s should be NotReady", pod)
+					g.Expect(endpointReady(pod)).To(Equal("false"),
+						"endpoint for %s should be marked NotReady in the slice", pod)
+				}
+				for _, pod := range upPods {
+					g.Expect(podReady(pod)).To(Equal("true"), "target %s should remain Ready", pod)
+					g.Expect(endpointReady(pod)).To(Equal("true"),
+						"endpoint for %s should stay Ready in the slice", pod)
+				}
+			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
 
-		By("verifying the multi-target exclusion is stable")
-		Consistently(func(g Gomega) {
-			lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(lostConn).To(BeZero(), "no connections should be lost")
-			for _, pod := range downPods {
-				g.Expect(lastingConn).NotTo(HaveKey(pod),
-					"NotReady target %s must stay excluded (got: %v)", pod, lastingConn)
-			}
-		}).WithTimeout(15 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+			By("asserting both NotReady targets are excluded while the Ready ones absorb all traffic")
+			Eventually(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				for _, pod := range downPods {
+					g.Expect(lastingConn).NotTo(HaveKey(pod),
+						"NotReady target %s must not receive traffic (got: %v)", pod, lastingConn)
+				}
+				for _, pod := range upPods {
+					g.Expect(lastingConn).To(HaveKey(pod),
+						"Ready target %s should keep serving (got: %v)", pod, lastingConn)
+				}
+			}).WithTimeout(60 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+
+			By("verifying the multi-target exclusion is stable")
+			Consistently(func(g Gomega) {
+				lastingConn, lostConn, err := e2eutils.SendTraffic(vip, tcpPort, "tcp", 100)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(lostConn).To(BeZero(), "no connections should be lost")
+				for _, pod := range downPods {
+					g.Expect(lastingConn).NotTo(HaveKey(pod),
+						"NotReady target %s must stay excluded (got: %v)", pod, lastingConn)
+				}
+			}).WithTimeout(15 * time.Second).WithPolling(3 * time.Second).Should(Succeed())
+		})
+
 	})
 })

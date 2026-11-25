@@ -125,6 +125,16 @@ const (
 	defaultEventuallyPolling = 2 * time.Second
 )
 
+// countOf renders a count and noun for spec names, pluralising the noun so the
+// generated text stays grammatical at any count: "1 ENC", "2 ENCs". Without
+// this, single-replica suites produced names like "should create 1 ENCs".
+func countOf(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
 // verifySuiteLabels enforces the labelling contract from CONVENTIONS.md on
 // every spec that actually ran: exactly one label from allSuiteLabels.
 //

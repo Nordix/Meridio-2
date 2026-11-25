@@ -70,7 +70,7 @@ var _ = Describe("Resiliency", Label(labelSuiteResiliency, labelIPv4), Serial, O
 			WithTimeout(30 * time.Second).Should(Succeed())
 	})
 
-	It("recovers after NFQLB process kill", func() {
+	It("should recover after an NFQLB process kill", func() {
 		By("confirming Pod is Ready and traffic works before disruption")
 		Expect(isPodReady(clientset, namespace, sllbPod)).To(BeTrue())
 		Expect(e2eutils.Ping(vip)).To(Succeed())
