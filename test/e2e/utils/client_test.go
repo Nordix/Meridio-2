@@ -38,7 +38,7 @@ func TestParseIPv6OutputQueuedPackets(t *testing.T) {
 	chain output {
 		type filter hook output priority filter; policy accept;
 		meta l4proto icmp ip daddr @ipv4-vips counter packets 7 bytes 588 queue to 0-3
-		ip6 daddr @ipv6-vips icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-reply } counter packets 0 bytes 0 queue to 0-3
+		ip6 daddr @ipv6-vips icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-request, echo-reply } counter packets 0 bytes 0 queue to 0-3
 	}
 }`,
 			want: 0,
