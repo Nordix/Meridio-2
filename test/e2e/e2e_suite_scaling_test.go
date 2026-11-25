@@ -201,6 +201,22 @@ func mustMaxRestartCount() int {
 	return count
 }
 
+// scaleStepContext declares one scale transition inside its own container,
+// named "<direction> <oldN>-><newN>" so the transition is the report's phase
+// level: "Endpoint Scaling > Scale-out 2->3 > should keep traffic flowing ...".
+//
+// Each step MUST get its own container. scaleStep declares a BeforeAll, and
+// Ginkgo runs every BeforeAll in an Ordered container before that container's
+// *first* spec — not before the specs that follow it. Two steps sharing one
+// container therefore ran the second step's precondition (which waits for the
+// post-scale endpoint count) before the first step had scaled anything, so it
+// could only time out.
+func scaleStepContext(direction string, oldN, newN int) {
+	Context(fmt.Sprintf("%s %d->%d", direction, oldN, newN), func() {
+		scaleStep(oldN, newN)
+	})
+}
+
 // scaleStep runs one scale transition from oldN to newN endpoints and verifies
 // traffic continuity across the change.
 //
@@ -233,7 +249,7 @@ func scaleStep(oldN, newN int) {
 		restartsBefore = mustMaxRestartCount()
 	})
 
-	It(fmt.Sprintf("should keep traffic flowing on all gateways/families while scaling %d->%d", oldN, newN), func() {
+	It("should keep traffic flowing on all gateways/families", func() {
 		By("starting long-lived in-flight traffic for every gateway/family concurrently")
 		handles := make([]*e2eutils.TrafficHandle, len(scalingGateways))
 		for i, gw := range scalingGateways {
@@ -261,7 +277,7 @@ func scaleStep(oldN, newN int) {
 		}
 	})
 
-	It(fmt.Sprintf("should load balance new connections across the %d endpoints after %d->%d", newN, oldN, newN), func() {
+	It(fmt.Sprintf("should load balance new connections across the %d endpoints", newN), func() {
 		wantCoverage := minCoverage(newN)
 		for _, gw := range scalingGateways {
 			gw := gw
@@ -283,7 +299,7 @@ func scaleStep(oldN, newN int) {
 		}
 	})
 
-	It(fmt.Sprintf("should not restart any target container during %d->%d", oldN, newN), func() {
+	It("should not restart any target container", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(maxTargetRestartCount(g)).To(Equal(restartsBefore),
 				"no target container should restart during %d->%d", oldN, newN)
@@ -345,18 +361,14 @@ var _ = Describe("Endpoint Scaling", Label(labelSuiteScaling, labelDualStack), S
 	// step and a bigger multi-instance jump.
 	// Acceptance criteria: established connections continue (bounded), new
 	// endpoints receive new connections after Ready, no container restarts.
-	Context("Scale-out", func() {
-		scaleStep(scalingMinReplicas, scalingMinReplicas+1)
-		scaleStep(scalingMinReplicas+1, scalingMaxReplicas)
-	})
+	scaleStepContext("Scale-out", scalingMinReplicas, scalingMinReplicas+1)
+	scaleStepContext("Scale-out", scalingMinReplicas+1, scalingMaxReplicas)
 
 	// Scale-in with traffic continuity.
 	// Decrease instances down to the documented min, covering a single-instance
 	// step and a bigger multi-instance jump.
 	// Acceptance criteria: connections on removed endpoints drain/terminate as
 	// designed while surviving/new connections continue (bounded), no restarts.
-	Context("Scale-in", func() {
-		scaleStep(scalingMaxReplicas, scalingMaxReplicas-1)
-		scaleStep(scalingMaxReplicas-1, scalingMinReplicas)
-	})
+	scaleStepContext("Scale-in", scalingMaxReplicas, scalingMaxReplicas-1)
+	scaleStepContext("Scale-in", scalingMaxReplicas-1, scalingMinReplicas)
 })
