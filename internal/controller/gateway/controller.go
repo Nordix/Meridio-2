@@ -115,6 +115,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			if statusErr := r.updateAcceptedStatus(ctx, &gw, metav1.ConditionFalse,
 				string(gatewayv1.GatewayReasonInvalidParameters), err.Error()); statusErr != nil {
 				if apierrors.IsConflict(statusErr) {
+					//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 					return ctrl.Result{Requeue: true}, nil
 				}
 				return ctrl.Result{}, statusErr
@@ -130,6 +131,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// 4. Set Accepted status condition
 	if err := r.updateAcceptedStatus(ctx, &gw, metav1.ConditionTrue, string(gatewayv1.GatewayReasonAccepted), r.acceptedMessage()); err != nil {
 		if apierrors.IsConflict(err) {
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err
@@ -138,6 +140,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// 5. Update status.addresses from L34Routes
 	if err := r.updateAddressesFromRoutes(ctx, &gw); err != nil {
 		if apierrors.IsConflict(err) {
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err
@@ -147,6 +150,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.reconcileLBDeployment(ctx, &gw, gwConfig, template); err != nil {
 		// Handle transient errors (requeue without setting Programmed=False)
 		if apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) {
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 
@@ -155,6 +159,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			if statusErr := r.updateProgrammedStatus(ctx, &gw, metav1.ConditionFalse,
 				string(gatewayv1.GatewayReasonInvalid), err.Error()); statusErr != nil {
 				if apierrors.IsConflict(statusErr) {
+					//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 					return ctrl.Result{Requeue: true}, nil
 				}
 			}
@@ -166,6 +171,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.updateProgrammedStatus(ctx, &gw, metav1.ConditionTrue,
 		string(gatewayv1.GatewayReasonProgrammed), messageProgrammed); err != nil {
 		if apierrors.IsConflict(err) {
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err

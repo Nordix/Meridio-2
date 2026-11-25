@@ -114,6 +114,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		log.Error(err, "failed to build desired state")
 		if statusErr := c.updateStatus(ctx, &enc, err); statusErr != nil {
 			if apierrors.IsConflict(statusErr) {
+				//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 				return ctrl.Result{Requeue: true}, nil
 			}
 			return ctrl.Result{}, statusErr
@@ -129,6 +130,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		log.Error(err, "failed to apply network configuration")
 		if statusErr := c.updateStatus(ctx, &enc, err); statusErr != nil {
 			if apierrors.IsConflict(statusErr) {
+				//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 				return ctrl.Result{Requeue: true}, nil
 			}
 			return ctrl.Result{}, statusErr
@@ -159,6 +161,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Success
 	if err := c.updateStatus(ctx, &enc, nil); err != nil {
 		if apierrors.IsConflict(err) {
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err

@@ -100,6 +100,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			// Requeue immediately instead of returning error (which triggers exponential backoff).
 			// Conflicts are expected from stale cache reads or concurrent status writers;
 			// fast retry avoids prolonging stale next-hop configuration.
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err
