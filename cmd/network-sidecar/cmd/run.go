@@ -55,7 +55,7 @@ func init() {
 	utilruntime.Must(meridio2v1alpha1.AddToScheme(scheme))
 }
 
-func newCmdRun() *cobra.Command {
+func NewRunCmd() *cobra.Command {
 	cfg := &config.SidecarConfig{}
 
 	cmd := &cobra.Command{
