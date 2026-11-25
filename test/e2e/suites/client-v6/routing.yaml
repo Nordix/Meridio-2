@@ -1,0 +1,106 @@
+---
+# gw-c6 router (VLAN 1600, ASN 64525, IPv6-only)
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayRouter
+metadata:
+  name: gw-c6-router-v6
+spec:
+  gatewayRef:
+    name: gw-c6
+  interface: "vlan-1600"
+  address: "fd00:cafe:90::150"
+  protocol: "BGP"
+  bgp:
+    localASN: 64525
+    remoteASN: 4200000000
+    localPort: 10179
+    remotePort: 10179
+    holdTime: 24s
+    bfd:
+      minTx: 300ms
+      minRx: 300ms
+      multiplier: 3
+---
+# Highest-priority route over all client targets. No real traffic uses port 1;
+# the route exists so that every ICMPv6 addressed to the VIP matches it first in
+# nfqlb (promiscuous ping matching ignores protocols and ports). Without the LB
+# output-chain ICMPv6 type filter, the LB's Neighbor Advertisements to the VIP
+# would be load-balanced through it to one fixed target.
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-c6-all
+spec:
+  parentRefs:
+  - name: gw-c6
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-c6-all
+  destinationCIDRs:
+  - "fd00:cafe:9::1/128"
+  protocols:
+  - TCP
+  destinationPorts:
+  - "1"
+  priority: 100
+---
+# Per-instance routes: return traffic to the VIP on an instance's ephemeral
+# port range (net.ipv4.ip_local_port_range in targets.yaml) goes to that
+# instance only.
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-c6-i0
+spec:
+  parentRefs:
+  - name: gw-c6
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-c6-i0
+  destinationCIDRs:
+  - "fd00:cafe:9::1/128"
+  protocols:
+  - TCP
+  destinationPorts:
+  - "40000-40099"
+  priority: 10
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-c6-i1
+spec:
+  parentRefs:
+  - name: gw-c6
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-c6-i1
+  destinationCIDRs:
+  - "fd00:cafe:9::1/128"
+  protocols:
+  - TCP
+  destinationPorts:
+  - "40100-40199"
+  priority: 10
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: L34Route
+metadata:
+  name: route-c6-i2
+spec:
+  parentRefs:
+  - name: gw-c6
+  backendRefs:
+  - group: meridio-2.nordix.org
+    kind: DistributionGroup
+    name: dg-c6-i2
+  destinationCIDRs:
+  - "fd00:cafe:9::1/128"
+  protocols:
+  - TCP
+  destinationPorts:
+  - "40200-40299"
+  priority: 10

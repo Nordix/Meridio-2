@@ -1,0 +1,217 @@
+# Three single-replica client targets. Each has its own instance label (selected
+# by its per-instance DistributionGroup) and a disjoint ephemeral port range, so
+# client connections opened from the VIP use source ports that map to its own
+# L34Route. They run no servers: the suite only exercises target-initiated traffic.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: target-c6-0
+  labels:
+    app: target-c6
+    instance: i0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: target-c6
+      instance: i0
+  template:
+    metadata:
+      labels:
+        app: target-c6
+        instance: i0
+      annotations:
+        k8s.v1.cni.cncf.io/networks: app-net-c6
+    spec:
+      serviceAccountName: meridio-2-network-sidecar
+      securityContext:
+        sysctls:
+        - name: net.ipv4.ip_local_port_range
+          value: "40000 40099"
+      volumes:
+      - name: sidecar-state
+        emptyDir: {}
+      containers:
+      - name: example-target
+        image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          trap 'exit 0' TERM; sleep infinity & wait
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
+      - name: network-sidecar
+        image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --pod-name=$(POD_NAME)
+        - --pod-namespace=$(POD_NAMESPACE)
+        - --pod-uid=$(POD_UID)
+        - --log-level=debug
+        volumeMounts:
+        - name: sidecar-state
+          mountPath: /var/run/meridio
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        securityContext:
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: target-c6-1
+  labels:
+    app: target-c6
+    instance: i1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: target-c6
+      instance: i1
+  template:
+    metadata:
+      labels:
+        app: target-c6
+        instance: i1
+      annotations:
+        k8s.v1.cni.cncf.io/networks: app-net-c6
+    spec:
+      serviceAccountName: meridio-2-network-sidecar
+      securityContext:
+        sysctls:
+        - name: net.ipv4.ip_local_port_range
+          value: "40100 40199"
+      volumes:
+      - name: sidecar-state
+        emptyDir: {}
+      containers:
+      - name: example-target
+        image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          trap 'exit 0' TERM; sleep infinity & wait
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
+      - name: network-sidecar
+        image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --pod-name=$(POD_NAME)
+        - --pod-namespace=$(POD_NAMESPACE)
+        - --pod-uid=$(POD_UID)
+        - --log-level=debug
+        volumeMounts:
+        - name: sidecar-state
+          mountPath: /var/run/meridio
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        securityContext:
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: target-c6-2
+  labels:
+    app: target-c6
+    instance: i2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: target-c6
+      instance: i2
+  template:
+    metadata:
+      labels:
+        app: target-c6
+        instance: i2
+      annotations:
+        k8s.v1.cni.cncf.io/networks: app-net-c6
+    spec:
+      serviceAccountName: meridio-2-network-sidecar
+      securityContext:
+        sysctls:
+        - name: net.ipv4.ip_local_port_range
+          value: "40200 40299"
+      volumes:
+      - name: sidecar-state
+        emptyDir: {}
+      containers:
+      - name: example-target
+        image: registry.nordix.org/cloud-native/meridio-2/example-target:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          trap 'exit 0' TERM; sleep infinity & wait
+        securityContext:
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["DAC_OVERRIDE", "NET_RAW", "SYS_PTRACE"]
+      - name: network-sidecar
+        image: registry.nordix.org/cloud-native/meridio-2/network-sidecar:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --pod-name=$(POD_NAME)
+        - --pod-namespace=$(POD_NAMESPACE)
+        - --pod-uid=$(POD_UID)
+        - --log-level=debug
+        volumeMounts:
+        - name: sidecar-state
+          mountPath: /var/run/meridio
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        securityContext:
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]
