@@ -1,0 +1,49 @@
+---
+# Gateway C6 on VLAN 1600 with app-net-c6 (IPv6-only, single LB replica)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-c6
+spec:
+  gatewayClassName: meridio
+  infrastructure:
+    parametersRef:
+      group: meridio-2.nordix.org
+      kind: GatewayConfiguration
+      name: gwconfig-c6
+  listeners:
+  - name: default
+    protocol: TCP
+    port: 80
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: GatewayConfiguration
+metadata:
+  name: gwconfig-c6
+spec:
+  networkAttachments:
+  - type: NAD
+    nad:
+      name: sysctl-tuning
+      namespace: e2e-client-v6
+      interface: dummy
+  - type: NAD
+    nad:
+      name: bird-router-id-v6
+      namespace: e2e-client-v6
+      interface: bird-rid
+  - type: NAD
+    nad:
+      name: vlan-1600
+      namespace: e2e-client-v6
+      interface: vlan-1600
+  - type: NAD
+    nad:
+      name: app-net-c6
+      namespace: e2e-client-v6
+      interface: net-c6
+  internalSubnets:
+  - attachmentType: NAD
+    cidr: "fd00:cafe:190::/64"
+  horizontalScaling:
+    replicas: 1
