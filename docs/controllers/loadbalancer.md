@@ -143,7 +143,7 @@ Policy Routes (kernel state, per target)
 nftables (shared across all DGs in this LB Pod)
 ├── VIP sets (IPv4 + IPv6)
 ├── prerouting chain: VIP traffic → nfqueue
-└── output chain: local ICMP to VIPs → nfqueue
+└── output chain: local ICMP to VIPs (IPv6: errors and Echo Reply only) → nfqueue
 ```
 
 ## Reconciliation Flow
@@ -509,7 +509,7 @@ table inet meridio-lb {
 | Set | `ipv4-vips` | Interval set of IPv4 VIP CIDRs |
 | Set | `ipv6-vips` | Interval set of IPv6 VIP CIDRs |
 | Chain | `prerouting` | Queues incoming VIP traffic to nfqueue |
-| Chain | `output` | Queues locally-originated ICMP/ICMPv6 replies to VIPs |
+| Chain | `output` | Queues locally-originated ICMP/ICMPv6 to VIPs (IPv6: error messages and Echo Reply, not Neighbor Discovery) |
 | Chain | `snat-local` | Rewrites PMTU ICMP source addresses |
 
 ### Prerouting Chain
@@ -532,19 +532,23 @@ The queue number range (e.g., `0-3`) is configured at manager creation time via 
 
 ### Output Chain
 
-Hooks at `filter` priority in the output path. Matches locally-originated ICMP/ICMPv6 packets destined to VIP addresses and queues them back through nfqueue. This enables NFQLB to handle ping responses from VIPs correctly:
+Hooks at `filter` priority in the output path. Matches locally-originated ICMP/ICMPv6 packets destined to VIP addresses and queues them back through nfqueue, so that NFQLB steers them to a target instead of the LB routing them:
 
 ```
 chain output {
     type filter hook output priority filter;
 
-    # IPv4: ICMP replies to VIPs
+    # IPv4: ICMP to VIPs
     meta nfproto ipv4 meta l4proto icmp ip daddr @ipv4-vips counter queue num 0-3
 
-    # IPv6: ICMPv6 replies to VIPs
-    meta nfproto ipv6 meta l4proto icmpv6 ip6 daddr @ipv6-vips counter queue num 0-3
+    # IPv6: ICMPv6 error messages and Echo Reply to VIPs
+    meta nfproto ipv6 ip6 daddr @ipv6-vips icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-reply } counter queue num 0-3
 }
 ```
+
+The queued messages are errors the LB generates for VIP-sourced packets it forwards on behalf of targets (for example Packet Too Big when the external MTU is smaller), and Echo Reply to a VIP-sourced ping of an LB address. NFQLB steers Destination Unreachable and Packet Too Big to the right target using the embedded original header. The other types are hashed on the outer addresses, so with several targets they can land on a different target than the one that sent the original packet.
+
+IPv6 Neighbor Discovery is deliberately not queued. When an application Pod resolves its LB next hop for a packet it sends from a VIP (a connection it initiates, or a reply to inbound traffic), the kernel sources the Neighbor Solicitation from the VIP, so the LB's Neighbor Advertisement is addressed to the VIP. NFQLB runs with `--promiscuous_ping`, which matches any ICMPv6 other than Destination Unreachable and Packet Too Big to the highest priority flow covering the VIP, so a queued Advertisement would be load-balanced to some target rather than returned to the soliciting Pod. Left to the kernel, the Advertisement uses the neighbor entry created from the Solicitation and reaches the right Pod. IPv4 needs no exception because ARP does not traverse nftables.
 
 ### PMTU SNAT Chain (snat-local)
 
