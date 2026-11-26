@@ -120,6 +120,18 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		return err
 	}
 
+	// Clear readiness files left by a previous instance first, so the router withdraws the VIPs
+	// until this instance has ready targets again, and keeps them withdrawn if startup fails.
+	readinessMgr := readiness.NewManager(cfg.ReadinessDir)
+	if !readinessMgr.Enabled() {
+		setupLog.Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), " +
+			"no readiness files will be written")
+	}
+	if err := readinessMgr.Cleanup(); err != nil {
+		setupLog.Error(err, "failed to clean up readiness directory")
+		return err
+	}
+
 	// Resolve the primary interface for the forward-path primary egress guard. The first Pod IP
 	// (status.podIPs[0], which equals status.podIP) identifies it. Failure stops startup.
 	primaryIfindex, err := resolvePrimaryIfindex(cfg.PodIPs[0])
@@ -225,7 +237,7 @@ func runLoadBalancer(cfg *config.LoadBalancerConfig) error {
 		GatewayName:      cfg.GatewayName,
 		GatewayNamespace: cfg.GatewayNamespace,
 		NFQLB:            &loadbalancer.NFQLBManagerAdapter{NFQLB: nfqlbInstance},
-		Readiness:        readiness.NewManager(cfg.ReadinessDir),
+		Readiness:        readinessMgr,
 		ConfigErrors:     configErrors, // typed-nil when metrics disabled; Inc is nil-safe
 		PrimaryIfindex:   primaryIfindex,
 	}
