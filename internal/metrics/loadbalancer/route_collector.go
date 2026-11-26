@@ -58,7 +58,7 @@ func NewRouteCollector(routes RouteReader, gatewayName, prefix string, errs erro
 			prefix+"_lb_policy_routes",
 			"Number of LB-owned policy routing rules currently installed, per IP family "+
 				"(one source-based routing rule per active target).",
-			[]string{"gateway", "ip_family"}, nil,
+			[]string{labelGateway, "ip_family"}, nil,
 		),
 	}
 }

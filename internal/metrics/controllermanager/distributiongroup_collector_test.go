@@ -90,7 +90,7 @@ func dcNewOwnedSlice(
 		}
 	}
 	slice := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: dg.Namespace},
+		Name: name, Namespace: dg.Namespace,
 		Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 			DistributionGroupName: dg.Name,
 			GatewayRef:            meridio2v1alpha1.SliceGatewayRef{Name: gwName, Namespace: gwNamespace},
@@ -136,9 +136,9 @@ func TestResolveMaxEndpoints_UnknownType_ReturnsPositiveInf(t *testing.T) {
 
 func TestDistributionGroupCollector_Available(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
-		Spec:       meridio2v1alpha1.DistributionGroupSpec{Type: meridio2v1alpha1.DistributionGroupTypeMaglev},
-		Status:     meridio2v1alpha1.DistributionGroupStatus{Conditions: []metav1.Condition{dcAvailableCondition(metav1.ConditionTrue)}},
+		Name: "dg-a", Namespace: "ns-a",
+		Spec:   meridio2v1alpha1.DistributionGroupSpec{Type: meridio2v1alpha1.DistributionGroupTypeMaglev},
+		Status: meridio2v1alpha1.DistributionGroupStatus{Conditions: []metav1.Condition{dcAvailableCondition(metav1.ConditionTrue)}},
 	}
 
 	fakeClient := dcNewFakeClient(dg)
@@ -154,8 +154,8 @@ meridio_2_distributiongroup_available{dg="dg-a",namespace="ns-a"} 1
 
 func TestDistributionGroupCollector_NotAvailable(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
-		Spec:       meridio2v1alpha1.DistributionGroupSpec{Type: meridio2v1alpha1.DistributionGroupTypeMaglev},
+		Name: "dg-a", Namespace: "ns-a",
+		Spec: meridio2v1alpha1.DistributionGroupSpec{Type: meridio2v1alpha1.DistributionGroupTypeMaglev},
 		// No Available condition at all: IsAvailable must report false, not panic/default-true.
 	}
 
@@ -179,7 +179,7 @@ meridio_2_distributiongroup_available{dg="dg-a",namespace="ns-a"} 0
 // mirroring DistributionGroupReconciler.listOwnedSlices).
 func TestDistributionGroupCollector_EndpointsPerGateway_OwnedSlicesOnly(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
+		Name: "dg-a", Namespace: "ns-a",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 32},
@@ -190,7 +190,7 @@ func TestDistributionGroupCollector_EndpointsPerGateway_OwnedSlicesOnly(t *testi
 	// Same distributionGroupName, but NOT owned by dg (no ownerReference) — a manually-created
 	// or stale slice that happens to name-match. Must be excluded from the count entirely.
 	notOwned := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-		ObjectMeta: metav1.ObjectMeta{Name: "slice-not-owned", Namespace: "ns-a"},
+		Name: "slice-not-owned", Namespace: "ns-a",
 		Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 			DistributionGroupName: dg.Name,
 			GatewayRef:            meridio2v1alpha1.SliceGatewayRef{Name: "gw-a", Namespace: "ns-a"},
@@ -219,7 +219,7 @@ meridio_2_distributiongroup_endpoints{dg="dg-a",gateway="gw-a",gateway_namespace
 // referenced and has owned slices contributes exactly one series (dedup via the union, not two).
 func TestDistributionGroupCollector_GatewayUnion_ReferencedAndOwnedBothCounted(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
+		Name: "dg-a", Namespace: "ns-a",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type: meridio2v1alpha1.DistributionGroupTypeMaglev,
 			ParentRefs: []meridio2v1alpha1.ParentReference{
@@ -230,8 +230,8 @@ func TestDistributionGroupCollector_GatewayUnion_ReferencedAndOwnedBothCounted(t
 
 	// Referenced-and-accepted, no owned slices yet: must still appear, with endpoints=0.
 	gwReferencedOnly := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-referenced-only", Namespace: "ns-a"},
-		Status:     gatewayv1.GatewayStatus{Conditions: []metav1.Condition{acceptedCondition(testControllerName)}},
+		Name: "gw-referenced-only", Namespace: "ns-a",
+		Status: gatewayv1.GatewayStatus{Conditions: []metav1.Condition{acceptedCondition(testControllerName)}},
 	}
 
 	// Has an owned slice but is not (or no longer) referenced/accepted: still reported as-is.
@@ -255,7 +255,7 @@ meridio_2_distributiongroup_endpoints{dg="dg-a",gateway="gw-referenced-only",gat
 // series at all — so an unbound DG stays visible in the metric stream.
 func TestDistributionGroupCollector_EmptyUnion_FallsBackToEmptyGatewayLabel(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-unbound", Namespace: "ns-a"},
+		Name: "dg-unbound", Namespace: "ns-a",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 16},
@@ -282,7 +282,7 @@ meridio_2_distributiongroup_max_endpoints{dg="dg-unbound",gateway="",gateway_nam
 // not contribute a series on its own
 func TestDistributionGroupCollector_ReferencedGatewayNotAccepted_ExcludedFromUnion(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
+		Name: "dg-a", Namespace: "ns-a",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type: meridio2v1alpha1.DistributionGroupTypeMaglev,
 			ParentRefs: []meridio2v1alpha1.ParentReference{
@@ -291,7 +291,7 @@ func TestDistributionGroupCollector_ReferencedGatewayNotAccepted_ExcludedFromUni
 		},
 	}
 	gwNotAccepted := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-not-accepted", Namespace: "ns-a"},
+		Name: "gw-not-accepted", Namespace: "ns-a",
 		// No Accepted condition at all: the referenced Gateway must not be treated
 		// as accepted-by-us just because it was referenced.
 	}
@@ -314,7 +314,7 @@ meridio_2_distributiongroup_endpoints{dg="dg-a",gateway="",gateway_namespace="",
 // different controller does not contribute a series on its own.
 func TestDistributionGroupCollector_ReferencedGatewayAcceptedByAnotherController_ExcludedFromUnion(t *testing.T) {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-a", Namespace: "ns-a"},
+		Name: "dg-a", Namespace: "ns-a",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type: meridio2v1alpha1.DistributionGroupTypeMaglev,
 			ParentRefs: []meridio2v1alpha1.ParentReference{
@@ -323,7 +323,7 @@ func TestDistributionGroupCollector_ReferencedGatewayAcceptedByAnotherController
 		},
 	}
 	gwOtherController := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-other-controller", Namespace: "ns-a"},
+		Name: "gw-other-controller", Namespace: "ns-a",
 		Status: gatewayv1.GatewayStatus{
 			Conditions: []metav1.Condition{acceptedCondition("other.example.com/gateway-controller")},
 		},

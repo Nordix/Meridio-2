@@ -23,6 +23,13 @@ linters:
     - unparam
     - unused
   settings:
+    goconst:
+      # Test files legitimately repeat short literals (resource names, IPs, label
+      # values) as inline fixture data. Hoisting them into constants moves the
+      # expected values away from the assertions that read them, and goconst
+      # matches on string equality alone, so it would also couple literals that
+      # are equal only by coincidence.
+      ignore-tests: true
     revive:
       rules:
         - name: comment-spacings

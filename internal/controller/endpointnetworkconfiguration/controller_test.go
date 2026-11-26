@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,13 +48,11 @@ func newScheme() *runtime.Scheme {
 
 func newPod(name string, phase corev1.PodPhase, labels map[string]string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNamespace,
-			Labels:    labels,
-			UID:       types.UID(name + "-uid"),
-		},
-		Status: corev1.PodStatus{Phase: phase},
+		Name:      name,
+		Namespace: testNamespace,
+		Labels:    labels,
+		UID:       types.UID(name + "-uid"),
+		Status:    corev1.PodStatus{Phase: phase},
 	}
 }
 
@@ -79,7 +76,7 @@ func TestReconcile_PodNotFound(t *testing.T) {
 	r, _ := setupReconciler()
 
 	result, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "nonexistent", Namespace: testNamespace},
+		Name: "nonexistent", Namespace: testNamespace,
 	})
 
 	assert.NoError(t, err)
@@ -90,12 +87,12 @@ func TestReconcile_PodNotRunning(t *testing.T) {
 	pod := newPod(testPodName, corev1.PodPending, nil)
 	// Pre-existing ENC should be cleaned up when Pod is not running
 	enc := &meridio2v1alpha1.EndpointNetworkConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: testPodName, Namespace: testNamespace},
+		Name: testPodName, Namespace: testNamespace,
 	}
 	r, fakeClient := setupReconciler(pod, enc)
 
 	result, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: testPodName, Namespace: testNamespace},
+		Name: testPodName, Namespace: testNamespace,
 	})
 
 	assert.NoError(t, err)
@@ -112,7 +109,7 @@ func TestReconcile_NoMatchingDGs_NoENCCreated(t *testing.T) {
 	r, fakeClient := setupReconciler(pod)
 
 	result, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: testPodName, Namespace: testNamespace},
+		Name: testPodName, Namespace: testNamespace,
 	})
 
 	assert.NoError(t, err)
@@ -228,7 +225,7 @@ func TestReconcileENC_NoUpdateWhenSpecUnchanged(t *testing.T) {
 func TestDeleteENCIfExists_Exists(t *testing.T) {
 	pod := newPod(testPodName, corev1.PodRunning, nil)
 	enc := &meridio2v1alpha1.EndpointNetworkConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: testPodName, Namespace: testNamespace},
+		Name: testPodName, Namespace: testNamespace,
 	}
 	r, fakeClient := setupReconciler(pod, enc)
 

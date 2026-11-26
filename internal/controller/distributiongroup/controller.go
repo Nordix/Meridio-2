@@ -113,6 +113,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		if err := r.updateStatus(ctx, &dg, false, nil, messageNoMatchingPods); err != nil {
 			if apierrors.IsConflict(err) {
+				//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 				return ctrl.Result{Requeue: true}, nil
 			}
 			log.Error(err, "failed to update status")
@@ -142,6 +143,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if len(acceptedGateways) > 1 {
 		if err := r.updateStatus(ctx, &dg, false, nil, messageMultipleGateways); err != nil {
 			if apierrors.IsConflict(err) {
+				//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 				return ctrl.Result{Requeue: true}, nil
 			}
 			log.Error(err, "failed to update status")
@@ -173,6 +175,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// 11. Reconcile LoadBalancerEndpointSlices (create/update/delete)
 	if err := r.reconcileSlices(ctx, &dg, desiredSlices, existingSlices); err != nil {
 		if apierrors.IsConflict(err) {
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 		log.Error(err, "failed to reconcile endpointslices")
@@ -196,6 +199,7 @@ func (r *DistributionGroupReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if apierrors.IsConflict(err) {
 			// Conflict is expected during concurrent reconciles (e.g., .Owns() watch triggers)
 			// Controller-runtime will automatically retry with fresh resourceVersion
+			//nolint:staticcheck // SA1019: deliberate, a lost conflict race is expected and is not a reconcile error.
 			return ctrl.Result{Requeue: true}, nil
 		}
 		log.Error(err, "failed to update status")

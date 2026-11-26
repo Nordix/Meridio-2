@@ -67,7 +67,7 @@ func TestCountEntries(t *testing.T) {
 // its element layout, this test catches the drift.
 func TestCountEntries_MatchesCidrToSetElements(t *testing.T) {
 	cidrs := []string{"10.0.0.1/32", "192.168.0.0/24", "2001:db8::1/128"}
-	var elems []nftables.SetElement
+	elems := make([]nftables.SetElement, 0, 2*len(cidrs))
 	for _, c := range cidrs {
 		_, ipNet, err := net.ParseCIDR(c)
 		assert.NoError(t, err)

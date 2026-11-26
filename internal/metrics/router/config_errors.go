@@ -68,7 +68,7 @@ func NewConfigErrors(prefix, gatewayName string) *ConfigErrors {
 		total: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: prefix + "_router_route_config_errors_total",
 			Help: "Number of failed netlink operations in the router's VIP routing path, by reason.",
-		}, []string{"gateway", "reason"}),
+		}, []string{labelGateway, "reason"}),
 		gateway: gatewayName,
 	}
 	for _, reason := range []string{ReasonRule, ReasonRoute} {

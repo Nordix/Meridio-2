@@ -23,6 +23,15 @@ import (
 	"strings"
 )
 
+// BIRD log destination types, as accepted in a bird log spec and stored in BirdLog.Type.
+const (
+	LogTypeStderr = "stderr"
+	LogTypeFile   = "file"
+	LogTypeFixed  = "fixed"
+	LogTypeSyslog = "syslog"
+	LogTypeUDP    = "udp"
+)
+
 // BirdLog represents a single BIRD log destination.
 // Maps to the BIRD config directive:
 //
@@ -84,10 +93,10 @@ func ParseBirdLog(s string, opts ...ParseOption) (BirdLog, error) {
 
 	typ := parts[0]
 	switch typ {
-	case "stderr":
+	case LogTypeStderr:
 		return BirdLog{Type: typ, Classes: parseClasses(parts[1], o.ClassArgSeparator)}, nil
 
-	case "file":
+	case LogTypeFile:
 		switch len(parts) {
 		case 3:
 			return BirdLog{Type: typ, Path: parts[1], Classes: parseClasses(parts[2], o.ClassArgSeparator)}, nil
@@ -101,7 +110,7 @@ func ParseBirdLog(s string, opts ...ParseOption) (BirdLog, error) {
 			return BirdLog{}, fmt.Errorf("invalid file log spec %q", s)
 		}
 
-	case "fixed":
+	case LogTypeFixed:
 		if len(parts) != 4 {
 			return BirdLog{}, fmt.Errorf("invalid fixed log spec %q", s)
 		}
@@ -111,15 +120,15 @@ func ParseBirdLog(s string, opts ...ParseOption) (BirdLog, error) {
 		}
 		return BirdLog{Type: typ, Path: parts[1], Size: size, Classes: parseClasses(parts[3], o.ClassArgSeparator)}, nil
 
-	case "syslog":
+	case LogTypeSyslog:
 		if len(parts) != 3 {
 			return BirdLog{}, fmt.Errorf("invalid syslog log spec %q", s)
 		}
 		return BirdLog{Type: typ, Path: parts[1], Classes: parseClasses(parts[2], o.ClassArgSeparator)}, nil
 
-	case "udp":
+	case LogTypeUDP:
 		// Support bracketed IPv6: udp:[addr]:port:classes
-		rest := s[len("udp"+o.ArgumentSeparator):]
+		rest := s[len(LogTypeUDP+o.ArgumentSeparator):]
 		var addr, remainder string
 		if strings.HasPrefix(rest, "[") {
 			closing := strings.Index(rest, "]")
@@ -148,7 +157,7 @@ func ParseBirdLog(s string, opts ...ParseOption) (BirdLog, error) {
 		if err != nil {
 			return BirdLog{}, fmt.Errorf("invalid port %q: %w", remParts[0], err)
 		}
-		return BirdLog{Type: "udp", Path: addr, Port: port, Classes: parseClasses(remParts[1], o.ClassArgSeparator)}, nil
+		return BirdLog{Type: LogTypeUDP, Path: addr, Port: port, Classes: parseClasses(remParts[1], o.ClassArgSeparator)}, nil
 
 	default:
 		return BirdLog{}, fmt.Errorf("unknown log type %q", typ)
@@ -183,18 +192,18 @@ func (l BirdLog) FmtParams() string {
 	classes := fmtClasses(l.Classes)
 
 	switch l.Type {
-	case "stderr":
+	case LogTypeStderr:
 		return fmt.Sprintf("log stderr %s;", classes)
-	case "file":
+	case LogTypeFile:
 		if l.Size > 0 {
 			return fmt.Sprintf("log %q %d %q %s;", l.Path, l.Size, l.BackupPath, classes)
 		}
 		return fmt.Sprintf("log %q %s;", l.Path, classes)
-	case "fixed":
+	case LogTypeFixed:
 		return fmt.Sprintf("log fixed %q %d %s;", l.Path, l.Size, classes)
-	case "syslog":
+	case LogTypeSyslog:
 		return fmt.Sprintf("log syslog name %q %s;", l.Path, classes)
-	case "udp":
+	case LogTypeUDP:
 		return fmt.Sprintf("log udp %s port %d %s;", l.Path, l.Port, classes)
 	default:
 		return ""

@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
@@ -52,7 +51,7 @@ func TestApplyBfdState(t *testing.T) {
 			},
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v4"},
+					Name: "gw-static-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:   "169.254.12.150",
 						Interface: "vlan-100",
@@ -74,7 +73,7 @@ func TestApplyBfdState(t *testing.T) {
 			},
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v4"},
+					Name: "gw-static-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:   "169.254.12.150",
 						Interface: "vlan-100",
@@ -94,7 +93,7 @@ func TestApplyBfdState(t *testing.T) {
 			bfdSessions: []bird.BfdSession{},
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v4"},
+					Name: "gw-static-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:   "169.254.12.150",
 						Interface: "vlan-100",
@@ -114,7 +113,7 @@ func TestApplyBfdState(t *testing.T) {
 			bfdSessions: []bird.BfdSession{},
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v4"},
+					Name: "gw-static-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:   "169.254.12.150",
 						Interface: "vlan-100",
@@ -134,7 +133,7 @@ func TestApplyBfdState(t *testing.T) {
 			bfdSessions: []bird.BfdSession{},
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-bgp-v4"},
+					Name: "gw-bgp-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:  "169.254.12.150",
 						Protocol: meridio2v1alpha1.RoutingProtocolBGP,
@@ -154,7 +153,7 @@ func TestApplyBfdState(t *testing.T) {
 			},
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v4"},
+					Name: "gw-static-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:   "169.254.12.150",
 						Interface: "vlan-100",
@@ -189,14 +188,14 @@ func TestApplyBfdState(t *testing.T) {
 			},
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-bgp-v4"},
+					Name: "gw-bgp-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:  "169.254.12.100",
 						Protocol: meridio2v1alpha1.RoutingProtocolBGP,
 					},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v4"},
+					Name: "gw-static-v4",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:   "169.254.12.150",
 						Interface: "vlan-100",
@@ -205,7 +204,7 @@ func TestApplyBfdState(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v6"},
+					Name: "gw-static-v6",
 					Spec: meridio2v1alpha1.GatewayRouterSpec{
 						Address:   "fd00::150",
 						Interface: "vlan-100",

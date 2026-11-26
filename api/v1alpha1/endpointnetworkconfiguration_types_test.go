@@ -26,11 +26,9 @@ import (
 func TestEndpointNetworkConfiguration_DeepCopy(t *testing.T) {
 	// 1. Construct a fully populated object
 	original := &EndpointNetworkConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
-			Labels:    map[string]string{"app": "meridio"},
-		},
+		Name:      "test-pod",
+		Namespace: "default",
+		Labels:    map[string]string{"app": "meridio"},
 		Spec: EndpointNetworkConfigurationSpec{
 			Gateways: []GatewayConnection{
 				{

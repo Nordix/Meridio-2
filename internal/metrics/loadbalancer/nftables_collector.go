@@ -60,14 +60,14 @@ func NewNftablesCollector(nft NftablesReader, gatewayName, prefix string, errs e
 			prefix+"_lb_nftables_vip_set_size",
 			"Number of VIP entries currently programmed in the LB's nftables VIP sets "+
 				"(IPv4 and IPv6 combined), from the meridio-lb table.",
-			[]string{"gateway"}, nil,
+			[]string{labelGateway}, nil,
 		),
 		dropsDesc: prometheus.NewDesc(
 			prefix+"_lb_drops_total",
 			"Number of packets dropped by the LB's drop-accounting chain, by reason "+
 				"(no_flow: matched a VIP but no flow selector matched; no_targets: a flow "+
 				"matched but no active targets). A reason is reported only when its drop rule exists.",
-			[]string{"gateway", "reason"}, nil,
+			[]string{labelGateway, labelReason}, nil,
 		),
 	}
 }
