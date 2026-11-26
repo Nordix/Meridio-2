@@ -441,7 +441,9 @@ set. See the note on `configureNftables`.
 
 **nftables chains:** `Setup()` reuses an existing `meridio-lb` table and flushes each chain before
 adding its rules, so a restart replaces the rules instead of duplicating them. Rule counters restart
-from zero.
+from zero. A failed `Setup()` leaves the table as it is: on a restart, the previous instance's
+rules (including the primary egress guard) stay in place, and the next start repairs a partially
+applied setup.
 
 ## Error Handling
 
@@ -641,7 +643,7 @@ IPs without a prefix length are normalized to `/32` (IPv4) or `/128` (IPv6). The
 |-----------|--------|
 | `Setup()` | Creates table, sets, and all chains with rules; existing chains are flushed first (see [Startup Recovery](#startup-recovery)) |
 | `SetVIPs(cidrs)` | Atomically replaces VIP set elements |
-| `Cleanup()` | Deletes the entire table (removes all rules/sets) |
+| `Cleanup()` | Deletes the entire table (removes all rules/sets). Not called by the LB: the table persists across container restarts, including after a failed `Setup()` |
 
 ## Flow Configuration
 
@@ -806,7 +808,7 @@ The LoadBalancer controller signals target availability to the router container 
 | At least one target successfully activated for a DG | `Readiness.Set(dgName)` | Creates `lb-ready-<dgName>` |
 | All targets removed or DG has no ready endpoints | `Readiness.Remove(dgName)` | Removes the readiness file |
 | DG deleted or no longer belongs to this Gateway | `cleanupDistributionGroup()` → `Readiness.Remove()` | Removes the readiness file |
-| Container startup | `Readiness.Cleanup()` | Removes all `lb-ready-*` files (clean slate) |
+| Container startup | `Readiness.Cleanup()` | Removes all `lb-ready-*` files (clean slate). Done right after config validation, so stale readiness state from a previous instance does not keep the router attracting external traffic before the LB is operational again |
 
 ### Router Side (Consumer)
 

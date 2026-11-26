@@ -82,6 +82,10 @@ func NewManager(queueNum, queueTotal uint16, nolbFwmark, notargetsFwmark, primar
 }
 
 // Setup creates the nftables table, chains, and sets.
+//
+// Setup is idempotent: objects left in the netns by a previous instance (e.g. after a container
+// restart) are reused, and each chain is flushed and refilled in the same atomic batch, so a
+// repeated or partially failed Setup never duplicates rules or leaves a chain empty.
 func (m *Manager) Setup() error {
 	if err := m.createTable(); err != nil {
 		return err

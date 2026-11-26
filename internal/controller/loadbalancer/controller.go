@@ -84,6 +84,8 @@ type Controller struct {
 
 // nftablesManager interface for nftables operations
 type nftablesManager interface {
+	// Setup must be idempotent: SetupWithManager calls it on every container start against
+	// whatever a previous instance left in the netns, and does not clean up on failure.
 	Setup() error
 	SetVIPs(cidrs []string) error
 	Cleanup() error
@@ -377,19 +379,11 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("failed to create nftables manager: %w", err)
 	}
 
-	// Setup shared nftables table
+	// Setup shared nftables table. On failure, keep whatever exists: on a restart that is the
+	// previous instance's table, whose primary egress guard must stay in place while the router
+	// may still advertise VIPs. Setup is idempotent, so the next start repairs a partial table.
 	if err := c.nftManager.Setup(); err != nil {
-		// Cleanup partially created resources
-		_ = c.nftManager.Cleanup()
 		return fmt.Errorf("failed to setup nftables: %w", err)
-	}
-
-	// Clean up readiness directory on startup
-	if !c.Readiness.Enabled() {
-		log.Log.Info("Readiness signaling disabled (--readiness-dir/MERIDIO_READINESS_DIR is empty), no readiness files will be written")
-	}
-	if err := c.Readiness.Cleanup(); err != nil {
-		return fmt.Errorf("failed to cleanup readiness directory: %w", err)
 	}
 
 	// Register field indexer for LoadBalancerEndpointSlice lookups by DG name.

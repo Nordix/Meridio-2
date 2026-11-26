@@ -387,4 +387,16 @@ func TestIntegration_SetupIsIdempotent(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, rules, n, "chain %s should not accumulate duplicate rules", chain.Name)
 	}
+
+	// The IPv6 output rule uses an anonymous ICMPv6 type set. Flushing the output chain removes
+	// the previous rule, which must release its anonymous set instead of leaving it behind.
+	sets, err := conn.GetSets(second.table)
+	require.NoError(t, err)
+	var anonymous int
+	for _, s := range sets {
+		if s.Anonymous {
+			anonymous++
+		}
+	}
+	assert.Equal(t, 1, anonymous, "repeated Setup should not accumulate anonymous sets")
 }
