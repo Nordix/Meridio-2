@@ -143,11 +143,11 @@ kubectl logs -n <ns> <sllbr-pod> -c router
 
 Meridio-2 uses structured JSON logging via controller-runtime's zap logger.
 
-BIRD logs are not sent to stdout — they are written to a file inside the router container. To view BIRD logs:
+The LB deployment template sends BIRD logs to a file inside the router container (`/var/log/bird/bird.log`, rotated to `bird.log.1` at 100 MiB). To view them:
 ```bash
 kubectl exec -n <ns> <sllbr-pod> -c router -- cat /var/log/bird/bird.log
 ```
-The log file path and size limit are configurable via `MERIDIO_BIRD_LOG_FILE` and `MERIDIO_BIRD_LOG_FILE_SIZE`.
+Log destinations, including the file path, rotation size and backup file, are set with `MERIDIO_BIRD_LOG` (`--bird-log`, semicolon-separated), e.g. `file:/var/log/bird/bird.log:104857600:/var/log/bird/bird.log.1:all`; see [router.md](../controllers/router.md). Adding `stderr:all` also sends BIRD logs to the router container log (`kubectl logs ... -c router`, logger `bird`). Errors BIRD prints before its logging is set up, such as config parse errors at startup, always appear there.
 
 ## Enter Containers
 

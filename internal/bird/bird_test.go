@@ -693,6 +693,7 @@ func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.nl = &netlinkMock{} // avoid real netlink calls
+	b.checkConfig = acceptConfig
 
 	vips := []string{"20.0.0.1", "2001:db8::1"}
 	routers := []*meridio2v1alpha1.GatewayRouter{
