@@ -139,6 +139,14 @@ var _ = Describe("E2E TCP-AO Test Suite", Label("ipv4"), func() {
 							g.Expect(err).NotTo(HaveOccurred())
 							g.Expect(out).To(ContainSubstring("authentication ao;"))
 							g.Expect(out).To(ContainSubstring("algorithm hmac sha256;"))
+							// Pin the exact rendered key lines (hex bytestring plus the
+							// human-readable comment) for the keys in
+							// suites/tcp-ao/routing.yaml. Mirrors the MD5 suite which
+							// pins its rendered password line.
+							g.Expect(out).To(ContainSubstring(
+								`secret hex:6d792d7365637572652d6d61737465722d6b65792d737472696e67; # "my-secure-master-key-string"`))
+							g.Expect(out).To(ContainSubstring(
+								`secret hex:6d792d6e65772d6d61737465722d6b65792d666f722d726f746174696f6e; # "my-new-master-key-for-rotation"`))
 						}).Should(Succeed())
 					})
 					It(fmt.Sprintf("BGP is Up %s", gw.name), func() {
@@ -274,6 +282,18 @@ var _ = Describe("E2E TCP-AO Test Suite", Label("ipv4"), func() {
 						"-p", `{"spec":{"bgp":{"authentication":{"tcpAo":{"currentKeyId":2}}}}}`)
 					_, err = utils.Run(cmd)
 					Expect(err).NotTo(HaveOccurred())
+
+					By("rendering the new key as the preferred one in bird.conf")
+					Eventually(func(g Gomega) {
+						cmd = exec.Command("kubectl", "exec", "-n", suite.namespace,
+							podName, "-c", "router", "--",
+							"cat", "/etc/bird/bird.conf")
+						out, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						// Each key block ends at the first "}", so [^}]* stays inside it.
+						g.Expect(out).To(MatchRegexp(`(?s)send id 2;[^}]*preferred;`))
+						g.Expect(out).NotTo(MatchRegexp(`(?s)send id 1;[^}]*preferred;`))
+					}).Should(Succeed())
 
 					By("waiting for new RNext key")
 					Eventually(func(g Gomega) {

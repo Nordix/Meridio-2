@@ -19,6 +19,7 @@ package bird
 import (
 	"cmp"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"slices"
@@ -318,8 +319,14 @@ func toBGPRouterData(router *meridio2v1alpha1.GatewayRouter, auth ResolvedAuth) 
 		//nolint:staticcheck // SA1019: this code implements the deprecated MD5 mechanism.
 		md5Spec = router.Spec.BGP.Authentication.Md5
 	}
-	tcpAo := tcpAoConfig(tcpAoSpec, auth.TcpAoPasswords)
-	md5 := md5Config(md5Spec, auth.Md5Password)
+	tcpAo, err := tcpAoConfig(tcpAoSpec, auth.TcpAoPasswords)
+	if err != nil {
+		return bgpRouterData{}, fmt.Errorf("router %q: %w", router.Name, err)
+	}
+	md5, err := md5Config(md5Spec, auth.Md5Password)
+	if err != nil {
+		return bgpRouterData{}, fmt.Errorf("router %q: %w", router.Name, err)
+	}
 
 	return bgpRouterData{
 		Name:       router.Name,
@@ -379,16 +386,34 @@ func formatBFDInterfaceParams(spec meridio2v1alpha1.BfdSpec) string {
 	}, " ")
 }
 
-func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]string) string {
-	if tcpAo == nil || len(tcpAo.Keychain) == 0 {
-		return ""
+// tcpAoConfig renders the TCP-AO block for a GatewayRouter, or "" when the
+// spec requests no TCP-AO (nil spec). Once TCP-AO is requested it fails closed:
+// every keychain entry must have a resolved key that passes ValidateTcpAoKey,
+// otherwise an error is returned rather than rendering a session with fewer
+// keys or none at all. See md5Config for how these render-side errors relate
+// to the controller-side checks.
+func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]string) (string, error) {
+	if tcpAo == nil {
+		return "", nil
+	}
+	// The API requires at least one key; an empty keychain here would render
+	// a peer without authentication.
+	if len(tcpAo.Keychain) == 0 {
+		return "", errors.New("TCP-AO requested but the keychain is empty")
 	}
 
 	keys := make([]tcpAoKeyData, 0, len(tcpAo.Keychain))
 	for _, key := range tcpAo.Keychain {
 		password, ok := passwords[key.SendId]
 		if !ok {
-			continue
+			return "", fmt.Errorf("TCP-AO key send id %d: no resolved key", key.SendId)
+		}
+		// Defense-in-depth: the caller validates before populating passwords,
+		// but enforce the gate here too so a corrupt key can never reach the
+		// rendered config (see ValidateTcpAoKey). The key value is not included
+		// in the error.
+		if err := ValidateTcpAoKey(password); err != nil {
+			return "", fmt.Errorf("TCP-AO key send id %d: %w", key.SendId, err)
 		}
 		keys = append(keys, tcpAoKeyData{
 			SendId:    key.SendId,
@@ -399,45 +424,52 @@ func tcpAoConfig(tcpAo *meridio2v1alpha1.BgpTcpAoSpec, passwords map[uint8]strin
 		})
 	}
 
-	if len(keys) == 0 {
-		return ""
-	}
-
 	slices.SortFunc(keys, func(a, b tcpAoKeyData) int {
 		return cmp.Compare(a.SendId, b.SendId)
 	})
 	var buf strings.Builder
 	if err := tcpAoTmpl.Execute(&buf, tcpAoData{Keys: keys, NextKeyId: tcpAo.NextKeyId}); err != nil {
-		return ""
+		return "", err
 	}
-	return buf.String()
+	return buf.String(), nil
 }
 
+// md5Config renders the MD5 password line for a GatewayRouter, or "" when the
+// spec requests no MD5 (nil spec). Once MD5 is requested it fails closed: a
+// missing (empty) or unusable key is an error, never a peer rendered without
+// authentication.
+//
+// Two layers check keys and they deliberately fail differently. The controller
+// (resolvePasswords) catches every condition a user can cause, such as a
+// missing Secret or a bad value: it logs, keeps the previous BIRD config and
+// waits for the next watch event, with no error returned. Errors from this
+// function propagate through Configure as a failed reconcile with exponential
+// backoff, which is right only for conditions that can arise from an internal
+// bug. So do not move a user-caused check from the controller into the
+// renderers, or a bad Secret turns into a hot error loop.
+//
 //nolint:staticcheck // SA1019: this code implements the deprecated MD5 mechanism.
-func md5Config(md5 *meridio2v1alpha1.BgpMd5Spec, password string) string {
-	if md5 == nil || password == "" {
-		return ""
+func md5Config(md5 *meridio2v1alpha1.BgpMd5Spec, password string) (string, error) {
+	if md5 == nil {
+		return "", nil
 	}
-	// BGP's "password" option takes a quoted string, not a bytestring (BIRD
-	// proto/bgp/config.Y: "PASSWORD text"), so unlike TCP-AO the key cannot be
-	// hex-encoded. BIRD does no unescaping inside quoted strings, so the raw key
-	// bytes are emitted verbatim between the quotes; the caller must have
-	// rejected any key that is not QuotedStringRepresentable, otherwise the
-	// emitted config would be corrupt or unparseable. No human-readable comment
+	// The key is emitted verbatim between double quotes, so a key that does
+	// not pass ValidateMd5Key must never get here: enforce the gate at the
+	// rendering site rather than trusting the caller. No human-readable comment
 	// is added (unlike TCP-AO): the quoted key is already human-readable, so a
 	// strconv.Quote rendering would be redundant.
-	return fmt.Sprintf("password \"%s\";", password)
+	if err := ValidateMd5Key(password); err != nil {
+		return "", fmt.Errorf("MD5 key: %w", err)
+	}
+	return fmt.Sprintf("password \"%s\";", password), nil
 }
 
-// MaxKeyLength is the maximum BGP authentication key length in bytes, shared by
-// TCP-AO and MD5. It matches Linux TCP_AO_MAXKEYLEN and TCP_MD5SIG_MAXKEYLEN
-// (both 80, see <linux/tcp.h>) and BIRD's AO_MAX_KEY_LENGTH (lib/socket.h). The
-// kernel measures this in bytes, not characters, so a multi-byte UTF-8 key can
-// exceed the limit with fewer than 80 runes. Keys longer than this are rejected
-// before reaching BIRD: an over-length TCP-AO secret is a BIRD config-load
-// error, and an over-length MD5 key is silently accepted by BIRD but then
-// rejected by the kernel setsockopt(TCP_MD5SIG), breaking the session.
-const MaxKeyLength = 80
+// maxKeyLength is the maximum BGP authentication key length in bytes, shared by
+// TCP-AO and MD5. Longer keys are not allowed by the components involved (such
+// as BIRD and the Linux kernel), so they are rejected before reaching BIRD. The
+// limit is in bytes, not characters, so a multi-byte UTF-8 key can exceed it
+// with fewer than 80 runes.
+const maxKeyLength = 80
 
 // birdBytestring encodes arbitrary key material as a BIRD "hex:" bytestring,
 // for use with the TCP-AO "secret" option.
@@ -455,15 +487,53 @@ func birdBytestring(s string) string {
 	return "hex:" + hex.EncodeToString([]byte(s))
 }
 
-// QuotedStringRepresentable reports whether s can be carried by a BIRD quoted
-// string and the kernel's TCP MD5 C-string API. BIRD does no unescaping inside
-// quoted strings, so a double quote would terminate the string and a newline
-// (or carriage return) is a parse error; the kernel measures the MD5 key with
-// strlen (sysdep/linux/sysio.h), so an embedded NUL would truncate it. Such
-// bytes cannot be expressed, so a key containing any of them must be rejected
-// rather than silently corrupted. This constraint is specific to MD5; TCP-AO
-// keys are hex-encoded (see birdBytestring) and may contain any byte.
-func QuotedStringRepresentable(s string) bool {
+// ValidateTcpAoKey reports why a resolved TCP-AO key value cannot be used, or
+// nil when it is usable. TCP-AO keys are emitted as a BIRD "hex:" bytestring
+// (see birdBytestring) and so may contain any byte; only the non-empty and
+// length (maxKeyLength) constraints apply. The returned error text never
+// includes the key value, so it is safe to log.
+func ValidateTcpAoKey(key string) error {
+	return validateKeyCommon(key)
+}
+
+// ValidateMd5Key reports why a resolved MD5 key value cannot be used, or nil
+// when it is usable. In addition to the shared non-empty and length checks (see
+// ValidateTcpAoKey), MD5 keys must not contain bytes that are not allowed (see
+// md5KeyBytesAllowed). The returned error text never includes the key value, so
+// it is safe to log.
+//
+// MD5 (RFC2385) is a weak, legacy mechanism superseded by TCP-AO (RFC5925).
+// This validator exists only to guard the MD5 path, and is the only correct way
+// to validate an MD5 key.
+func ValidateMd5Key(key string) error {
+	if err := validateKeyCommon(key); err != nil {
+		return err
+	}
+	if !md5KeyBytesAllowed(key) {
+		return errors.New("value contains NUL, double quote, CR or LF")
+	}
+	return nil
+}
+
+// validateKeyCommon enforces the constraints common to both mechanisms: a key
+// must be non-empty and at most maxKeyLength bytes.
+func validateKeyCommon(key string) error {
+	switch {
+	case key == "":
+		return errors.New("empty value")
+	case len(key) > maxKeyLength:
+		return fmt.Errorf("value is %d bytes, max %d", len(key), maxKeyLength)
+	}
+	return nil
+}
+
+// md5KeyBytesAllowed reports whether s avoids the bytes that are not allowed
+// in an MD5 key. NUL, double quote and LF are not supported by the components
+// involved (such as BIRD and the Linux kernel). We additionally do not allow
+// CR. A key containing any of them is rejected rather than silently corrupted.
+// This is specific to MD5; TCP-AO keys are hex-encoded (see birdBytestring) and
+// may contain any byte.
+func md5KeyBytesAllowed(s string) bool {
 	return !strings.ContainsAny(s, "\x00\"\n\r")
 }
 

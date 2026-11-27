@@ -53,7 +53,7 @@ stringData:
   key3: "third-master-key-value"
 ```
 
-**Key constraints**: A key value must be non-empty and at most **80 bytes** (bytes, not characters); empty or over-length keys cause the router to be skipped and the previous config retained. See [Key encoding and length limit](../controllers/router.md#bgp-authentication-tcp-ao) in the router controller doc for details.
+**Key constraints**: A key value must be non-empty and at most **80 bytes** (bytes, not characters); an empty or over-length key holds back the whole Gateway's BIRD config (not just the affected router) and the previous config is retained. See [Key encoding and length limit](../controllers/router.md#bgp-authentication-tcp-ao) in the router controller doc for details.
 
 ## Key Rotation Procedure
 
