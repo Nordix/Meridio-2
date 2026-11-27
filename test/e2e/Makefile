@@ -30,7 +30,7 @@ WHEREABOUTS_VERSION ?= v0.8.0
 # Suites
 SUITES_IPV4 ?= shared-appnetwork separate-appnetwork-v4 separate-static-appnetwork sctp-multihoming ipv4-simple pod-cache-label tcp-ao md5 bfd-detection
 SUITES_DS ?= dual-stack-simple shared-appnetwork-ds
-SUITES_IPV6 ?= separate-appnetwork-v6
+SUITES_IPV6 ?= separate-appnetwork-v6 client-v6
 
 # Test flags (e.g., make test GINKGO_FLAGS="--junit-report=report.xml")
 GINKGO_FLAGS ?=
@@ -418,6 +418,31 @@ test-md5: ## Run e2e tests for md5 suite (deprecated).
 undeploy-md5: ## Undeploy md5 topology (deprecated).
 	@NS=e2e-md5; \
 	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-md5 --ignore-not-found=true; \
+	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
+
+################################################################################
+##@ Suite: client-v6
+################################################################################
+
+# Target-initiated (client) traffic over IPv6: application Pods connect from the
+# VIP to an external server simulated on the VPN gateway (fd00:200:90::100).
+# gw-c6 peers on VLAN 1600 (ASN 64525). Part of SUITES_IPV6.
+
+.PHONY: client-v6
+client-v6: deploy-client-v6 test-client-v6 ## Deploy and test client-v6 suite.
+
+.PHONY: deploy-client-v6
+deploy-client-v6: cluster ## Deploy client-v6 topology.
+	$(call deploy-suite,e2e-client-v6,$(shell pwd)/suites/client-v6,client-v6,sllbr-gw-c6)
+
+.PHONY: test-client-v6
+test-client-v6: ## Run e2e tests for client-v6 suite.
+	cd $(PROJECT_ROOT)/test/e2e && go run github.com/onsi/ginkgo/v2/ginkgo -v --tags=e2e --focus="Client IPv6" $(GINKGO_FLAGS)
+
+.PHONY: undeploy-client-v6
+undeploy-client-v6: ## Undeploy client-v6 topology.
+	@NS=e2e-client-v6; \
+	$(KUBECTL) delete validatingwebhookconfiguration meridio-2-validating-webhook-configuration-client-v6 --ignore-not-found=true; \
 	$(KUBECTL) delete namespace $$NS --ignore-not-found=true
 
 ################################################################################

@@ -24,8 +24,6 @@ import (
 	"testing"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 )
 
@@ -41,8 +39,8 @@ var testBGPSpec = meridio2v1alpha1.BgpSpec{
 	RemoteASN:  65000,
 	LocalASN:   65001,
 	HoldTime:   "240s",
-	LocalPort:  uint16Ptr(179),
-	RemotePort: uint16Ptr(179),
+	LocalPort:  new(uint16(179)),
+	RemotePort: new(uint16(179)),
 }
 
 func TestGenerateConfig(t *testing.T) {
@@ -103,7 +101,7 @@ func testWithVips(b *Bird) func(t *testing.T) {
 func testWithRouter(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		router := &meridio2v1alpha1.GatewayRouter{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-router"},
+			Name: "test-router",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Address: "192.168.1.1",
 				BGP:     &testBGPSpec,
@@ -134,15 +132,15 @@ func testMatchesReferenceConfig() func(t *testing.T) {
 			t.Fatal(err)
 		}
 		router := &meridio2v1alpha1.GatewayRouter{
-			ObjectMeta: metav1.ObjectMeta{Name: "gatewayrouter-sample"},
+			Name: "gatewayrouter-sample",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "vlan-100",
 				Address:   "169.254.100.150",
 				BGP: &meridio2v1alpha1.BgpSpec{
 					RemoteASN:  4200000000,
 					LocalASN:   64512,
-					LocalPort:  uint16Ptr(10179),
-					RemotePort: uint16Ptr(10179),
+					LocalPort:  new(uint16(10179)),
+					RemotePort: new(uint16(10179)),
 					HoldTime:   "3s",
 					BFD: &meridio2v1alpha1.BfdSpec{
 						MinRx:      "300ms",
@@ -266,14 +264,14 @@ func testBGPTemplateSelectedPerFamily(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		routers := []*meridio2v1alpha1.GatewayRouter{
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
+				Name: "gw-v4",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "192.168.1.1",
 					BGP: &testBGPSpec,
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
+				Name: "gw-v6",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "fd00::1",
 					BGP: &testBGPSpec,
@@ -317,14 +315,14 @@ func testDuplicateInterfaceDedup(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		routers := []*meridio2v1alpha1.GatewayRouter{
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
+				Name: "gw-v4",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "192.168.1.1",
 					BGP: &testBGPSpec,
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
+				Name: "gw-v6",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "fd00::1",
 					BGP: &testBGPSpec,
@@ -347,7 +345,7 @@ func testDuplicateInterfaceDedup(b *Bird) func(t *testing.T) {
 func testStaticRouterWithBFD(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		router := &meridio2v1alpha1.GatewayRouter{
-			ObjectMeta: metav1.ObjectMeta{Name: "gw-static"},
+			Name: "gw-static",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext-vlan",
 				Address:   "169.254.100.254",
@@ -377,7 +375,7 @@ func testStaticRouterWithBFD(b *Bird) func(t *testing.T) {
 func testStaticRouterBFDParamsOnInterface(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		router := &meridio2v1alpha1.GatewayRouter{
-			ObjectMeta: metav1.ObjectMeta{Name: "gw-static"},
+			Name: "gw-static",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext-vlan",
 				Address:   "169.254.100.254",
@@ -405,7 +403,7 @@ func testStaticBFDParamsFirstAlphabeticallyWins(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		routers := []*meridio2v1alpha1.GatewayRouter{
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "m-gateway"},
+				Name: "m-gateway",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "ext-vlan", Address: "169.254.100.4",
 					Protocol: meridio2v1alpha1.RoutingProtocolStatic,
@@ -415,7 +413,7 @@ func testStaticBFDParamsFirstAlphabeticallyWins(b *Bird) func(t *testing.T) {
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "a-gateway"},
+				Name: "a-gateway",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "ext-vlan", Address: "169.254.100.1",
 					Protocol: meridio2v1alpha1.RoutingProtocolStatic,
@@ -425,7 +423,7 @@ func testStaticBFDParamsFirstAlphabeticallyWins(b *Bird) func(t *testing.T) {
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "z-gateway"},
+				Name: "z-gateway",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "ext-vlan", Address: "169.254.100.5",
 					Protocol: meridio2v1alpha1.RoutingProtocolStatic,
@@ -435,7 +433,7 @@ func testStaticBFDParamsFirstAlphabeticallyWins(b *Bird) func(t *testing.T) {
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "c-gateway"},
+				Name: "c-gateway",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "ext-vlan", Address: "169.254.100.3",
 					Protocol: meridio2v1alpha1.RoutingProtocolStatic,
@@ -445,7 +443,7 @@ func testStaticBFDParamsFirstAlphabeticallyWins(b *Bird) func(t *testing.T) {
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "b-gateway"},
+				Name: "b-gateway",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "ext-vlan", Address: "169.254.100.2",
 					Protocol: meridio2v1alpha1.RoutingProtocolStatic,
@@ -469,7 +467,7 @@ func testStaticBFDParamsFirstAlphabeticallyWins(b *Bird) func(t *testing.T) {
 func testStaticRouterWithoutBFD(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		router := &meridio2v1alpha1.GatewayRouter{
-			ObjectMeta: metav1.ObjectMeta{Name: "gw-static-no-bfd"},
+			Name: "gw-static-no-bfd",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext-vlan",
 				Address:   "169.254.100.254",
@@ -493,7 +491,7 @@ func testStaticRouterWithoutBFD(b *Bird) func(t *testing.T) {
 func testStaticRouterIPv6WithoutBFD(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		router := &meridio2v1alpha1.GatewayRouter{
-			ObjectMeta: metav1.ObjectMeta{Name: "gw-static-v6"},
+			Name: "gw-static-v6",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext-vlan",
 				Address:   "100:100::254",
@@ -518,7 +516,7 @@ func testMixedBGPAndStaticRouters(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		routers := []*meridio2v1alpha1.GatewayRouter{
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "bgp-gw"},
+				Name: "bgp-gw",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "192.168.1.1",
 					Protocol: meridio2v1alpha1.RoutingProtocolBGP,
@@ -526,7 +524,7 @@ func testMixedBGPAndStaticRouters(b *Bird) func(t *testing.T) {
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "static-gw"},
+				Name: "static-gw",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "net1", Address: "192.168.1.2",
 					Protocol: meridio2v1alpha1.RoutingProtocolStatic,
@@ -553,28 +551,28 @@ func testSortedByName(b *Bird) func(t *testing.T) {
 	return func(t *testing.T) {
 		routers := []*meridio2v1alpha1.GatewayRouter{
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "D"},
+				Name: "D",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_D", Address: "192.168.4.1",
 					BGP: &testBGPSpec,
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "B"},
+				Name: "B",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_B", Address: "192.168.2.1",
 					BGP: &testBGPSpec,
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "C"},
+				Name: "C",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_C", Address: "192.168.3.1",
 					BGP: &testBGPSpec,
 				},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "A"},
+				Name: "A",
 				Spec: meridio2v1alpha1.GatewayRouterSpec{
 					Interface: "if_A", Address: "192.168.1.1",
 					BGP: &testBGPSpec,
@@ -615,11 +613,6 @@ func normalizeWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-//go:fix inline
-func uint16Ptr(i uint16) *uint16 {
-	return new(i)
-}
-
 func TestGenerateConfig_Deterministic(t *testing.T) {
 	b, err := New(testConfig)
 	if err != nil {
@@ -628,21 +621,21 @@ func TestGenerateConfig_Deterministic(t *testing.T) {
 
 	routers := []*meridio2v1alpha1.GatewayRouter{
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "router-a"},
+			Name: "router-a",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext1", Address: "169.254.100.1",
 				BGP: &testBGPSpec,
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "router-b"},
+			Name: "router-b",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext2", Address: "169.254.100.2",
 				BGP: &testBGPSpec,
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "router-c"},
+			Name: "router-c",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext3", Address: "169.254.100.3",
 				BGP: &testBGPSpec,
@@ -698,7 +691,7 @@ func TestConfigure_SkipsRewriteWhenUnchanged(t *testing.T) {
 	vips := []string{"20.0.0.1", "2001:db8::1"}
 	routers := []*meridio2v1alpha1.GatewayRouter{
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "router-a"},
+			Name: "router-a",
 			Spec: meridio2v1alpha1.GatewayRouterSpec{
 				Interface: "ext1", Address: "169.254.100.1",
 				BGP: &testBGPSpec,
@@ -1001,7 +994,7 @@ func TestGenerateConfigWithTcpAo(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := &meridio2v1alpha1.GatewayRouter{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-ao"},
+		Name: "gw-ao",
 		Spec: meridio2v1alpha1.GatewayRouterSpec{
 			Interface: "eth0",
 			Address:   "10.0.0.1",
@@ -1009,8 +1002,8 @@ func TestGenerateConfigWithTcpAo(t *testing.T) {
 				RemoteASN:  65000,
 				LocalASN:   65001,
 				HoldTime:   "240s",
-				LocalPort:  uint16Ptr(179),
-				RemotePort: uint16Ptr(179),
+				LocalPort:  new(uint16(179)),
+				RemotePort: new(uint16(179)),
 				Authentication: &meridio2v1alpha1.BgpAuthentication{
 					Type: meridio2v1alpha1.BgpAuthTypeTcpAo,
 					TcpAo: &meridio2v1alpha1.BgpTcpAoSpec{
@@ -1057,7 +1050,7 @@ func TestGenerateConfigWithMd5(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := &meridio2v1alpha1.GatewayRouter{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-md5"},
+		Name: "gw-md5",
 		Spec: meridio2v1alpha1.GatewayRouterSpec{
 			Interface: "eth0",
 			Address:   "10.0.0.1",
@@ -1065,8 +1058,8 @@ func TestGenerateConfigWithMd5(t *testing.T) {
 				RemoteASN:  65000,
 				LocalASN:   65001,
 				HoldTime:   "240s",
-				LocalPort:  uint16Ptr(179),
-				RemotePort: uint16Ptr(179),
+				LocalPort:  new(uint16(179)),
+				RemotePort: new(uint16(179)),
 				Authentication: &meridio2v1alpha1.BgpAuthentication{
 					Type: meridio2v1alpha1.BgpAuthTypeMd5,
 					Md5: &meridio2v1alpha1.BgpMd5Spec{

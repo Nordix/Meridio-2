@@ -75,7 +75,7 @@ func getIDMap(slices []meridio2v1alpha1.LoadBalancerEndpointSlice) map[string]in
 func TestCalculateMaglevSlices_StableAcrossReconciles(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 32},
@@ -118,7 +118,7 @@ func TestCalculateMaglevSlices_StableAcrossReconciles(t *testing.T) {
 func TestCalculateMaglevSlices_AsymmetricNetworkPresence(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 32},
@@ -174,7 +174,7 @@ func TestCalculateMaglevSlices_AsymmetricNetworkPresence(t *testing.T) {
 func TestCalculateMaglevSlices_PartialPodReplacement(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 32},
@@ -236,7 +236,7 @@ func TestCalculateMaglevSlices_PartialPodReplacement(t *testing.T) {
 func TestCalculateMaglevSlices_CapacityExceeded(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 4},
@@ -287,7 +287,7 @@ func TestCalculateMaglevSlices_CapacityExceeded(t *testing.T) {
 func TestCreateSlices_NonMaglevIncludesAll(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 	}
 
 	scrapedPods := make([]podWithAddresses, 64)
@@ -328,7 +328,7 @@ func TestSliceNeedsUpdate(t *testing.T) {
 		{
 			name: "no change",
 			existing: &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"key": "value"}},
+				Labels: map[string]string{"key": "value"},
 				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
 						{Target: meridio2v1alpha1.EndpointTarget{UID: "uid-1"}},
@@ -336,7 +336,7 @@ func TestSliceNeedsUpdate(t *testing.T) {
 				},
 			},
 			desired: &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"key": "value"}},
+				Labels: map[string]string{"key": "value"},
 				Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 					Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
 						{Target: meridio2v1alpha1.EndpointTarget{UID: "uid-1"}},
@@ -366,10 +366,10 @@ func TestSliceNeedsUpdate(t *testing.T) {
 		{
 			name: "labels changed",
 			existing: &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"key": "old"}},
+				Labels: map[string]string{"key": "old"},
 			},
 			desired: &meridio2v1alpha1.LoadBalancerEndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"key": "new"}},
+				Labels: map[string]string{"key": "new"},
 			},
 			expected: true,
 		},
@@ -388,7 +388,7 @@ func TestSliceNeedsUpdate(t *testing.T) {
 func TestCreateSlices_SliceSplitting(t *testing.T) {
 	r := &DistributionGroupReconciler{MaxEndpointsPerSlice: 100}
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 	}
 
 	// 150 Pods should split into 2 slices (100 + 50)
@@ -421,7 +421,7 @@ func TestCreateSlices_SliceSplitting(t *testing.T) {
 func TestCreateSlices_LabelsAndMetadata(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 	}
 
 	scrapedPods := []podWithAddresses{
@@ -456,12 +456,12 @@ func TestCreateSlices_LabelsAndMetadata(t *testing.T) {
 func TestCreateSlices_StructurePreservation(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 	}
 
 	// Existing slice with 2 endpoints
 	existingSlice := meridio2v1alpha1.LoadBalancerEndpointSlice{
-		ObjectMeta: metav1.ObjectMeta{Name: "existing-slice"},
+		Name: "existing-slice",
 		Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 			Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
 				{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-1"}},
@@ -493,13 +493,13 @@ func TestCreateSlices_StructurePreservation(t *testing.T) {
 func TestCreateSlices_Compaction(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 	}
 
 	// Two existing slices: slice-0 had [pod-1, pod-2, pod-3], slice-1 had [pod-4, pod-5]
 	existingSlices := []meridio2v1alpha1.LoadBalancerEndpointSlice{
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
+			Name: "slice-0",
 			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 				Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
 					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-1"}},
@@ -509,7 +509,7 @@ func TestCreateSlices_Compaction(t *testing.T) {
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "slice-1"},
+			Name: "slice-1",
 			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 				Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
 					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-4"}},
@@ -543,7 +543,7 @@ func TestCreateSlices_Compaction(t *testing.T) {
 func TestCreateSlices_CompactionPreservesFullSlices(t *testing.T) {
 	r := &DistributionGroupReconciler{MaxEndpointsPerSlice: 10}
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 	}
 
 	// Realistic scenario: 23 pods previously filled 3 slices (10+10+3).
@@ -581,16 +581,16 @@ func TestCreateSlices_CompactionPreservesFullSlices(t *testing.T) {
 
 	existingSlices := []meridio2v1alpha1.LoadBalancerEndpointSlice{
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
-			Spec:       meridio2v1alpha1.LoadBalancerEndpointSliceSpec{Endpoints: existingSlice0Endpoints},
+			Name: "slice-0",
+			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{Endpoints: existingSlice0Endpoints},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "slice-1"},
-			Spec:       meridio2v1alpha1.LoadBalancerEndpointSliceSpec{Endpoints: existingSlice1Endpoints},
+			Name: "slice-1",
+			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{Endpoints: existingSlice1Endpoints},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "slice-2"},
-			Spec:       meridio2v1alpha1.LoadBalancerEndpointSliceSpec{Endpoints: existingSlice2Endpoints},
+			Name: "slice-2",
+			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{Endpoints: existingSlice2Endpoints},
 		},
 	}
 
@@ -637,7 +637,7 @@ func TestCreateSlices_CompactionPreservesFullSlices(t *testing.T) {
 func TestCreateSlices_CompactionPreservesMaglevIDs(t *testing.T) {
 	r := newTestReconciler()
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-dg", Namespace: "default"},
+		Name: "test-dg", Namespace: "default",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Type:   meridio2v1alpha1.DistributionGroupTypeMaglev,
 			Maglev: &meridio2v1alpha1.MaglevConfig{MaxEndpoints: 32},
@@ -649,20 +649,20 @@ func TestCreateSlices_CompactionPreservesMaglevIDs(t *testing.T) {
 	// Existing slices with Maglev IDs
 	existingSlices := []meridio2v1alpha1.LoadBalancerEndpointSlice{
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
+			Name: "slice-0",
 			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 				Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
-					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-0", Name: "pod-0"}, Identifier: int32Ptr(0)},
-					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-1", Name: "pod-1"}, Identifier: int32Ptr(1)},
-					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-2", Name: "pod-2"}, Identifier: int32Ptr(2)},
+					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-0", Name: "pod-0"}, Identifier: new(int32(0))},
+					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-1", Name: "pod-1"}, Identifier: new(int32(1))},
+					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-2", Name: "pod-2"}, Identifier: new(int32(2))},
 				},
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "slice-1"},
+			Name: "slice-1",
 			Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 				Endpoints: []meridio2v1alpha1.LoadBalancerEndpoint{
-					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-3", Name: "pod-3"}, Identifier: int32Ptr(3)},
+					{Target: meridio2v1alpha1.EndpointTarget{UID: "pod-3", Name: "pod-3"}, Identifier: new(int32(3))},
 				},
 			},
 		},

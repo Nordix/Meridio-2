@@ -61,6 +61,20 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | Internal (App net) | `fd00:cafe:1{X}0::/64` | `fd00:cafe:110::/64` |
 | VIP | `fd00:cafe:{Z}::{N}/128` | `fd00:cafe:1::1/128` |
 
+## Simulated External Hosts
+
+Traffic that should behave like traffic to or from a remote peer uses extra
+host addresses on the VPN gateway outside every peering subnet, so the LB
+reaches them through the BGP-learned default route rather than a connected
+route:
+
+| Address | VLAN | Used by |
+|---------|------|---------|
+| `200.100.0.100/32`, `200.100.1.100/32` | 500, 600 | sctp-multihoming (client local addresses) |
+| `fd00:200:90::100/128` | 1600 | client-v6 (ctraffic server for target-initiated traffic) |
+
+Other `200.x.0.100/32` addresses are also configured in `hack/vpn-gateway/init.sh`.
+
 ## VLAN & ASN Allocation Table
 
 | VLAN ID | Suite | IP Family | Gateway | External Subnet (IPv4) | External Subnet (IPv6) | Internal Subnet (IPv4) | Internal Subnet (IPv6) | VIP(s) | Local ASN | Remote ASN |
@@ -85,6 +99,7 @@ IPv6 achieves this with `fd00:cafe:{X}::` (external) vs `fd00:cafe:1{X}0::` (int
 | 1300 | bfd-detection | IPv4 | gw-bfd | `169.254.70.0/24` | — | `169.111.70.0/24` | — | `70.0.0.1/32` | 64522 | 4200000000 |
 | 1400 | md5 (deprecated) | IPv4 | gw-md1 | `169.254.80.0/24` | — | `169.111.80.0/24` | — | `80.0.0.1/32` | 64523 | 4200000000 |
 | 1500 | md5 (deprecated) | IPv4 | gw-md2 | `169.254.81.0/24` | — | `169.111.80.0/24` | — | `80.0.0.2/32` | 64524 | 4200000000 |
+| 1600 | client-v6 | IPv6 | gw-c6 | — | `fd00:cafe:90::/64` | — | `fd00:cafe:190::/64` | `fd00:cafe:9::1/128` | 64525 | 4200000000 |
 
 ## Adding a New Suite
 
@@ -218,6 +233,7 @@ Update this README whenever you add, remove, or modify a test suite. Specificall
 - The `separate-static-appnetwork` suite uses static routing with BFD. LB pod IPs are limited to `.1`-`.10` per VLAN (max 10 replicas per gateway) to match the gateway's pre-configured static routes.
 - The `bfd-detection` suite is a standalone single-gateway topology (VLAN 1300, `gw-bfd`) whose GatewayRouter starts with BFD enabled. Its e2e test measures BGP-down detection time with BFD (~0.9s) versus the BGP hold timer (~15s) by injecting an abrupt, silent VPN-gateway link failure, patching the router at runtime to remove/re-add the `bfd` block between phases. It uses a shortened 15s hold time so the no-BFD phase completes quickly, and restores BFD when done.
 - The `md5` suite (VLANs 1400/1500, `gw-md1`/`gw-md2`) exercises the **deprecated** BGP MD5 (RFC2385) authentication mechanism. It mirrors the `tcp-ao` suite but configures `authentication.type: MD5` with a single-Secret `md5` reference and asserts a `password "..."` line in BIRD plus an Established session; it has no key-rotation test because MD5 has no key rotation. The VPN gateway matches with a `password` line per peer in `hack/vpn-gateway/bird-gw.conf`.
+- The `client-v6` suite (VLAN 1600, `gw-c6`, single LB replica) covers target-initiated IPv6 traffic: each of three single-replica target Deployments connects from the VIP to a ctraffic server on `fd00:200:90::100`, all at the same time. Each target gets a disjoint `net.ipv4.ip_local_port_range`, and a per-instance L34Route/DistributionGroup on that port range returns the replies to it. A priority-100 catch-all route over all targets makes nfqlb match any ICMPv6 to the VIP deterministically. Nothing sends traffic to the VIP before the client phase (no VIP ping in the health check), because replying to inbound traffic would make the targets resolve their LB next hop early. Before the client phase the test also requires that no target has a neighbor entry for its LB next hop, so rerunning it without redeploying the suite fails with a clear message. Client success alone can be masked by the Pods' router reachability probe (see the troubleshooting guide), so the same spec also asserts that the LB's IPv6 output queue rule counted no packets. Unlike other suites, it is not rerunnable without redeploying: flushing the targets' neighbor entries would not restore the fresh state, because the router probe is rate-limited by the age of the route (60 s by default), not by the neighbor entry. It is part of the IPv6 suite set (`SUITES_IPV6`).
 
 ## Shared `ipv4-simple` Topology — Single-Suite Execution
 

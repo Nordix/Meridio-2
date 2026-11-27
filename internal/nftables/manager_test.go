@@ -25,6 +25,7 @@ import (
 	"github.com/nordix/meridio-2/internal/nfqlb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	netipv6 "golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
 )
 
@@ -248,6 +249,61 @@ func TestBuildPMTUDIPv6Exprs(t *testing.T) {
 	require.True(t, ok, "expr[18] should be Meta")
 	assert.Equal(t, expr.MetaKeyMARK, meta.Key)
 	assert.True(t, meta.SourceRegister)
+}
+
+func TestBuildOutputIPv6Exprs(t *testing.T) {
+	vipSet := dummySet("ipv6-vips")
+	typeSet := &nftables.Set{Name: "__set0", ID: 2, Anonymous: true, Constant: true}
+	exprs := buildOutputIPv6Exprs(vipSet, typeSet, 0, 4)
+
+	require.Len(t, exprs, 10, "IPv6 output rule should have 10 expressions")
+
+	// Match IPv6
+	assertMeta(t, exprs[0], expr.MetaKeyNFPROTO)
+	assertCmpEq(t, exprs[1], []byte{unix.AF_INET6})
+
+	// Match ICMPv6
+	assertMeta(t, exprs[2], expr.MetaKeyL4PROTO)
+	assertCmpEq(t, exprs[3], []byte{unix.IPPROTO_ICMPV6})
+
+	// dst IS VIP (IPv6 dst at offset 24, 16 bytes)
+	assertPayloadLoad(t, exprs[4], expr.PayloadBaseNetworkHeader, 24, 16)
+	assertLookupInvert(t, exprs[5], "ipv6-vips", false)
+
+	// ICMPv6 type in the steered set (transport header offset 0, 1 byte)
+	assertPayloadLoad(t, exprs[6], expr.PayloadBaseTransportHeader, 0, 1)
+	assertLookupInvert(t, exprs[7], "__set0", false)
+
+	// Counter, then queue
+	_, ok := exprs[8].(*expr.Counter)
+	assert.True(t, ok, "expr[8] should be Counter")
+	q, ok := exprs[9].(*expr.Queue)
+	require.True(t, ok, "expr[9] should be Queue")
+	assert.Equal(t, uint16(0), q.Num)
+	assert.Equal(t, uint16(4), q.Total)
+}
+
+// TestSteeredICMPv6Types pins the queued ICMPv6 types: error messages, Echo Request and Echo Reply.
+// Neighbor Discovery (types 133-137) must never be queued to nfqlb.
+func TestSteeredICMPv6Types(t *testing.T) {
+	assert.ElementsMatch(t, []netipv6.ICMPType{
+		netipv6.ICMPTypeDestinationUnreachable,
+		netipv6.ICMPTypePacketTooBig,
+		netipv6.ICMPTypeTimeExceeded,
+		netipv6.ICMPTypeParameterProblem,
+		netipv6.ICMPTypeEchoRequest,
+		netipv6.ICMPTypeEchoReply,
+	}, steeredICMPv6Types)
+
+	for _, nd := range []netipv6.ICMPType{
+		netipv6.ICMPTypeRouterSolicitation,
+		netipv6.ICMPTypeRouterAdvertisement,
+		netipv6.ICMPTypeNeighborSolicitation,
+		netipv6.ICMPTypeNeighborAdvertisement,
+		netipv6.ICMPTypeRedirect,
+	} {
+		assert.NotContains(t, steeredICMPv6Types, nd, "ND type %v must not be queued", nd)
+	}
 }
 
 // --- Test helpers ---

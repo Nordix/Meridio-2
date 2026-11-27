@@ -46,7 +46,7 @@ const (
 
 func acceptedGateway(name, controllerName string, addresses ...string) *gatewayv1.Gateway {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+		Name: name, Namespace: testNamespace,
 		Spec: gatewayv1.GatewaySpec{
 			GatewayClassName: "test-class",
 			Infrastructure: &gatewayv1.GatewayInfrastructure{
@@ -69,7 +69,7 @@ func acceptedGateway(name, controllerName string, addresses ...string) *gatewayv
 	}
 	for _, addr := range addresses {
 		gw.Status.Addresses = append(gw.Status.Addresses, gatewayv1.GatewayStatusAddress{
-			Type:  ptr(gatewayv1.IPAddressType),
+			Type:  new(gatewayv1.IPAddressType),
 			Value: addr,
 		})
 	}
@@ -78,7 +78,7 @@ func acceptedGateway(name, controllerName string, addresses ...string) *gatewayv
 
 func newDG(name string, selector map[string]string, parentGateway string) *meridio2v1alpha1.DistributionGroup {
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+		Name: name, Namespace: testNamespace,
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: selector},
 		},
@@ -97,7 +97,7 @@ func newGatewayConfig(cidrs []string) *meridio2v1alpha1.GatewayConfiguration {
 		subnets[i] = meridio2v1alpha1.InternalSubnet{AttachmentType: "NAD", CIDR: cidr}
 	}
 	gc := &meridio2v1alpha1.GatewayConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: "sllb-a-config", Namespace: testNamespace},
+		Name: "sllb-a-config", Namespace: testNamespace,
 		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 			NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 				{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Interface: "net1", Name: "nad-1", Namespace: testNamespace}},
@@ -111,18 +111,16 @@ func newGatewayConfig(cidrs []string) *meridio2v1alpha1.GatewayConfiguration {
 
 func newL34Route(name, ns, gatewayName, dgName string) *meridio2v1alpha1.L34Route {
 	return &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Name: name, Namespace: ns,
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			ParentRefs: []gatewayv1.ParentReference{
 				{Name: gatewayv1.ObjectName(gatewayName)},
 			},
 			BackendRefs: []gatewayv1.BackendRef{
 				{
-					BackendObjectReference: gatewayv1.BackendObjectReference{
-						Group: new(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
-						Kind:  ptr(gatewayv1.Kind("DistributionGroup")),
-						Name:  gatewayv1.ObjectName(dgName),
-					},
+					Group: new(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
+					Kind:  new(gatewayv1.Kind("DistributionGroup")),
+					Name:  gatewayv1.ObjectName(dgName),
 				},
 			},
 			DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -131,9 +129,6 @@ func newL34Route(name, ns, gatewayName, dgName string) *meridio2v1alpha1.L34Rout
 		},
 	}
 }
-
-//go:fix inline
-func ptr[T any](v T) *T { return new(v) }
 
 // --- listMatchingDGs tests ---
 
@@ -162,8 +157,8 @@ func TestListMatchingDGs_NoMatch(t *testing.T) {
 func TestListMatchingDGs_NilSelector(t *testing.T) {
 	pod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-all", Namespace: testNamespace},
-		Spec:       meridio2v1alpha1.DistributionGroupSpec{},
+		Name: "dg-all", Namespace: testNamespace,
+		Spec: meridio2v1alpha1.DistributionGroupSpec{},
 	}
 	r, _ := setupReconciler(pod, dg)
 
@@ -210,8 +205,8 @@ func TestResolveGatewaysForDG_Deduplication(t *testing.T) {
 
 func TestResolveGatewaysForDG_NotAccepted(t *testing.T) {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "sllb-a", Namespace: testNamespace},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "test-class"},
+		Name: "sllb-a", Namespace: testNamespace,
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: "test-class"},
 		// No Accepted condition
 	}
 	dg := newDG("dg-1", map[string]string{"app": "web"}, "sllb-a")
@@ -270,12 +265,10 @@ func TestBuildGatewayConnection_VIPsSorted(t *testing.T) {
 	gw := acceptedGateway("sllb-a", testControllerName)
 	gc := newGatewayConfig([]string{testSubnetV4, testSubnetV6})
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllb-sllb-a-abc",
-			Namespace: testNamespace,
-			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		Name:      "sllb-sllb-a-abc",
+		Namespace: testNamespace,
+		Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
+		Status:    corev1.PodStatus{Phase: corev1.PodRunning},
 	}
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
 	targetPod.Annotations = map[string]string{
@@ -353,8 +346,8 @@ func TestGetNetworkContexts(t *testing.T) {
 
 func TestGetNetworkContexts_NoParametersRef(t *testing.T) {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "sllb-a", Namespace: testNamespace},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "test-class"},
+		Name: "sllb-a", Namespace: testNamespace,
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: "test-class"},
 	}
 	r, _ := setupReconciler(gw)
 
@@ -368,12 +361,10 @@ func TestGetNetworkContexts_NoParametersRef(t *testing.T) {
 func TestGetSLLBRNextHops(t *testing.T) {
 	gw := acceptedGateway("sllb-a", testControllerName)
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllbr-sllb-a-abc",
-			Namespace: testNamespace,
-			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
+		Name:      "sllbr-sllb-a-abc",
+		Namespace: testNamespace,
+		Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
+		Status:    corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(gw, sllbrPod)
@@ -393,20 +384,16 @@ func TestGetSLLBRNextHops(t *testing.T) {
 func TestGetSLLBRNextHops_DeterministicOrdering(t *testing.T) {
 	gw := acceptedGateway("sllb-a", testControllerName)
 	pod1 := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "sllb-sllb-a-111", Namespace: testNamespace,
-			Labels: map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
+		Name: "sllb-sllb-a-111", Namespace: testNamespace,
+		Labels: map[string]string{constants.LabelGatewayName: "sllb-a"},
 		Status: corev1.PodStatus{
 			Phase:             corev1.PodRunning,
 			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
 		},
 	}
 	pod2 := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "sllb-sllb-a-222", Namespace: testNamespace,
-			Labels: map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
+		Name: "sllb-sllb-a-222", Namespace: testNamespace,
+		Labels: map[string]string{constants.LabelGatewayName: "sllb-a"},
 		Status: corev1.PodStatus{
 			Phase:             corev1.PodRunning,
 			ContainerStatuses: []corev1.ContainerStatus{{Name: "lb", Ready: true}},
@@ -449,12 +436,10 @@ func TestBuildGatewayConnection_SkipsDomainWithNoInterface(t *testing.T) {
 	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "2001:db8::1")
 	gc := newGatewayConfig([]string{testSubnetV4, "fd00:100::/64"})
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllbr-sllb-a-abc",
-			Namespace: testNamespace,
-			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
+		Name:      "sllbr-sllb-a-abc",
+		Namespace: testNamespace,
+		Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
+		Status:    corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 	// Pod only has IPv4 address on net1 — no IPv6
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
@@ -490,12 +475,10 @@ func TestBuildGatewayConnection_NamingConvention(t *testing.T) {
 	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "2001:db8::1")
 	gc := newGatewayConfig([]string{testSubnetV4, "fd00:100::/64"})
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllbr-sllb-a-abc",
-			Namespace: testNamespace,
-			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
+		Name:      "sllbr-sllb-a-abc",
+		Namespace: testNamespace,
+		Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
+		Status:    corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 	// Target pod with Multus network-status annotation
 	targetPod := newPod("app-1", corev1.PodRunning, map[string]string{"app": "web"})
@@ -559,12 +542,10 @@ func TestResolveGatewayConnections_FullChain(t *testing.T) {
 	gc := newGatewayConfig([]string{testSubnetV4})
 	dg := newDG("dg-1", map[string]string{"app": "web"}, "sllb-a")
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllbr-sllb-a-abc",
-			Namespace: testNamespace,
-			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
+		Name:      "sllbr-sllb-a-abc",
+		Namespace: testNamespace,
+		Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
+		Status:    corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(pod, gw, gc, dg, sllbrPod)
@@ -602,7 +583,7 @@ func TestResolveGatewayConnections_DeterministicOrdering(t *testing.T) {
 	ipv6VIPs := []string{"2001:db8::4", "2001:db8::2", "2001:db8::3", "2001:db8::1"}
 
 	buildObjects := func(order []int) []client.Object {
-		var objs []client.Object
+		objs := make([]client.Object, 0, 1+3*len(order))
 		objs = append(objs, pod)
 		for _, i := range order {
 			gw := acceptedGateway(names[i], testControllerName, ipv4VIPs[i], ipv6VIPs[i])
@@ -660,7 +641,7 @@ func TestIsGatewayAccepted(t *testing.T) {
 	assert.True(t, r.isGatewayAccepted(accepted))
 
 	notAccepted := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw", Namespace: testNamespace},
+		Name: "gw", Namespace: testNamespace,
 	}
 	assert.False(t, r.isGatewayAccepted(notAccepted))
 
@@ -672,18 +653,14 @@ func TestBackendRefMatchesDG(t *testing.T) {
 	dgKey := client.ObjectKey{Name: "dg-1", Namespace: testNamespace}
 
 	matching := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Group: new(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
-			Kind:  ptr(gatewayv1.Kind("DistributionGroup")),
-			Name:  "dg-1",
-		},
+		Group: new(gatewayv1.Group(meridio2v1alpha1.GroupVersion.Group)),
+		Kind:  new(gatewayv1.Kind("DistributionGroup")),
+		Name:  "dg-1",
 	}
 	assert.True(t, backendRefMatchesDG(matching, testNamespace, dgKey))
 
 	wrongKind := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Name: "dg-1",
-		},
+		Name: "dg-1",
 	}
 	assert.False(t, backendRefMatchesDG(wrongKind, testNamespace, dgKey))
 }
@@ -713,7 +690,7 @@ func TestSidecarContract_DualStack(t *testing.T) {
 	gw := acceptedGateway("sllb-a", testControllerName, "20.0.0.1", "2001:db8::1")
 
 	gc := &meridio2v1alpha1.GatewayConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: "sllb-a-config", Namespace: testNamespace},
+		Name: "sllb-a-config", Namespace: testNamespace,
 		Spec: meridio2v1alpha1.GatewayConfigurationSpec{
 			NetworkAttachments: []meridio2v1alpha1.NetworkAttachment{
 				{Type: "NAD", NAD: &meridio2v1alpha1.NAD{Interface: "net1", Name: "nad-1", Namespace: testNamespace}},
@@ -727,12 +704,10 @@ func TestSidecarContract_DualStack(t *testing.T) {
 	}
 	dg := newDG("dg-1", map[string]string{"app": "web"}, "sllb-a")
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllbr-sllb-a-abc",
-			Namespace: testNamespace,
-			Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
-		},
-		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
+		Name:      "sllbr-sllb-a-abc",
+		Namespace: testNamespace,
+		Labels:    map[string]string{constants.LabelGatewayName: "sllb-a"},
+		Status:    corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "loadbalancer", Ready: true}, {Name: "router", Ready: true}}},
 	}
 
 	r, _ := setupReconciler(pod, gw, gc, dg, sllbrPod)
@@ -820,7 +795,7 @@ func TestIsLBPodReady(t *testing.T) {
 		{
 			name: "all containers ready",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Name: "sllb-1",
 				Status: corev1.PodStatus{
 					ContainerStatuses: []corev1.ContainerStatus{
 						{Name: "loadbalancer", Ready: true},
@@ -833,7 +808,7 @@ func TestIsLBPodReady(t *testing.T) {
 		{
 			name: "one container not ready",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
+				Name: "sllb-1",
 				Status: corev1.PodStatus{
 					ContainerStatuses: []corev1.ContainerStatus{
 						{Name: "loadbalancer", Ready: true},
@@ -846,10 +821,8 @@ func TestIsLBPodReady(t *testing.T) {
 		{
 			name: "pod being deleted",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:              "sllb-1",
-					DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
-				},
+				Name:              "sllb-1",
+				DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
 				Status: corev1.PodStatus{
 					ContainerStatuses: []corev1.ContainerStatus{
 						{Name: "loadbalancer", Ready: true},
@@ -862,8 +835,8 @@ func TestIsLBPodReady(t *testing.T) {
 		{
 			name: "no container statuses yet (startup)",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "sllb-1"},
-				Status:     corev1.PodStatus{},
+				Name:   "sllb-1",
+				Status: corev1.PodStatus{},
 			},
 			expected: false,
 		},
@@ -1027,7 +1000,7 @@ func TestGetSLLBRNextHops_TwoLevelFiltering(t *testing.T) {
 			}
 
 			gw := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
+				Name: "test-gw", Namespace: "default",
 			}
 
 			objects := make([]client.Object, 0, len(tt.pods))
@@ -1066,7 +1039,7 @@ func makeLBPodWithGates(name string, containersReady, ipv4GateTrue, ipv6GateTrue
 		ipv6Status = corev1.ConditionTrue
 	}
 	return corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Name: name,
 		Spec: corev1.PodSpec{
 			ReadinessGates: []corev1.PodReadinessGate{
 				{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -1089,7 +1062,7 @@ func makeLBPodWithGates(name string, containersReady, ipv4GateTrue, ipv6GateTrue
 
 func makeLBPodNoGates(name string, containersReady bool) corev1.Pod {
 	return corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Name: name,
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
 			ContainerStatuses: []corev1.ContainerStatus{
@@ -1102,7 +1075,7 @@ func makeLBPodNoGates(name string, containersReady bool) corev1.Pod {
 
 func makeLBPodDeleting(name string) corev1.Pod {
 	return corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Finalizers: []string{"test"}},
+		Name: name, Finalizers: []string{"test"},
 		Status: corev1.PodStatus{
 			Phase:             corev1.PodRunning,
 			ContainerStatuses: []corev1.ContainerStatus{},

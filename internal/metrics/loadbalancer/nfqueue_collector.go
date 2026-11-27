@@ -66,7 +66,7 @@ func NewNfqueueCollector(reader NfqueueReader, gatewayName, prefix string, errs 
 			"Packets currently waiting in the LB's netfilter queues for a userspace verdict "+
 				"(instantaneous backlog, summed over the configured queue range). A gauge: it is "+
 				"normally 0 and rises only when userspace cannot keep up with the packet rate.",
-			[]string{"gateway"}, nil,
+			[]string{labelGateway}, nil,
 		),
 		droppedDesc: prometheus.NewDesc(
 			prefix+"_lb_nfqueue_dropped_total",
@@ -75,7 +75,7 @@ func NewNfqueueCollector(reader NfqueueReader, gatewayName, prefix string, errs 
 				"signal — pair it with _lb_nfqueue_items and consider raising --qlength). "+
 				"reason=user: the kernel could not hand a packet to userspace (a delivery error, "+
 				"independent of queue fullness). Cumulative since the queues were bound.",
-			[]string{"gateway", "reason"}, nil,
+			[]string{labelGateway, labelReason}, nil,
 		),
 	}
 }

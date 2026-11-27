@@ -22,7 +22,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -65,8 +64,8 @@ func TestMapDGToPods_MatchingPods(t *testing.T) {
 func TestMapDGToPods_NilSelector(t *testing.T) {
 	pod := newPod("pod-1", corev1.PodRunning, map[string]string{"app": "target"})
 	dg := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-nil", Namespace: "default"},
-		Spec:       meridio2v1alpha1.DistributionGroupSpec{Selector: nil},
+		Name: "dg-nil", Namespace: "default",
+		Spec: meridio2v1alpha1.DistributionGroupSpec{Selector: nil},
 	}
 
 	r := mapperReconciler(pod, dg)
@@ -81,8 +80,8 @@ func TestMapGatewayToPods_DirectParentRef(t *testing.T) {
 	pod := newPod("pod-1", corev1.PodRunning, map[string]string{"app": "target"})
 	dg := newDG("dg-1", map[string]string{"app": "target"}, "gw-1")
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-1", Namespace: "default"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "test"},
+		Name: "gw-1", Namespace: "default",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: "test"},
 	}
 
 	r := mapperReconciler(pod, dg, gw)
@@ -103,21 +102,20 @@ func TestMapGatewayToPods_IndirectViaL34Route(t *testing.T) {
 	dgKind := gatewayv1.Kind(kindDistributionGroup)
 
 	route := &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: "route-1", Namespace: "default"},
+		Name: "route-1", Namespace: "default",
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			ParentRefs: []gatewayv1.ParentReference{
 				{Group: &gwGroup, Kind: &gwKind, Name: "gw-1"},
 			},
 			BackendRefs: []gatewayv1.BackendRef{
-				{BackendObjectReference: gatewayv1.BackendObjectReference{
-					Group: &dgGroup, Kind: &dgKind, Name: "dg-1",
-				}},
+				{
+					Group: &dgGroup, Kind: &dgKind, Name: "dg-1"},
 			},
 		},
 	}
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-1", Namespace: "default"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "test"},
+		Name: "gw-1", Namespace: "default",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: "test"},
 	}
 
 	r := mapperReconciler(pod, dg, route, gw)
@@ -129,8 +127,8 @@ func TestMapGatewayToPods_IndirectViaL34Route(t *testing.T) {
 
 func TestMapGatewayToPods_NoDGs(t *testing.T) {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-1", Namespace: "default"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: "test"},
+		Name: "gw-1", Namespace: "default",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: "test"},
 	}
 
 	r := mapperReconciler(gw)
@@ -148,7 +146,7 @@ func TestMapL34RouteToPods(t *testing.T) {
 	gwKind := gatewayv1.Kind(kindGateway)
 
 	route := &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: "route-1", Namespace: "default"},
+		Name: "route-1", Namespace: "default",
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			ParentRefs: []gatewayv1.ParentReference{
 				{Group: &gwGroup, Kind: &gwKind, Name: "gw-1"},
@@ -169,7 +167,7 @@ func TestMapGatewayConfigToPods(t *testing.T) {
 	pod := newPod("pod-1", corev1.PodRunning, map[string]string{"app": "target"})
 	dg := newDG("dg-1", map[string]string{"app": "target"}, "gw-1")
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-1", Namespace: "default"},
+		Name: "gw-1", Namespace: "default",
 		Spec: gatewayv1.GatewaySpec{
 			GatewayClassName: "test",
 			Infrastructure: &gatewayv1.GatewayInfrastructure{
@@ -182,7 +180,7 @@ func TestMapGatewayConfigToPods(t *testing.T) {
 		},
 	}
 	gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: "gwconfig-1", Namespace: "default"},
+		Name: "gwconfig-1", Namespace: "default",
 	}
 
 	r := mapperReconciler(pod, dg, gw, gwConfig)
@@ -194,7 +192,7 @@ func TestMapGatewayConfigToPods(t *testing.T) {
 
 func TestMapGatewayConfigToPods_NoMatchingGateway(t *testing.T) {
 	gwConfig := &meridio2v1alpha1.GatewayConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: "gwconfig-orphan", Namespace: "default"},
+		Name: "gwconfig-orphan", Namespace: "default",
 	}
 
 	r := mapperReconciler(gwConfig)
@@ -209,11 +207,9 @@ func TestMapSLLBRPodToPods(t *testing.T) {
 	appPod := newPod("pod-1", corev1.PodRunning, map[string]string{"app": "target"})
 	dg := newDG("dg-1", map[string]string{"app": "target"}, "gw-1")
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sllbr-pod-1",
-			Namespace: "default",
-			Labels:    map[string]string{constants.LabelGatewayName: "gw-1"},
-		},
+		Name:      "sllbr-pod-1",
+		Namespace: "default",
+		Labels:    map[string]string{constants.LabelGatewayName: "gw-1"},
 	}
 
 	r := mapperReconciler(appPod, dg, sllbrPod)
@@ -225,10 +221,8 @@ func TestMapSLLBRPodToPods(t *testing.T) {
 
 func TestMapSLLBRPodToPods_NoLabel(t *testing.T) {
 	sllbrPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "unrelated-pod",
-			Namespace: "default",
-		},
+		Name:      "unrelated-pod",
+		Namespace: "default",
 	}
 
 	r := mapperReconciler(sllbrPod)

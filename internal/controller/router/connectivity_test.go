@@ -26,7 +26,6 @@ import (
 	"github.com/nordix/meridio-2/internal/common/constants"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -119,8 +118,8 @@ func TestBuildFamilyMap(t *testing.T) {
 			name: "IPv4 router",
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
-					Spec:       meridio2v1alpha1.GatewayRouterSpec{Address: "169.254.100.150"},
+					Name: "gw-v4",
+					Spec: meridio2v1alpha1.GatewayRouterSpec{Address: "169.254.100.150"},
 				},
 			},
 			expected: map[string]string{"NBR-gw-v4": "IPv4"},
@@ -129,8 +128,8 @@ func TestBuildFamilyMap(t *testing.T) {
 			name: "IPv6 router",
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
-					Spec:       meridio2v1alpha1.GatewayRouterSpec{Address: "100:100::150"},
+					Name: "gw-v6",
+					Spec: meridio2v1alpha1.GatewayRouterSpec{Address: "100:100::150"},
 				},
 			},
 			expected: map[string]string{"NBR-gw-v6": "IPv6"},
@@ -139,12 +138,12 @@ func TestBuildFamilyMap(t *testing.T) {
 			name: "dual-stack two routers",
 			routers: []*meridio2v1alpha1.GatewayRouter{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-v4"},
-					Spec:       meridio2v1alpha1.GatewayRouterSpec{Address: "169.254.100.150"},
+					Name: "gw-v4",
+					Spec: meridio2v1alpha1.GatewayRouterSpec{Address: "169.254.100.150"},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "gw-v6"},
-					Spec:       meridio2v1alpha1.GatewayRouterSpec{Address: "100:100::150"},
+					Name: "gw-v6",
+					Spec: meridio2v1alpha1.GatewayRouterSpec{Address: "100:100::150"},
 				},
 			},
 			expected: map[string]string{"NBR-gw-v4": "IPv4", "NBR-gw-v6": "IPv6"},
@@ -174,7 +173,7 @@ func TestDiscoverGates(t *testing.T) {
 		{
 			name: "both gates declared",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+				Name: "test-pod", Namespace: "default",
 				Spec: corev1.PodSpec{
 					ReadinessGates: []corev1.PodReadinessGate{
 						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -188,7 +187,7 @@ func TestDiscoverGates(t *testing.T) {
 		{
 			name: "only IPv4 declared",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+				Name: "test-pod", Namespace: "default",
 				Spec: corev1.PodSpec{
 					ReadinessGates: []corev1.PodReadinessGate{
 						{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -201,7 +200,7 @@ func TestDiscoverGates(t *testing.T) {
 		{
 			name: "only IPv6 declared",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+				Name: "test-pod", Namespace: "default",
 				Spec: corev1.PodSpec{
 					ReadinessGates: []corev1.PodReadinessGate{
 						{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
@@ -214,8 +213,8 @@ func TestDiscoverGates(t *testing.T) {
 		{
 			name: "no gates declared",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
-				Spec:       corev1.PodSpec{},
+				Name: "test-pod", Namespace: "default",
+				Spec: corev1.PodSpec{},
 			},
 			wantIPv4Gate: false,
 			wantIPv6Gate: false,
@@ -240,7 +239,7 @@ func TestDiscoverGates(t *testing.T) {
 func TestPatchGateCondition(t *testing.T) {
 	t.Run("SetsConditionTrue", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -273,7 +272,7 @@ func TestPatchGateCondition(t *testing.T) {
 
 	t.Run("SetsConditionFalse", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
@@ -305,7 +304,7 @@ func TestPatchGateCondition(t *testing.T) {
 
 	t.Run("UpdatesExistingCondition", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -344,7 +343,7 @@ func TestPatchGateCondition(t *testing.T) {
 func TestSetAllGatesFalse(t *testing.T) {
 	t.Run("SetsAllDeclaredGatesToFalse", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -383,7 +382,7 @@ func TestSetAllGatesFalse(t *testing.T) {
 
 	t.Run("IPv4Only_SetsOnlyIPv4Gate", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -412,7 +411,7 @@ func TestSetAllGatesFalse(t *testing.T) {
 
 	t.Run("IPv6Only_SetsOnlyIPv6Gate", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv6-connectivity"},
@@ -441,8 +440,8 @@ func TestSetAllGatesFalse(t *testing.T) {
 
 	t.Run("NoGatesDeclared_NoOp", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
-			Spec:       corev1.PodSpec{},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
+			Spec: corev1.PodSpec{},
 		}
 		fakeClient := fake.NewClientBuilder().
 			WithObjects(pod).
@@ -467,7 +466,7 @@ func TestSetAllGatesFalse(t *testing.T) {
 func TestDamping(t *testing.T) {
 	t.Run("DownTransition_Immediate", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -511,7 +510,7 @@ func TestDamping(t *testing.T) {
 
 	t.Run("UpTransition_Damped", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -556,7 +555,7 @@ func TestDamping(t *testing.T) {
 
 	t.Run("UpTransition_FlapDuringHold_ResetsTimer", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -594,7 +593,7 @@ func TestDamping(t *testing.T) {
 
 	t.Run("NoChange_NoPatch", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},
@@ -617,7 +616,7 @@ func TestDamping(t *testing.T) {
 
 	t.Run("GateNotDeclared_Ignored", func(t *testing.T) {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default", UID: "uid-1"},
+			Name: "test-pod", Namespace: "default", UID: "uid-1",
 			Spec: corev1.PodSpec{
 				ReadinessGates: []corev1.PodReadinessGate{
 					{ConditionType: "meridio-2.nordix.org/ipv4-connectivity"},

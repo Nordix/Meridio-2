@@ -85,8 +85,8 @@ func NewRunCmd() *cobra.Command {
 
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRouter(cmd.Context(), cfg)
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runRouter(cfg)
 		},
 	}
 
@@ -95,7 +95,7 @@ func NewRunCmd() *cobra.Command {
 	return cmd
 }
 
-func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
+func runRouter(cfg *config.RouterConfig) error {
 	scheme := runtime.NewScheme()
 	setupLog := ctrl.Log.WithName("setup")
 
@@ -229,7 +229,10 @@ func runRouter(ctx context.Context, cfg *config.RouterConfig) error {
 
 	setupLog.Info("starting router", "gateway", cfg.GatewayName, "namespace", cfg.GatewayNamespace)
 
-	ctx = ctrl.SetupSignalHandler()
+	// runRouter owns the process lifecycle context: ctrl.SetupSignalHandler installs the
+	// SIGTERM/SIGINT handler and may only be called once per process, matching how
+	// runLoadBalancer and runSidecar manage their own signal handling.
+	ctx := ctrl.SetupSignalHandler()
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {

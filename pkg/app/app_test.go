@@ -113,6 +113,7 @@ func TestValidate_KubeAPITuningInvalid(t *testing.T) {
 
 func TestControllerSetupType(t *testing.T) {
 	// Compile-time check: ControllerSetup matches the expected pattern.
+	//nolint:unparam // the nil error return is mandated by the ControllerSetup signature under assertion
 	var _ ControllerSetup = func(mgr ctrl.Manager, cfg Config) error {
 		_ = mgr
 		_ = cfg.Namespace

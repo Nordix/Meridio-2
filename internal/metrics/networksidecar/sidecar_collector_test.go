@@ -24,7 +24,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -59,8 +58,8 @@ func newCollector(objs ...*meridio2v1alpha1.EndpointNetworkConfiguration) *Sidec
 // enc returns an ENC named after the test Pod, in the test namespace.
 func enc(gateways ...meridio2v1alpha1.GatewayConnection) *meridio2v1alpha1.EndpointNetworkConfiguration {
 	return &meridio2v1alpha1.EndpointNetworkConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: testPodName, Namespace: testPodNS},
-		Spec:       meridio2v1alpha1.EndpointNetworkConfigurationSpec{Gateways: gateways},
+		Name: testPodName, Namespace: testPodNS,
+		Spec: meridio2v1alpha1.EndpointNetworkConfigurationSpec{Gateways: gateways},
 	}
 }
 

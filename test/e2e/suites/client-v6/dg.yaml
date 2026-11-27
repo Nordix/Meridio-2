@@ -1,0 +1,57 @@
+---
+# Catch-all DG over all client targets. Its only purpose is to back the
+# highest-priority L34Route (route-c6-all), which nfqlb matches for any ICMPv6
+# addressed to the VIP.
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-c6-all
+spec:
+  selector:
+    matchLabels:
+      app: target-c6
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-c6
+---
+# Per-instance DGs: each selects exactly one client target, so return traffic
+# of that target's connections is steered back to it.
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-c6-i0
+spec:
+  selector:
+    matchLabels:
+      instance: i0
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-c6
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-c6-i1
+spec:
+  selector:
+    matchLabels:
+      instance: i1
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-c6
+---
+apiVersion: meridio-2.nordix.org/v1alpha1
+kind: DistributionGroup
+metadata:
+  name: dg-c6-i2
+spec:
+  selector:
+    matchLabels:
+      instance: i2
+  maglev:
+    maxEndpoints: 32
+  parentRefs:
+  - name: gw-c6

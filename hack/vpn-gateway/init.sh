@@ -91,6 +91,13 @@ ip link add link eth0 name vlan15 type vlan id 1500
 ip link set vlan15 up
 ip addr add 169.254.81.150/24 dev vlan15
 
+# VLAN 1600 — client-v6 gw-c6 (IPv6-only)
+# fd00:200:90::100 simulates an external server reached through the BGP default route.
+ip link add link eth0 name vlan16 type vlan id 1600
+ip link set vlan16 up
+ip addr add fd00:cafe:90::150/64 dev vlan16
+ip addr add fd00:200:90::100/128 dev vlan16
+
 ethtool -K eth0 tx off
 
 echo "VPN Gateway ready"

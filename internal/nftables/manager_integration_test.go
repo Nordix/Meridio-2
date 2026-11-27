@@ -26,9 +26,11 @@ import (
 	"testing"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/expr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netns"
+	netipv6 "golang.org/x/net/ipv6"
 )
 
 // newTestConn creates an nftables.Conn in a new network namespace for isolated testing.
@@ -134,6 +136,54 @@ func TestIntegration_PMTUDChainRuleCount(t *testing.T) {
 	rules, err := conn.GetRules(mgr.table, mgr.pmtudChain)
 	require.NoError(t, err)
 	assert.Len(t, rules, 2, "PMTUD chain should have 2 rules (IPv4 + IPv6)")
+}
+
+// TestIntegration_OutputChainICMPv6TypeFilter verifies against a real kernel that the IPv6 output
+// rule only queues the steered ICMPv6 types: the kernel accepts the anonymous type set, and the
+// set holds exactly steeredICMPv6Types, so Neighbor Discovery is never queued to nfqlb.
+func TestIntegration_OutputChainICMPv6TypeFilter(t *testing.T) {
+	conn := newTestConn(t)
+	mgr := &Manager{
+		tableName:  sharedTableName,
+		queueNum:   0,
+		queueTotal: 1,
+		conn:       conn,
+	}
+	require.NoError(t, mgr.Setup())
+
+	rules, err := conn.GetRules(mgr.table, mgr.outputChain)
+	require.NoError(t, err)
+	require.Len(t, rules, 2, "output chain should have 2 rules (IPv4 + IPv6)")
+
+	// The IPv6 rule is the only one with two lookups (VIP set and ICMPv6 type set).
+	var typeSetName string
+	for _, r := range rules {
+		var lookups []*expr.Lookup
+		for _, e := range r.Exprs {
+			if l, ok := e.(*expr.Lookup); ok {
+				lookups = append(lookups, l)
+			}
+		}
+		if len(lookups) == 2 {
+			assert.Equal(t, ipv6VIPSetName, lookups[0].SetName)
+			typeSetName = lookups[1].SetName
+		}
+	}
+	require.NotEmpty(t, typeSetName, "IPv6 output rule should look up an ICMPv6 type set")
+
+	typeSet, err := conn.GetSetByName(mgr.table, typeSetName)
+	require.NoError(t, err)
+	elems, err := conn.GetSetElements(typeSet)
+	require.NoError(t, err)
+
+	got := make([]netipv6.ICMPType, 0, len(elems))
+	for _, e := range elems {
+		require.Len(t, e.Key, 1)
+		got = append(got, netipv6.ICMPType(e.Key[0]))
+	}
+	assert.ElementsMatch(t, steeredICMPv6Types, got)
+	assert.NotContains(t, got, netipv6.ICMPTypeNeighborAdvertisement)
+	assert.NotContains(t, got, netipv6.ICMPTypeNeighborSolicitation)
 }
 
 func TestIntegration_SetVIPsAndCleanup(t *testing.T) {

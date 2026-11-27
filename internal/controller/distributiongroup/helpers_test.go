@@ -66,9 +66,9 @@ func TestSortPodsByCreationTime(t *testing.T) {
 	later := metav1.NewTime(now.Add(60000000000))
 
 	pods := []corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-c", Namespace: "ns", CreationTimestamp: now}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns", CreationTimestamp: earlier}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns", CreationTimestamp: later}},
+		{Name: "pod-c", Namespace: "ns", CreationTimestamp: now},
+		{Name: "pod-a", Namespace: "ns", CreationTimestamp: earlier},
+		{Name: "pod-b", Namespace: "ns", CreationTimestamp: later},
 	}
 
 	sortPodsByCreationTime(pods)
@@ -82,9 +82,9 @@ func TestSortPodsByCreationTime_Tiebreak(t *testing.T) {
 	now := metav1.Now()
 
 	pods := []corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-z", Namespace: "ns-b", CreationTimestamp: now}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns-a", CreationTimestamp: now}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns-a", CreationTimestamp: now}},
+		{Name: "pod-z", Namespace: "ns-b", CreationTimestamp: now},
+		{Name: "pod-a", Namespace: "ns-a", CreationTimestamp: now},
+		{Name: "pod-b", Namespace: "ns-a", CreationTimestamp: now},
 	}
 
 	sortPodsByCreationTime(pods)

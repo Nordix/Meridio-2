@@ -36,7 +36,7 @@ import (
 
 func TestLbDeploymentName(t *testing.T) {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-gateway"},
+		Name: "my-gateway",
 	}
 
 	name := lbDeploymentName(gw)
@@ -133,10 +133,8 @@ func TestMergeInfrastructureMetadata(t *testing.T) {
 func TestDeploymentNeedsUpdate(t *testing.T) {
 	t.Run("NoChangeNeeded", func(t *testing.T) {
 		existing := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels:      map[string]string{"app": "test"},
-				Annotations: map[string]string{"key": "value"},
-			},
+			Labels:      map[string]string{"app": "test"},
+			Annotations: map[string]string{"key": "value"},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: new(int32(2)),
 			},
@@ -159,10 +157,10 @@ func TestDeploymentNeedsUpdate(t *testing.T) {
 
 	t.Run("LabelsChanged", func(t *testing.T) {
 		existing := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "old"}},
+			Labels: map[string]string{"app": "old"},
 		}
 		desired := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "new"}},
+			Labels: map[string]string{"app": "new"},
 		}
 
 		assert.True(t, deploymentNeedsUpdate(existing, desired))
@@ -170,10 +168,10 @@ func TestDeploymentNeedsUpdate(t *testing.T) {
 
 	t.Run("AnnotationsChanged", func(t *testing.T) {
 		existing := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"key": "old"}},
+			Annotations: map[string]string{"key": "old"},
 		}
 		desired := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"key": "new"}},
+			Annotations: map[string]string{"key": "new"},
 		}
 
 		assert.True(t, deploymentNeedsUpdate(existing, desired))
@@ -214,10 +212,8 @@ func TestMergeMaps(t *testing.T) {
 
 func TestReconcileLBDeployment(t *testing.T) {
 	template := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   "placeholder",
-			Labels: map[string]string{"template-label": "template-value"},
-		},
+		Name:   "placeholder",
+		Labels: map[string]string{"template-label": "template-value"},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: new(int32(1)),
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "placeholder"}},
@@ -263,23 +259,21 @@ func TestReconcileLBDeployment(t *testing.T) {
 		updatedTemplate.Spec.Template.Spec.Containers[0].Image = "registry.nordix.org/cloud-native/meridio-2/loadbalancer:v2"
 
 		existing := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      lbDeploymentPrefix + gw.Name,
-				Namespace: gw.Namespace,
-				Labels: map[string]string{
-					"template-label":           "old-value",
-					constants.LabelGatewayName: gw.Name,
-					"external-label":           "preserved",
-				},
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion:         gatewayv1.GroupVersion.String(),
-						Kind:               kindGateway,
-						Name:               gw.Name,
-						UID:                gw.UID,
-						Controller:         new(true),
-						BlockOwnerDeletion: new(true),
-					},
+			Name:      lbDeploymentPrefix + gw.Name,
+			Namespace: gw.Namespace,
+			Labels: map[string]string{
+				"template-label":           "old-value",
+				constants.LabelGatewayName: gw.Name,
+				"external-label":           "preserved",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         gatewayv1.GroupVersion.String(),
+					Kind:               kindGateway,
+					Name:               gw.Name,
+					UID:                gw.UID,
+					Controller:         new(true),
+					BlockOwnerDeletion: new(true),
 				},
 			},
 			Spec: appsv1.DeploymentSpec{
@@ -311,18 +305,16 @@ func TestReconcileLBDeployment(t *testing.T) {
 		gwConfig := newGatewayConfiguration()
 		deploymentName := lbDeploymentName(gw)
 		existing := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName,
-				Namespace: gw.Namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion:         gatewayv1.GroupVersion.String(),
-						Kind:               kindGateway,
-						Name:               "other-gateway",
-						UID:                "other-uid",
-						Controller:         new(true),
-						BlockOwnerDeletion: new(true),
-					},
+			Name:      deploymentName,
+			Namespace: gw.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         gatewayv1.GroupVersion.String(),
+					Kind:               kindGateway,
+					Name:               "other-gateway",
+					UID:                "other-uid",
+					Controller:         new(true),
+					BlockOwnerDeletion: new(true),
 				},
 			},
 			Spec: appsv1.DeploymentSpec{
@@ -508,7 +500,7 @@ func TestInjectGatewayEnvVars(t *testing.T) {
 func TestApplyNetworkAttachments(t *testing.T) {
 	t.Run("EmptyAttachments", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 		}
 		applyNetworkAttachments(deployment, "", []meridio2v1alpha1.NetworkAttachment{})
 		assert.Empty(t, deployment.Spec.Template.Annotations)
@@ -516,7 +508,7 @@ func TestApplyNetworkAttachments(t *testing.T) {
 
 	t.Run("SingleNAD", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 		}
 		attachments := []meridio2v1alpha1.NetworkAttachment{
 			{
@@ -537,7 +529,7 @@ func TestApplyNetworkAttachments(t *testing.T) {
 
 	t.Run("MultipleNADs", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 		}
 		attachments := []meridio2v1alpha1.NetworkAttachment{
 			{
@@ -564,7 +556,7 @@ func TestApplyNetworkAttachments(t *testing.T) {
 	})
 
 	t.Run("NADWithoutInterface", func(t *testing.T) {
-		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "default"}}
+		deployment := &appsv1.Deployment{Namespace: "default"}
 		attachments := []meridio2v1alpha1.NetworkAttachment{
 			{
 				Type: attachmentTypeNAD,
@@ -608,7 +600,7 @@ func TestApplyNetworkAttachments(t *testing.T) {
 
 	t.Run("UsesTemplateNADs", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 		}
 		templateAnnotation := `[{"name":"template-nad","namespace":"template-ns","interface":"net0"}]`
 		attachments := []meridio2v1alpha1.NetworkAttachment{
@@ -630,7 +622,7 @@ func TestApplyNetworkAttachments(t *testing.T) {
 
 	t.Run("GatewayConfigurationOverridesTemplate", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 		}
 		// Template has nad1 with extra fields (ips)
 		templateAnnotation := `[{"name":"nad1","namespace":"ns1","interface":"net1","ips":["192.168.1.10"]}]`
@@ -654,7 +646,7 @@ func TestApplyNetworkAttachments(t *testing.T) {
 
 	t.Run("SkipsDuplicates_ExactMatch", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 			Spec: appsv1.DeploymentSpec{
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
@@ -682,7 +674,7 @@ func TestApplyNetworkAttachments(t *testing.T) {
 
 	t.Run("AllowsSameNADWithDifferentInterface", func(t *testing.T) {
 		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Namespace: "default",
 		}
 		// Template has nad1 with net1 interface
 		templateAnnotation := `[{"name":"nad1","namespace":"ns1","interface":"net1"}]`

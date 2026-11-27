@@ -103,8 +103,8 @@ func gcDefaultConditions() []metav1.Condition {
 // gcClass returns a GatewayClass with the given name and controllerName.
 func gcClass(name, controllerName string) *gatewayv1.GatewayClass {
 	return &gatewayv1.GatewayClass{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec:       gatewayv1.GatewayClassSpec{ControllerName: gatewayv1.GatewayController(controllerName)},
+		Name: name,
+		Spec: gatewayv1.GatewayClassSpec{ControllerName: gatewayv1.GatewayController(controllerName)},
 	}
 }
 
@@ -116,8 +116,8 @@ func gcOtherClass() *gatewayv1.GatewayClass { return gcClass(otherClassName, oth
 
 func TestGatewayCollector_CountAndProgrammed_AcceptedByUs(t *testing.T) {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-a", Namespace: "ns-a"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
+		Name: "gw-a", Namespace: "ns-a",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
 		Status: gatewayv1.GatewayStatus{
 			Conditions: []metav1.Condition{
 				acceptedCondition(testControllerName),
@@ -143,8 +143,8 @@ meridio_2_gateway_programmed{gateway="gw-a",namespace="ns-a"} 1
 
 func TestGatewayCollector_ProgrammedFalse_WhenNotProgrammed(t *testing.T) {
 	gw := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-a", Namespace: "ns-a"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
+		Name: "gw-a", Namespace: "ns-a",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
 		Status: gatewayv1.GatewayStatus{
 			Conditions: []metav1.Condition{
 				acceptedCondition(testControllerName),
@@ -180,8 +180,8 @@ meridio_2_gateway_programmed{gateway="gw-a",namespace="ns-a"} 0
 //     programmed-emitted
 func TestGatewayCollector_CountAcceptedGated_ProgrammedClassGated(t *testing.T) {
 	ours := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-ours", Namespace: "ns-a"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
+		Name: "gw-ours", Namespace: "ns-a",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
 		Status: gatewayv1.GatewayStatus{
 			Conditions: []metav1.Condition{
 				acceptedCondition(testControllerName),
@@ -190,8 +190,8 @@ func TestGatewayCollector_CountAcceptedGated_ProgrammedClassGated(t *testing.T) 
 		},
 	}
 	foreignAccept := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-foreign-accept", Namespace: "ns-a"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
+		Name: "gw-foreign-accept", Namespace: "ns-a",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
 		Status: gatewayv1.GatewayStatus{
 			Conditions: []metav1.Condition{
 				acceptedCondition(otherControllerName),
@@ -200,13 +200,13 @@ func TestGatewayCollector_CountAcceptedGated_ProgrammedClassGated(t *testing.T) 
 		},
 	}
 	pending := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-pending", Namespace: "ns-a"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
-		Status:     gatewayv1.GatewayStatus{Conditions: gcDefaultConditions()},
+		Name: "gw-pending", Namespace: "ns-a",
+		Spec:   gatewayv1.GatewaySpec{GatewayClassName: ourClassName},
+		Status: gatewayv1.GatewayStatus{Conditions: gcDefaultConditions()},
 	}
 	notOurs := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-not-ours", Namespace: "ns-a"},
-		Spec:       gatewayv1.GatewaySpec{GatewayClassName: otherClassName},
+		Name: "gw-not-ours", Namespace: "ns-a",
+		Spec: gatewayv1.GatewaySpec{GatewayClassName: otherClassName},
 		Status: gatewayv1.GatewayStatus{
 			Conditions: []metav1.Condition{
 				acceptedCondition(otherControllerName),
@@ -250,12 +250,12 @@ meridio_2_gateway_count 0
 // namespace is not counted even though it would otherwise be Accepted by us.
 func TestGatewayCollector_NamespaceScoping(t *testing.T) {
 	inScope := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-in", Namespace: "ns-a"},
-		Status:     gatewayv1.GatewayStatus{Conditions: []metav1.Condition{acceptedCondition(testControllerName)}},
+		Name: "gw-in", Namespace: "ns-a",
+		Status: gatewayv1.GatewayStatus{Conditions: []metav1.Condition{acceptedCondition(testControllerName)}},
 	}
 	outOfScope := &gatewayv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Name: "gw-out", Namespace: "ns-b"},
-		Status:     gatewayv1.GatewayStatus{Conditions: []metav1.Condition{acceptedCondition(testControllerName)}},
+		Name: "gw-out", Namespace: "ns-b",
+		Status: gatewayv1.GatewayStatus{Conditions: []metav1.Condition{acceptedCondition(testControllerName)}},
 	}
 
 	fakeClient := fake.NewClientBuilder().WithScheme(gcScheme()).WithObjects(inScope, outOfScope).Build()

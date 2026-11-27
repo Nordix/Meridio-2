@@ -23,7 +23,6 @@ import (
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -37,12 +36,10 @@ func TestExtractDGsFromBackendRefs_DistributionGroup(t *testing.T) {
 
 	backendRefs := []gatewayv1.BackendRef{
 		{
-			BackendObjectReference: gatewayv1.BackendObjectReference{
-				Group:     (*gatewayv1.Group)(&dgGroup),
-				Kind:      (*gatewayv1.Kind)(&dgKind),
-				Name:      "dg-1",
-				Namespace: (*gatewayv1.Namespace)(&ns),
-			},
+			Group:     (*gatewayv1.Group)(&dgGroup),
+			Kind:      (*gatewayv1.Kind)(&dgKind),
+			Name:      "dg-1",
+			Namespace: (*gatewayv1.Namespace)(&ns),
 		},
 	}
 
@@ -63,11 +60,9 @@ func TestExtractDGsFromBackendRefs_DefaultNamespace(t *testing.T) {
 
 	backendRefs := []gatewayv1.BackendRef{
 		{
-			BackendObjectReference: gatewayv1.BackendObjectReference{
-				Group: (*gatewayv1.Group)(&dgGroup),
-				Kind:  (*gatewayv1.Kind)(&dgKind),
-				Name:  "dg-1",
-			},
+			Group: (*gatewayv1.Group)(&dgGroup),
+			Kind:  (*gatewayv1.Kind)(&dgKind),
+			Name:  "dg-1",
 		},
 	}
 
@@ -82,9 +77,7 @@ func TestExtractDGsFromBackendRefs_DefaultNamespace(t *testing.T) {
 func TestExtractDGsFromBackendRefs_SkipService(t *testing.T) {
 	backendRefs := []gatewayv1.BackendRef{
 		{
-			BackendObjectReference: gatewayv1.BackendObjectReference{
-				Name: "service-1",
-			},
+			Name: "service-1",
 		},
 	}
 
@@ -101,18 +94,14 @@ func TestExtractDGsFromBackendRefs_Multiple(t *testing.T) {
 
 	backendRefs := []gatewayv1.BackendRef{
 		{
-			BackendObjectReference: gatewayv1.BackendObjectReference{
-				Group: (*gatewayv1.Group)(&dgGroup),
-				Kind:  (*gatewayv1.Kind)(&dgKind),
-				Name:  "dg-1",
-			},
+			Group: (*gatewayv1.Group)(&dgGroup),
+			Kind:  (*gatewayv1.Kind)(&dgKind),
+			Name:  "dg-1",
 		},
 		{
-			BackendObjectReference: gatewayv1.BackendObjectReference{
-				Group: (*gatewayv1.Group)(&dgGroup),
-				Kind:  (*gatewayv1.Kind)(&dgKind),
-				Name:  "dg-2",
-			},
+			Group: (*gatewayv1.Group)(&dgGroup),
+			Kind:  (*gatewayv1.Kind)(&dgKind),
+			Name:  "dg-2",
 		},
 	}
 
@@ -128,11 +117,9 @@ func TestBackendRefMatchesDG_Match(t *testing.T) {
 	dgKind := kindDistributionGroup
 
 	backendRef := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Group: (*gatewayv1.Group)(&dgGroup),
-			Kind:  (*gatewayv1.Kind)(&dgKind),
-			Name:  "dg-1",
-		},
+		Group: (*gatewayv1.Group)(&dgGroup),
+		Kind:  (*gatewayv1.Kind)(&dgKind),
+		Name:  "dg-1",
 	}
 
 	dgKey := client.ObjectKey{Namespace: "default", Name: "dg-1"}
@@ -147,11 +134,9 @@ func TestBackendRefMatchesDG_DifferentName(t *testing.T) {
 	dgKind := kindDistributionGroup
 
 	backendRef := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Group: (*gatewayv1.Group)(&dgGroup),
-			Kind:  (*gatewayv1.Kind)(&dgKind),
-			Name:  "dg-1",
-		},
+		Group: (*gatewayv1.Group)(&dgGroup),
+		Kind:  (*gatewayv1.Kind)(&dgKind),
+		Name:  "dg-1",
 	}
 
 	dgKey := client.ObjectKey{Namespace: "default", Name: "dg-2"}
@@ -167,12 +152,10 @@ func TestBackendRefMatchesDG_DifferentNamespace(t *testing.T) {
 	ns := "other-ns"
 
 	backendRef := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Group:     (*gatewayv1.Group)(&dgGroup),
-			Kind:      (*gatewayv1.Kind)(&dgKind),
-			Name:      "dg-1",
-			Namespace: (*gatewayv1.Namespace)(&ns),
-		},
+		Group:     (*gatewayv1.Group)(&dgGroup),
+		Kind:      (*gatewayv1.Kind)(&dgKind),
+		Name:      "dg-1",
+		Namespace: (*gatewayv1.Namespace)(&ns),
 	}
 
 	dgKey := client.ObjectKey{Namespace: "default", Name: "dg-1"}
@@ -187,11 +170,9 @@ func TestBackendRefMatchesDG_WrongKind(t *testing.T) {
 	wrongKind := "Service"
 
 	backendRef := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Group: (*gatewayv1.Group)(&dgGroup),
-			Kind:  (*gatewayv1.Kind)(&wrongKind),
-			Name:  "dg-1",
-		},
+		Group: (*gatewayv1.Group)(&dgGroup),
+		Kind:  (*gatewayv1.Kind)(&wrongKind),
+		Name:  "dg-1",
 	}
 
 	dgKey := client.ObjectKey{Namespace: "default", Name: "dg-1"}
@@ -206,11 +187,9 @@ func TestBackendRefMatchesDG_WrongGroup(t *testing.T) {
 	dgKind := kindDistributionGroup
 
 	backendRef := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Group: (*gatewayv1.Group)(&wrongGroup),
-			Kind:  (*gatewayv1.Kind)(&dgKind),
-			Name:  "dg-1",
-		},
+		Group: (*gatewayv1.Group)(&wrongGroup),
+		Kind:  (*gatewayv1.Kind)(&dgKind),
+		Name:  "dg-1",
 	}
 
 	dgKey := client.ObjectKey{Namespace: "default", Name: "dg-1"}
@@ -223,9 +202,7 @@ func TestBackendRefMatchesDG_WrongGroup(t *testing.T) {
 func TestBackendRefMatchesDG_DefaultGroupKind(t *testing.T) {
 	// BackendRef with no Group/Kind defaults to Service
 	backendRef := gatewayv1.BackendRef{
-		BackendObjectReference: gatewayv1.BackendObjectReference{
-			Name: "dg-1",
-		},
+		Name: "dg-1",
 	}
 
 	dgKey := client.ObjectKey{Namespace: "default", Name: "dg-1"}
@@ -247,7 +224,7 @@ func TestFindDGsReferencingGateways_DirectAndIndirect(t *testing.T) {
 
 	// DG with direct parentRef to gw-1
 	dgDirect := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-direct", Namespace: "default"},
+		Name: "dg-direct", Namespace: "default",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			ParentRefs: []meridio2v1alpha1.ParentReference{
 				{Group: &gwGroup, Kind: &gwKind, Name: "gw-1"},
@@ -257,13 +234,13 @@ func TestFindDGsReferencingGateways_DirectAndIndirect(t *testing.T) {
 
 	// DG with no parentRef (indirect only via L34Route)
 	dgIndirect := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-indirect", Namespace: "default"},
-		Spec:       meridio2v1alpha1.DistributionGroupSpec{},
+		Name: "dg-indirect", Namespace: "default",
+		Spec: meridio2v1alpha1.DistributionGroupSpec{},
 	}
 
 	// DG referencing a different Gateway (should NOT be returned)
 	dgOther := &meridio2v1alpha1.DistributionGroup{
-		ObjectMeta: metav1.ObjectMeta{Name: "dg-other", Namespace: "default"},
+		Name: "dg-other", Namespace: "default",
 		Spec: meridio2v1alpha1.DistributionGroupSpec{
 			ParentRefs: []meridio2v1alpha1.ParentReference{
 				{Group: &gwGroup, Kind: &gwKind, Name: "gw-other"},
@@ -273,17 +250,16 @@ func TestFindDGsReferencingGateways_DirectAndIndirect(t *testing.T) {
 
 	// L34Route linking gw-1 → dg-indirect
 	route := &meridio2v1alpha1.L34Route{
-		ObjectMeta: metav1.ObjectMeta{Name: "route-1", Namespace: "default"},
+		Name: "route-1", Namespace: "default",
 		Spec: meridio2v1alpha1.L34RouteSpec{
 			ParentRefs: []gatewayv1.ParentReference{
 				{Name: "gw-1"},
 			},
 			BackendRefs: []gatewayv1.BackendRef{
-				{BackendObjectReference: gatewayv1.BackendObjectReference{
+				{
 					Group: (*gatewayv1.Group)(&dgGroup),
 					Kind:  (*gatewayv1.Kind)(&dgKind),
-					Name:  "dg-indirect",
-				}},
+					Name:  "dg-indirect"},
 			},
 			DestinationCIDRs: []string{"20.0.0.1/32"},
 			Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},

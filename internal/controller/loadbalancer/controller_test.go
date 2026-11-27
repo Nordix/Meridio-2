@@ -62,17 +62,15 @@ func newFakeClient(scheme *runtime.Scheme, objects ...client.Object) client.Clie
 // Functional options override specific fields to isolate what each test checks.
 func newTestLBEPS(dg *meridio2v1alpha1.DistributionGroup, endpoints []meridio2v1alpha1.LoadBalancerEndpoint, opts ...func(*meridio2v1alpha1.LoadBalancerEndpointSlice)) *meridio2v1alpha1.LoadBalancerEndpointSlice {
 	lbeps := &meridio2v1alpha1.LoadBalancerEndpointSlice{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-eps",
-			Namespace: "default",
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "meridio-2.nordix.org/v1alpha1",
-				Kind:       "DistributionGroup",
-				Name:       dg.Name,
-				UID:        dg.UID,
-				Controller: new(true),
-			}},
-		},
+		Name:      "test-eps",
+		Namespace: "default",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "meridio-2.nordix.org/v1alpha1",
+			Kind:       "DistributionGroup",
+			Name:       dg.Name,
+			UID:        dg.UID,
+			Controller: new(true),
+		}},
 		Spec: meridio2v1alpha1.LoadBalancerEndpointSliceSpec{
 			DistributionGroupName: dg.Name,
 			GatewayRef: meridio2v1alpha1.SliceGatewayRef{
@@ -215,19 +213,15 @@ var _ = Describe("LoadBalancer Controller", func() {
 	Describe("belongsToGateway", func() {
 		It("should return true when L34Route references both Gateway and DistributionGroup", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 
 			group := meridio2v1alpha1.GroupVersion.Group
 			kind := kindDistributionGroup
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{
@@ -236,11 +230,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  gatewayv1.ObjectName(distGroup.Name),
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
 						},
 					},
 				},
@@ -256,10 +248,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should return false when no L34Route references the DistributionGroup", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 
 			fakeClient = newFakeClient(scheme)
@@ -272,19 +262,15 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should return false when L34Route references different Gateway", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 
 			group := meridio2v1alpha1.GroupVersion.Group
 			kind := kindDistributionGroup
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{
@@ -293,11 +279,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  gatewayv1.ObjectName(distGroup.Name),
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
 						},
 					},
 				},
@@ -313,10 +297,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should return true when DistributionGroup has direct parentRef to this Gateway", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					ParentRefs: []meridio2v1alpha1.ParentReference{
 						{Name: gatewayName},
@@ -334,10 +316,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should return false when DistributionGroup has parentRef to different Gateway", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					ParentRefs: []meridio2v1alpha1.ParentReference{
 						{Name: "other-gateway"},
@@ -355,10 +335,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should return true via direct parentRef even without L34Routes", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					ParentRefs: []meridio2v1alpha1.ParentReference{
 						{Name: gatewayName},
@@ -385,10 +363,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 		It("should create NFQLB instance with M=N×100", func() {
 			maxEndpoints := int32(32)
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					Maglev: &meridio2v1alpha1.MaglevConfig{
 						MaxEndpoints: maxEndpoints,
@@ -406,10 +382,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should use default N=32 when Maglev config is nil", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					Maglev: nil,
 				},
@@ -423,10 +397,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should not recreate existing instance", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 
 			// Create instance first time
@@ -445,13 +417,13 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should assign sequential IDs without collisions", func() {
 			dg1 := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-1", Namespace: namespace},
+				Name: "dg-1", Namespace: namespace,
 			}
 			dg2 := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-2", Namespace: namespace},
+				Name: "dg-2", Namespace: namespace,
 			}
 			dg3 := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-3", Namespace: namespace},
+				Name: "dg-3", Namespace: namespace,
 			}
 
 			// Create instances
@@ -467,13 +439,13 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should reuse freed IDs", func() {
 			dg1 := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-1", Namespace: namespace},
+				Name: "dg-1", Namespace: namespace,
 			}
 			dg2 := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-2", Namespace: namespace},
+				Name: "dg-2", Namespace: namespace,
 			}
 			dg3 := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-3", Namespace: namespace},
+				Name: "dg-3", Namespace: namespace,
 			}
 
 			// Create three instances
@@ -488,7 +460,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			// Create new DG - should succeed (offset reuse is internal to nfqlb)
 			dg4 := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-4", Namespace: namespace},
+				Name: "dg-4", Namespace: namespace,
 			}
 			Expect(controller.reconcileNFQLBInstance(ctx, dg4)).To(Succeed())
 			Expect(controller.instances).To(HaveKey("dg-4"))
@@ -499,7 +471,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Readiness = readiness.NewManager(GinkgoT().TempDir())
 
 			dg := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{Name: "dg-1", Namespace: namespace},
+				Name: "dg-1", Namespace: namespace,
 			}
 			Expect(controller.reconcileNFQLBInstance(ctx, dg)).To(Succeed())
 			Expect(controller.Readiness.Set("dg-1")).To(Succeed())
@@ -536,10 +508,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		BeforeEach(func() {
 			distGroup = &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 
 			// Create NFQLB instance first
@@ -825,10 +795,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		BeforeEach(func() {
 			distGroup = &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 
 			// Create NFQLB instance first
@@ -849,10 +817,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}})
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{
@@ -861,11 +827,9 @@ var _ = Describe("LoadBalancer Controller", func() {
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  gatewayv1.ObjectName(distGroup.Name),
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -878,10 +842,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// Create Gateway with VIPs in status
 			ipAddrType := gatewayv1.IPAddressType
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 				Status: gatewayv1.GatewayStatus{
 					Addresses: []gatewayv1.GatewayStatusAddress{
 						{Type: &ipAddrType, Value: "20.0.0.1"},
@@ -926,21 +888,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}})
 
 			l34route1 := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "route-1",
-					Namespace: namespace,
-				},
+				Name:      "route-1",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  gatewayv1.ObjectName(distGroup.Name),
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -951,21 +909,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}
 
 			l34route2 := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "route-2",
-					Namespace: namespace,
-				},
+				Name:      "route-2",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  gatewayv1.ObjectName(distGroup.Name),
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.2/32"},
@@ -978,10 +932,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// Create Gateway with VIPs in status
 			ipAddrType := gatewayv1.IPAddressType
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 				Status: gatewayv1.GatewayStatus{
 					Addresses: []gatewayv1.GatewayStatusAddress{
 						{Type: &ipAddrType, Value: "20.0.0.1"},
@@ -1008,21 +960,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "other-route",
-					Namespace: namespace,
-				},
+				Name:      "other-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName("other-gateway")},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  gatewayv1.ObjectName(distGroup.Name),
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1047,21 +995,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "other-route",
-					Namespace: namespace,
-				},
+				Name:      "other-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "other-distgroup",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "other-distgroup",
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1089,27 +1033,23 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.flows = map[string]map[string]*meridio2v1alpha1.L34Route{
 				distGroup.Name: {
 					"test-route": &meridio2v1alpha1.L34Route{
-						ObjectMeta: metav1.ObjectMeta{Name: "test-route"},
+						Name: "test-route",
 					},
 				},
 			}
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  gatewayv1.ObjectName(distGroup.Name),
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  gatewayv1.ObjectName(distGroup.Name),
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1121,10 +1061,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// No LoadBalancerEndpointSlice (no endpoints) but L34Route and Gateway exist
 			ipAddrType := gatewayv1.IPAddressType
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 				Status: gatewayv1.GatewayStatus{
 					Addresses: []gatewayv1.GatewayStatusAddress{
 						{Type: &ipAddrType, Value: "20.0.0.1"},
@@ -1148,7 +1086,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.flows = map[string]map[string]*meridio2v1alpha1.L34Route{
 				distGroup.Name: {
 					"old-route": &meridio2v1alpha1.L34Route{
-						ObjectMeta: metav1.ObjectMeta{Name: "old-route"},
+						Name: "old-route",
 					},
 				},
 			}
@@ -1180,7 +1118,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// This DG has no L34Routes, but the Gateway still advertises its VIP.
 			ipAddrType := gatewayv1.IPAddressType
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{Name: gatewayName, Namespace: namespace},
+				Name: gatewayName, Namespace: namespace,
 				Status: gatewayv1.GatewayStatus{
 					Addresses: []gatewayv1.GatewayStatusAddress{
 						{Type: &ipAddrType, Value: "20.0.0.1"},
@@ -1207,15 +1145,13 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-route", Namespace: namespace},
+				Name: "test-route", Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{{Name: gatewayv1.ObjectName(gatewayName)}},
 					BackendRefs: []gatewayv1.BackendRef{{
-						BackendObjectReference: gatewayv1.BackendObjectReference{
-							Group: (*gatewayv1.Group)(&group),
-							Kind:  (*gatewayv1.Kind)(&kind),
-							Name:  gatewayv1.ObjectName(distGroup.Name),
-						},
+						Group: (*gatewayv1.Group)(&group),
+						Kind:  (*gatewayv1.Kind)(&kind),
+						Name:  gatewayv1.ObjectName(distGroup.Name),
 					}},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
 					Protocols:        []meridio2v1alpha1.TransportProtocol{meridio2v1alpha1.TCP},
@@ -1225,7 +1161,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			ipAddrType := gatewayv1.IPAddressType
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{Name: gatewayName, Namespace: namespace},
+				Name: gatewayName, Namespace: namespace,
 				Status: gatewayv1.GatewayStatus{
 					Addresses: []gatewayv1.GatewayStatusAddress{
 						{Type: &ipAddrType, Value: "20.0.0.1"},
@@ -1286,10 +1222,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		BeforeEach(func() {
 			distGroup = &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 		})
 
@@ -1336,21 +1270,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "test-distgroup",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "test-distgroup",
 						},
 					},
 				},
@@ -1367,21 +1297,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: "other-gateway"},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "test-distgroup",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "test-distgroup",
 						},
 					},
 				},
@@ -1395,20 +1321,16 @@ var _ = Describe("LoadBalancer Controller", func() {
 			otherKind := gatewayv1.Kind("Service")
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Kind: &otherKind,
-								Name: "test-service",
-							},
+							Kind: &otherKind,
+							Name: "test-service",
 						},
 					},
 				},
@@ -1423,28 +1345,22 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "distgroup-1",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "distgroup-1",
 						},
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "distgroup-2",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "distgroup-2",
 						},
 					},
 				},
@@ -1462,22 +1378,18 @@ var _ = Describe("LoadBalancer Controller", func() {
 			otherNs := gatewayv1.Namespace("other-ns")
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group:     (*gatewayv1.Group)(&group),
-								Kind:      (*gatewayv1.Kind)(&kind),
-								Name:      "same-name-dg",
-								Namespace: &otherNs,
-							},
+							Group:     (*gatewayv1.Group)(&group),
+							Kind:      (*gatewayv1.Kind)(&kind),
+							Name:      "same-name-dg",
+							Namespace: &otherNs,
 						},
 					},
 				},
@@ -1491,10 +1403,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 	Describe("Instance cleanup on deletion", func() {
 		It("should call Delete() and cleanup all state when DistributionGroup is deleted", func() {
 			distGroup := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-distgroup",
-					Namespace: namespace,
-				},
+				Name:      "test-distgroup",
+				Namespace: namespace,
 			}
 
 			// Create a mock instance
@@ -1534,7 +1444,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			// Reconcile with non-existent DistributionGroup
 			result, err := controller.Reconcile(ctx, reconcile.Request{
-				NamespacedName: client.ObjectKey{Name: distGroup.Name, Namespace: namespace},
+				Name: distGroup.Name, Namespace: namespace,
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -1551,10 +1461,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 	Describe("gatewayEnqueue", func() {
 		It("should enqueue DG with direct parentRef to this Gateway", func() {
 			dg := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "direct-dg",
-					Namespace: namespace,
-				},
+				Name:      "direct-dg",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					ParentRefs: []meridio2v1alpha1.ParentReference{
 						{Name: gatewayName},
@@ -1566,10 +1474,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1588,10 +1494,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// c.GatewayNamespace ("default"), so the parentRef-namespace check alone
 			// would not exclude it — only scoping the List call does.
 			dgOtherNs := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "direct-dg",
-					Namespace: "other-ns",
-				},
+				Name:      "direct-dg",
+				Namespace: "other-ns",
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					ParentRefs: []meridio2v1alpha1.ParentReference{
 						{Name: gatewayName, Namespace: new(namespace)},
@@ -1603,10 +1507,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1619,29 +1521,23 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			// DG with no parentRefs (indirect only)
 			dg := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "indirect-dg",
-					Namespace: namespace,
-				},
+				Name:      "indirect-dg",
+				Namespace: namespace,
 			}
 
 			// L34Route connecting Gateway → DG
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "indirect-dg",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "indirect-dg",
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1654,10 +1550,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1671,10 +1565,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 			// DG with direct parentRef AND referenced by L34Route
 			dg := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "both-dg",
-					Namespace: namespace,
-				},
+				Name:      "both-dg",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					ParentRefs: []meridio2v1alpha1.ParentReference{
 						{Name: gatewayName},
@@ -1683,21 +1575,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-route",
-					Namespace: namespace,
-				},
+				Name:      "test-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "both-dg",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "both-dg",
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1710,10 +1598,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1723,10 +1609,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should not enqueue DGs for a different Gateway", func() {
 			dg := &meridio2v1alpha1.DistributionGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "other-dg",
-					Namespace: namespace,
-				},
+				Name:      "other-dg",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.DistributionGroupSpec{
 					ParentRefs: []meridio2v1alpha1.ParentReference{
 						{Name: "other-gateway"},
@@ -1738,10 +1622,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1750,10 +1632,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 
 		It("should return nil for a different Gateway name", func() {
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "other-gateway",
-					Namespace: namespace,
-				},
+				Name:      "other-gateway",
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1763,20 +1643,16 @@ var _ = Describe("LoadBalancer Controller", func() {
 		It("should not enqueue non-DistributionGroup backendRefs from L34Routes", func() {
 			// L34Route points to this Gateway but backendRef is a Service, not a DG
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "service-route",
-					Namespace: namespace,
-				},
+				Name:      "service-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								// Group and Kind default to "" and "Service" respectively
-								Name: "my-service",
-							},
+							// Group and Kind default to "" and "Service" respectively
+							Name: "my-service",
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1789,10 +1665,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1804,21 +1678,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "other-gw-route",
-					Namespace: namespace,
-				},
+				Name:      "other-gw-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: "other-gateway"},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "some-dg",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "some-dg",
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1831,10 +1701,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1846,21 +1714,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			kind := kindDistributionGroup
 
 			route1 := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "route-1",
-					Namespace: namespace,
-				},
+				Name:      "route-1",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "dg-alpha",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "dg-alpha",
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1870,21 +1734,17 @@ var _ = Describe("LoadBalancer Controller", func() {
 			}
 
 			route2 := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "route-2",
-					Namespace: namespace,
-				},
+				Name:      "route-2",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group: (*gatewayv1.Group)(&group),
-								Kind:  (*gatewayv1.Kind)(&kind),
-								Name:  "dg-beta",
-							},
+							Group: (*gatewayv1.Group)(&group),
+							Kind:  (*gatewayv1.Kind)(&kind),
+							Name:  "dg-beta",
 						},
 					},
 					DestinationCIDRs: []string{"30.0.0.1/32"},
@@ -1897,10 +1757,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1914,10 +1772,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1932,22 +1788,18 @@ var _ = Describe("LoadBalancer Controller", func() {
 			// Same name as a DG that could legitimately exist in GatewayNamespace,
 			// to mirror the destructive-cleanup scenario this guard prevents.
 			l34route := &meridio2v1alpha1.L34Route{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "cross-ns-route",
-					Namespace: namespace,
-				},
+				Name:      "cross-ns-route",
+				Namespace: namespace,
 				Spec: meridio2v1alpha1.L34RouteSpec{
 					ParentRefs: []gatewayv1.ParentReference{
 						{Name: gatewayv1.ObjectName(gatewayName)},
 					},
 					BackendRefs: []gatewayv1.BackendRef{
 						{
-							BackendObjectReference: gatewayv1.BackendObjectReference{
-								Group:     (*gatewayv1.Group)(&group),
-								Kind:      (*gatewayv1.Kind)(&kind),
-								Name:      "test-distgroup",
-								Namespace: &otherNs,
-							},
+							Group:     (*gatewayv1.Group)(&group),
+							Kind:      (*gatewayv1.Kind)(&kind),
+							Name:      "test-distgroup",
+							Namespace: &otherNs,
 						},
 					},
 					DestinationCIDRs: []string{"20.0.0.1/32"},
@@ -1960,10 +1812,8 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			gateway := &gatewayv1.Gateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      gatewayName,
-					Namespace: namespace,
-				},
+				Name:      gatewayName,
+				Namespace: namespace,
 			}
 
 			requests := controller.gatewayEnqueue(ctx, gateway)
@@ -1988,7 +1838,7 @@ var _ = Describe("LoadBalancer Controller", func() {
 			controller.Client = fakeClient
 
 			result, err := controller.Reconcile(ctx, reconcile.Request{
-				NamespacedName: client.ObjectKey{Name: "test-distgroup", Namespace: "other-ns"},
+				Name: "test-distgroup", Namespace: "other-ns",
 			})
 
 			Expect(err).ToNot(HaveOccurred())
