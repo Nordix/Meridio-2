@@ -28,7 +28,6 @@ import (
 
 	"github.com/go-logr/logr/funcr"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Tests for issue #326: the config file on disk must always be one BIRD can
@@ -94,7 +93,7 @@ func assertNotExist(t *testing.T, path string) {
 // so a name containing "REJECT-ME" makes rejectMarked refuse the config.
 func testRouter(name string) []*meridio2v1alpha1.GatewayRouter {
 	return []*meridio2v1alpha1.GatewayRouter{{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Name: name,
 		Spec: meridio2v1alpha1.GatewayRouterSpec{
 			Interface: testRouterInterface, Address: testRouterAddress, BGP: &testBGPSpec,
 		},
