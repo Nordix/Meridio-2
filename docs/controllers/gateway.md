@@ -42,7 +42,7 @@ Gateway
 
 GatewayConfiguration
 ├── spec.networkAttachments → NAD references
-├── spec.networkSubnets → secondary network CIDRs
+├── spec.internalSubnets → internal secondary network CIDRs (one per IP family)
 ├── spec.horizontalScaling → replicas, enforceReplicas
 └── spec.verticalScaling → container resources
 
@@ -84,7 +84,7 @@ LB Deployment (owned by Gateway)
 - Combined step via `validateGateway()`: fetch GatewayConfiguration, load template, validate
 - Fetch GatewayConfiguration from `spec.infrastructure.parametersRef`
 - Load LB Deployment template from `<template-path>/lb-deployment.yaml`
-- Validate required fields (networkSubnets, networkAttachments, verticalScaling)
+- Validate required fields (internalSubnets, networkAttachments, verticalScaling)
 - Validate merged network attachments (template + GatewayConfiguration) for duplicate interfaces
 - Three error types with distinct handling:
   - `validationError` → Set `Accepted=False`, don't requeue (wait for user fix)
@@ -94,10 +94,11 @@ LB Deployment (owned by Gateway)
 **Validation rules:**
 - parametersRef is required
 - GatewayConfiguration must exist
-- At least one networkSubnet required
+- At least one internalSubnet required (CRD enforces `MinItems=1`, `MaxItems=2`)
+- Each internalSubnet carries a single `cidr`; for dual-stack use two entries of different IP families (CRD CEL rule enforces the family difference)
 - Only NAD attachment type is supported
 - CIDRs must be valid and not 0.0.0.0/0 or ::/0
-- CIDRs must not overlap (across all networkSubnet entries)
+- CIDRs must not overlap (across all internalSubnet entries)
 - IPv6 link-local addresses (fe80::/10) not allowed
 - networkAttachments must be NAD type with valid NAD configuration
 - No duplicate interface names within GatewayConfiguration NADs
@@ -216,7 +217,7 @@ infrastructure:
 
 # Result on Deployment:
 labels:
-  app: sllb-my-gateway                              # Controller-managed
+  app: sllbr-my-gateway                             # Controller-managed
   gateway.networking.k8s.io/gateway-name: my-gateway # Controller-managed
   custom-label: value2                               # Infrastructure
   template-label: overridden                         # Infrastructure (overwrote template)
@@ -375,7 +376,7 @@ verticalScaling:
 - `enforceResources=true`: Always enforce resources from GatewayConfiguration (updates Deployment template → triggers Pod recreation via RollingUpdate)
 - Switching from `true` to `false`: Last enforced values are preserved, external tool takes over from there
 
-**Current MVP Implementation:**
+**Current Implementation:**
 - Updates `Deployment.spec.template.spec.containers[].resources` directly
 - Triggers Pod recreation via RollingUpdate when resources change
 - Works on all Kubernetes versions (no feature gates required)
@@ -593,6 +594,86 @@ spec:
 - Maximum: `1m` (values above are rejected at startup)
 - Only waits for certs that are actually needed based on other flags
 
+**`--health-probe-bind-address`**:
+- Address the health/readiness probe endpoint binds to
+- Default: `:8081`
+
+**`--log-level`**:
+- Log level: `debug`, `info`, `warn`, `error`
+- Default: `info`
+
+**`--log-level-api`**:
+- Address for the dynamic log level HTTP endpoint (e.g., `127.0.0.1:9901`)
+- Default: empty (feature disabled)
+
+**`--enable-http2`**:
+- Enable HTTP/2 for the metrics and webhook servers
+- Default: `false`
+
+#### Leader Election
+
+The controller-manager supports leader election so that only one instance is active
+at a time. The tuning flags map directly onto controller-runtime's leader-election
+options.
+
+**`--leader-elect`**:
+- Enable leader election for the controller manager
+- Default: `false`
+
+**`--leader-elect-lease-duration`**:
+- Duration non-leader candidates wait to force-acquire leadership
+- Default: `15s`
+
+**`--leader-elect-renew-deadline`**:
+- Duration the acting leader retries refreshing leadership before giving up
+- Default: `10s`
+
+**`--leader-elect-retry-period`**:
+- Duration between each leader election retry
+- Default: `2s`
+
+**`--leader-elect-release-on-cancel`**:
+- Release the leader lease on graceful shutdown for faster failover
+- Default: `true`
+
+#### Webhook Server
+
+**`--enable-webhooks`**:
+- Enable the validating/defaulting webhook server
+- Default: `true`
+- Set to `false` for local testing without webhook certificates
+
+**`--webhook-port`**:
+- Port the webhook server binds to
+- Default: `9443`
+
+**`--webhook-cert-path`**:
+- Directory that contains the webhook server certificate
+- Default: empty (controller-runtime's default location)
+
+**`--webhook-cert-name`**:
+- Filename of the webhook server certificate
+- Default: `tls.crt`
+
+**`--webhook-cert-key`**:
+- Filename of the webhook server private key
+- Default: `tls.key`
+
+#### Metrics Certificate Filenames
+
+The metrics endpoint flags (`--metrics-bind-address`, `--metrics-secure`,
+`--metrics-cert-path`, `--metrics-prefix`, `--metrics-collect-timeout`) are documented
+under [controller-manager metrics](../development/metrics/controller-manager.md). The
+certificate filename flags are:
+
+**`--metrics-cert-name`**:
+- Filename of the metrics server certificate
+- Default: `tls.crt`
+
+**`--metrics-cert-key`**:
+- Filename of the metrics server private key
+- Default: `tls.key`
+
 ### Environment Variables
 All flags can be set via `MERIDIO_*` environment variables (e.g., `MERIDIO_NAMESPACE`).
 
@@ -703,10 +784,9 @@ spec:
         name: macvlan-net1
         namespace: meridio-2
         interface: net1
-  networkSubnets:
+  internalSubnets:
     - attachmentType: NAD
-      cidrs:
-        - "192.168.100.0/24"
+      cidr: "192.168.100.0/24"
   horizontalScaling:
     replicas: 2
     enforceReplicas: true
@@ -934,7 +1014,7 @@ kubectl -n meridio-2 get gateway test-bad-ref -o jsonpath='{.status.conditions[?
 # Expected: status=False, reason=InvalidParameters, message mentions "not found"
 kubectl delete gateway test-bad-ref -n meridio-2
 
-# 8c: Invalid CIDR in networkSubnets
+# 8c: Invalid CIDR in internalSubnets
 kubectl apply -f - <<EOF
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayConfiguration
@@ -943,10 +1023,9 @@ metadata:
   namespace: meridio-2
 spec:
   networkAttachments: []
-  networkSubnets:
+  internalSubnets:
     - attachmentType: NAD
-      cidrs:
-        - "fe80:1::/45"
+      cidr: "fe80:1::/45"
   horizontalScaling:
     replicas: 1
     enforceReplicas: false
@@ -975,9 +1054,9 @@ spec:
       nad: { name: vlan-100, namespace: meridio-2, interface: ext1 }
     - type: NAD
       nad: { name: macvlan-net1, namespace: meridio-2, interface: ext1 }
-  networkSubnets:
+  internalSubnets:
     - attachmentType: NAD
-      cidrs: ["192.168.100.0/24"]
+      cidr: "192.168.100.0/24"
   horizontalScaling:
     replicas: 1
     enforceReplicas: false
@@ -993,7 +1072,15 @@ kubectl -n meridio-2 patch gateway test-gateway --type=merge \
   -p '{"spec":{"infrastructure":{"parametersRef":{"group":"meridio-2.nordix.org","kind":"GatewayConfiguration","name":"test-gwconfig"}}}}'
 kubectl delete gatewayconfiguration dup-iface -n meridio-2
 
-# 8e: Overlapping CIDRs across networkSubnets
+# 8e: Two internalSubnets of the same IP family (rejected at admission by CEL)
+#
+# internalSubnets is capped at MaxItems=2 and a CRD CEL rule requires the two
+# entries to be different IP families. Two same-family entries are therefore
+# rejected by the API server at admission, before the controller runs. The
+# controller's own "overlapping internalSubnet CIDRs" check still exists in
+# validateInternalSubnets but is only reachable for cross-family inputs, which
+# by definition cannot overlap -- so in practice overlap is prevented at the
+# schema layer.
 kubectl apply -f - <<EOF
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: GatewayConfiguration
@@ -1004,25 +1091,18 @@ spec:
   networkAttachments:
     - type: NAD
       nad: { name: macvlan-net1, namespace: meridio-2, interface: net1 }
-  networkSubnets:
+  internalSubnets:
     - attachmentType: NAD
-      cidrs: ["192.168.0.0/16"]
+      cidr: "192.168.0.0/16"
     - attachmentType: NAD
-      cidrs: ["192.168.100.0/24"]
+      cidr: "192.168.100.0/24"
   horizontalScaling:
     replicas: 1
     enforceReplicas: false
 EOF
-kubectl -n meridio-2 patch gateway test-gateway --type=merge \
-  -p '{"spec":{"infrastructure":{"parametersRef":{"group":"meridio-2.nordix.org","kind":"GatewayConfiguration","name":"overlap-cidr"}}}}'
-sleep 2
-kubectl -n meridio-2 get gateway test-gateway -o jsonpath='{.status.conditions[?(@.type=="Accepted")]}'
-# Expected: status=False, reason=InvalidParameters, message mentions "overlapping"
-
-# Restore valid config
-kubectl -n meridio-2 patch gateway test-gateway --type=merge \
-  -p '{"spec":{"infrastructure":{"parametersRef":{"group":"meridio-2.nordix.org","kind":"GatewayConfiguration","name":"test-gwconfig"}}}}'
-kubectl delete gatewayconfiguration overlap-cidr -n meridio-2
+# Expected: the apply itself is rejected by the API server with the CEL
+# message "Each internalSubnet must represent a different IP family".
+kubectl delete gatewayconfiguration overlap-cidr -n meridio-2 --ignore-not-found
 ```
 
 #### Test 9: Automatic Cleanup (No Finalizers)
@@ -1187,7 +1267,7 @@ EnforceResources = true (with feature gate enabled):
 
 **RBAC requirements:**
 ```yaml
-# Current (Deployment-only MVP)
+# Current (Deployment-only)
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
@@ -1200,7 +1280,7 @@ EnforceResources = true (with feature gate enabled):
 
 Note: Kubernetes RBAC does not support field-level restrictions. The `pods/patch` verb grants permission to modify **any** Pod field, not just resources. This is a security concern.
 
-**Decision:** Defer to future PR after MVP is stable and tested. The RBAC security concern and added complexity outweigh the benefit of avoiding Pod recreation for resource changes.
+**Decision:** Defer to a future PR once the current implementation is stable and tested. The RBAC security concern and added complexity outweigh the benefit of avoiding Pod recreation for resource changes.
 
 ### Ready Condition Based on Deployment State (LOW PRIORITY)
 - Implement optional `Ready` condition (Extended conformance)

@@ -517,7 +517,7 @@ spec:
   listeners:
     - name: all
       protocol: ALL
-      port: 0
+      port: 1
 ---
 apiVersion: meridio-2.nordix.org/v1alpha1
 kind: DistributionGroup

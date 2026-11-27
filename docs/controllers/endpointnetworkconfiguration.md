@@ -4,7 +4,7 @@
 
 The EndpointNetworkConfiguration (ENC) controller runs inside the controller-manager. It reconciles application Pods to produce `EndpointNetworkConfiguration` custom resources — one per Pod — that declare the desired network state: which Gateways the Pod connects to, which VIPs to assign, and which next-hops to use for source-based routing.
 
-The ENC is consumed by the sidecar controller (`internal/controller/sidecar/`) running inside each application Pod, which applies VIPs, policy routing rules, and ECMP routes to the Pod's network namespace.
+The ENC is consumed by the [sidecar controller](sidecar.md) (`internal/controller/sidecar/`) running inside each application Pod, which applies VIPs, policy routing rules, and ECMP routes to the Pod's network namespace.
 
 ## Background & Rationale
 
