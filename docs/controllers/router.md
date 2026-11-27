@@ -73,8 +73,8 @@ BIRD runs as a child process of the router binary, started via `exec.CommandCont
 
 **Startup sequence**:
 1. `Bird.Run()` starts in a goroutine before the manager
-2. If no config file exists, writes an empty default config
-3. Starts `bird -d` (foreground/debug mode)
+2. If no config file exists, writes the base config (no routers, no VIPs). If a config file exists (`/etc/bird` is an emptyDir, so it survives container restarts), it is checked with `bird -p`: a valid file is kept, so BIRD resumes with the last applied config; a file BIRD rejects is moved to `bird.conf.rejected` and replaced by the base config, and the first reconcile then applies the full config. Without this, an unloadable file would make BIRD exit on every container restart (CrashLoopBackOff) before the reconciler could replace it ([#326](https://github.com/Nordix/Meridio-2/issues/326))
+3. Starts `bird -f` (foreground). BIRD's stdout/stderr are forwarded to the router log (logger `bird`, message `BIRD output`, one entry per line): this covers errors BIRD prints before its own logging is set up, and anything configured with `--bird-log stderr:...`
 4. Sets `running = true` after `cmd.Start()` returns (fork succeeded)
 
 **Graceful shutdown**:
@@ -84,14 +84,15 @@ BIRD runs as a child process of the router binary, started via `exec.CommandCont
 - This ensures peers immediately remove routes rather than waiting for hold timer expiry
 
 **Config application**:
-- `Bird.Configure()` first installs policy routes via `setPolicyRoutes()`, then writes config to disk (atomic: tmp file + rename), then calls `birdc configure` if `running == true`
-- If BIRD hasn't started yet (`running == false`), only writes the file — BIRD picks it up on startup
+- `Bird.Configure()` first installs policy routes via `setPolicyRoutes()`, then writes the new config to a candidate file next to `bird.conf` and checks it with `bird -p` (parse only). Only an accepted candidate is renamed over `bird.conf` (atomic); then `birdc configure` is called if `running == true`. The file on disk is therefore always a config BIRD can parse
+- A rejected candidate is kept as `bird.conf.rejected` for inspection (it contains the resolved keys, like `bird.conf`), `bird.conf` and the running BIRD keep the previous config, and `Configure` returns an error carrying BIRD's diagnostic (file:line:column and reason). The reconcile fails and is retried with backoff, so the error repeats in the router log until the input is fixed. `bird.conf.rejected` is not removed when a later config is accepted. It is overwritten by the next rejection
+- `bird -p` only parses. A candidate it accepts can still fail in `birdc configure` (control socket error, or an error BIRD only detects when applying the config). `bird.conf` then already holds the new config while the running BIRD and `lastConfig` keep the previous one. The reconcile returns the error and the next reconcile retries the reload. If the container restarts in between, BIRD starts on the new file. `bird -p` also does not open log files, so an unusable `--bird-log` file path is only detected when BIRD starts. BIRD then exits and the error appears in the router log (startup step 3)
+- If BIRD hasn't started yet (`running == false`), only writes the (checked) file — BIRD picks it up on startup
 - Mutex protects concurrent access to config writes and the `running` flag
 
 **Logging**:
-- BIRD logs to a configurable file path via `--bird-log-file` flag (default: `/var/log/bird/bird.log`)
-- The config template conditionally emits `log "<path>" all;` when a log file is set
-- `log stderr all;` is always present as baseline
+- BIRD log destinations are set with the repeatable `--bird-log` flag (`MERIDIO_BIRD_LOG`); the LB deployment template logs to `/var/log/bird/bird.log`. Each destination becomes a `log ...;` statement in the generated config
+- `--bird-log stderr:...` output appears in the router container log (see startup step 3)
 - The `Bird` struct takes a `bird.Config` struct: `bird.New(bird.Config{...})`
 
 **Interface**: `BirdInterface` allows mocking in tests (config generation, monitoring) without filesystem or process dependencies.
@@ -434,4 +435,5 @@ Meridio v1 exposes per-GatewayRouter metrics and monitors BIRD route counts:
 
 - `internal/controller/router/controller_test.go`: Reconciler logic (gateway filtering, GatewayRouter matching, VIP extraction, address type filtering, enqueue mapper, configure error propagation, TCP-AO and (deprecated) MD5 secret resolution and resolved-auth map building, Secret-watch matching across both mechanisms)
 - `internal/bird/bird_test.go`: Config generation (base, VIPs, routers, full reference config comparison, static routing with/without BFD, BFD interface params first-alphabetically-wins, TCP-AO authentication block generation with key rotation, (deprecated) MD5 password line generation)
+- `internal/bird/configfile_test.go`: Config file safety: a rejected config never replaces `bird.conf` and is kept as `.rejected`, retry after rejection, check failure vs rejection, startup with missing/valid/rejected/uncheckable existing file, BIRD output line forwarding. `TestCheckConfigWithBird` and `TestRun_StartsDespiteRejectedConfigFile` use the real `bird`/`birdc` binaries and skip when they are not on PATH
 - `internal/bird/monitor_test.go`: Protocol output parsing, BFD session output parsing, connectivity detection, status formatting, monitor channel lifecycle

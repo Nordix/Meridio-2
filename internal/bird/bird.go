@@ -17,6 +17,7 @@ limitations under the License.
 package bird
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -31,8 +32,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-logr/logr"
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 	"github.com/vishvananda/netlink"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // ResolvedAuth carries the Secret-resolved BGP authentication material for a
@@ -77,6 +80,53 @@ type Bird struct {
 	running    bool
 	lastConfig string // last written config for skip-if-unchanged guard
 	mu         sync.Mutex
+
+	// checkConfig reports whether BIRD would accept the config file at path.
+	// It is checkConfigWithBird in production and replaceable in tests.
+	checkConfig func(ctx context.Context, path string) error
+}
+
+// daemonLog receives the BIRD daemon's own stdout/stderr output.
+var daemonLog = logf.Log.WithName("bird")
+
+// configLog reports the router's own handling of the BIRD config file.
+var configLog = logf.Log.WithName("bird-config")
+
+// birdBinary is the BIRD daemon executable, looked up on PATH.
+const birdBinary = "bird"
+
+// configCheckTimeout bounds a single `bird -p` run.
+const configCheckTimeout = 10 * time.Second
+
+// ConfigRejectedError reports that BIRD refused to parse a config file. Output
+// holds BIRD's own diagnostic (file:line:column and reason).
+type ConfigRejectedError struct {
+	Path   string
+	Output string
+	Err    error
+}
+
+func (e *ConfigRejectedError) Error() string {
+	return fmt.Sprintf("BIRD rejected config %s: %v: %s", e.Path, e.Err, e.Output)
+}
+
+func (e *ConfigRejectedError) Unwrap() error { return e.Err }
+
+// checkConfigWithBird parses path with `bird -p` (parse only, no daemon, no
+// effect on a running BIRD). A non-zero exit is returned as a
+// *ConfigRejectedError; any other failure (binary missing, timeout) is returned
+// as is, so callers can tell "BIRD said no" from "could not ask BIRD".
+func checkConfigWithBird(ctx context.Context, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, configCheckTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, birdBinary, "-p", "-c", path).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	if _, ok := errors.AsType[*exec.ExitError](err); ok && ctx.Err() == nil {
+		return &ConfigRejectedError{Path: path, Output: strings.TrimSpace(string(out)), Err: err}
+	}
+	return fmt.Errorf("checking BIRD config %s: %w", path, err)
 }
 
 // birdClient returns a Client for this Bird's control socket. The Client is stateless (socket path
@@ -105,8 +155,9 @@ func New(cfg Config) (*Bird, error) {
 	}
 	cfg.LogParams = slices.Clone(cfg.LogParams)
 	return &Bird{
-		Config: cfg,
-		nl:     &netlink.Handle{},
+		Config:      cfg,
+		nl:          &netlink.Handle{},
+		checkConfig: checkConfigWithBird,
 	}, nil
 }
 
@@ -121,24 +172,25 @@ func (b *Bird) Run(ctx context.Context) error {
 		return fmt.Errorf("BIRD is already running")
 	}
 
-	if _, err := os.Stat(b.ConfigFile); errors.Is(err, os.ErrNotExist) {
-		conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}, nil)
-		if err != nil {
-			b.mu.Unlock()
-			return err
-		}
-		if err := b.writeConfigString(conf); err != nil {
-			b.mu.Unlock()
-			return err
-		}
-		b.lastConfig = conf
+	if err := b.prepareConfigFile(ctx); err != nil {
+		b.mu.Unlock()
+		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "bird", "-d", "-c", b.ConfigFile, "-s", b.SocketPath)
+	// -f: run in the foreground. (-d would additionally send BIRD's internal
+	// debug messages to stderr, which is now forwarded to the router log.)
+	cmd := exec.CommandContext(ctx, birdBinary, "-f", "-c", b.ConfigFile, "-s", b.SocketPath)
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(syscall.SIGTERM)
 	}
 	cmd.WaitDelay = 3 * time.Second
+	// Forward BIRD's output (startup errors before its own logging is set up,
+	// and anything logged via `log stderr`) to the router log instead of
+	// discarding it. A single comparable writer for both streams means exec
+	// calls it from one goroutine only.
+	output := &lineWriter{log: daemonLog}
+	cmd.Stdout = output
+	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
 		b.mu.Unlock()
 		return fmt.Errorf("BIRD failed to start: %w", err)
@@ -147,7 +199,9 @@ func (b *Bird) Run(ctx context.Context) error {
 	b.running = true
 	b.mu.Unlock()
 
-	if err := cmd.Wait(); err != nil && !errors.Is(err, context.Cause(ctx)) {
+	err := cmd.Wait()
+	output.Flush()
+	if err != nil && !errors.Is(err, context.Cause(ctx)) {
 		b.mu.Lock()
 		b.running = false
 		b.mu.Unlock()
@@ -191,10 +245,16 @@ func (b *Bird) Configure(ctx context.Context, vips []string, routers []*meridio2
 		return nil
 	}
 
-	if err := b.writeConfigString(conf); err != nil {
+	// The file is replaced only if `bird -p` accepts the new config, so the
+	// file on disk always parses (also after a container restart).
+	if err := b.writeConfig(ctx, conf); err != nil {
 		return err
 	}
 
+	// From here on bird.conf holds conf. If the reload below fails, the
+	// running BIRD and lastConfig keep the previous config and the next
+	// reconcile retries the reload. A container restart in between starts
+	// BIRD on conf, which `bird -p` has accepted.
 	if b.running {
 		// A cancellation-induced failure is tolerated: the caller's context going away is not a
 		// configuration problem, and the next reconcile retries.
@@ -271,10 +331,116 @@ func (b *Bird) generateConfig(vips []string, routers []*meridio2v1alpha1.Gateway
 	return buf.String(), nil
 }
 
-func (b *Bird) writeConfigString(conf string) error {
+// rejectedConfigFile is where a config BIRD refused is kept for inspection.
+func (b *Bird) rejectedConfigFile() string {
+	return b.ConfigFile + ".rejected"
+}
+
+// writeConfig replaces the config file with conf, but only if BIRD accepts
+// conf. The candidate is written next to the config file (same filesystem, so
+// the final rename is atomic) and checked with `bird -p` before the rename. A
+// rejected candidate is kept as <config>.rejected and the config file is left
+// untouched.
+func (b *Bird) writeConfig(ctx context.Context, conf string) error {
 	tmp := b.ConfigFile + ".tmp"
 	if err := os.WriteFile(tmp, []byte(conf), 0644); err != nil {
 		return err
 	}
+	if err := b.checkConfig(ctx, tmp); err != nil {
+		if _, ok := errors.AsType[*ConfigRejectedError](err); ok && os.Rename(tmp, b.rejectedConfigFile()) == nil {
+			return fmt.Errorf("%w (kept as %s)", err, b.rejectedConfigFile())
+		}
+		_ = os.Remove(tmp)
+		return err
+	}
 	return os.Rename(tmp, b.ConfigFile)
+}
+
+// prepareConfigFile makes sure BIRD is started on a config it can parse.
+//
+// The config file lives on an emptyDir that survives container restarts, so at
+// startup it may hold a config written by the previous container. If BIRD
+// rejected that file, BIRD would exit, the container would restart into the
+// same file, and the reconciler, which only runs while BIRD is up, could never
+// replace it. So an existing file is checked first: a valid one is kept (BIRD
+// resumes with the last applied config, matching the "retain previous config"
+// behaviour), a rejected one is moved to <config>.rejected and replaced by the
+// base config, which the first reconcile then extends.
+//
+// Must be called with b.mu held.
+func (b *Bird) prepareConfigFile(ctx context.Context) error {
+	_, err := os.Stat(b.ConfigFile)
+	switch {
+	case err == nil:
+		checkErr := b.checkConfig(ctx, b.ConfigFile)
+		if checkErr == nil {
+			return nil
+		}
+		if _, ok := errors.AsType[*ConfigRejectedError](checkErr); !ok {
+			// Could not check (e.g. timeout): do not discard a possibly
+			// valid config; fail and let the container restart retry.
+			return checkErr
+		}
+		if err := os.Rename(b.ConfigFile, b.rejectedConfigFile()); err != nil {
+			return fmt.Errorf("moving rejected BIRD config aside: %w", err)
+		}
+		configLog.Error(checkErr, "Existing BIRD config is invalid, starting BIRD with the base config",
+			"rejectedConfig", b.rejectedConfigFile())
+	case errors.Is(err, os.ErrNotExist):
+	default:
+		return fmt.Errorf("checking for existing BIRD config: %w", err)
+	}
+
+	conf, err := b.generateConfig([]string{}, []*meridio2v1alpha1.GatewayRouter{}, nil)
+	if err != nil {
+		return err
+	}
+	if err := b.writeConfig(ctx, conf); err != nil {
+		return fmt.Errorf("writing base BIRD config: %w", err)
+	}
+	b.lastConfig = conf
+	return nil
+}
+
+// maxOutputLine bounds how many bytes of an unterminated line are buffered.
+// When exceeded, the buffer is emitted as one entry, which may be longer than
+// maxOutputLine if a single Write delivered more.
+const maxOutputLine = 4096
+
+// lineWriter forwards a process's output to a logger, one entry per line.
+// It is not safe for concurrent use; exec.Cmd calls Write from a single
+// goroutine when Stdout and Stderr are the same writer.
+type lineWriter struct {
+	log logr.Logger
+	buf []byte
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+		w.emit(w.buf[:i])
+		w.buf = w.buf[i+1:]
+	}
+	if len(w.buf) > maxOutputLine {
+		w.Flush()
+	}
+	return len(p), nil
+}
+
+// Flush emits any buffered partial line.
+func (w *lineWriter) Flush() {
+	if len(w.buf) > 0 {
+		w.emit(w.buf)
+	}
+	w.buf = nil
+}
+
+func (w *lineWriter) emit(line []byte) {
+	if s := strings.TrimRight(string(line), "\r"); s != "" {
+		w.log.Info("BIRD output", "line", s)
+	}
 }
