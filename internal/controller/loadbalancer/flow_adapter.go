@@ -45,6 +45,22 @@ func (f *l34RouteFlow) GetDestinationPortRanges() []string {
 func (f *l34RouteFlow) GetByteMatches() []string { return f.route.Spec.ByteMatches }
 func (f *l34RouteFlow) GetPriority() int32       { return f.route.Spec.Priority }
 
+// MarshalLog implements logr.Marshaler (see nfqlb.Flow). Without it the
+// adapter, which has only unexported fields, is logged as {}. Port ranges are
+// the ones handed to nfqlb (after anyPortToExplicitRange).
+func (f *l34RouteFlow) MarshalLog() any {
+	return map[string]any{
+		"name":        f.name,
+		"priority":    f.GetPriority(),
+		"protocols":   f.GetProtocols(),
+		"srcs":        f.GetSourceCIDRs(),
+		"dsts":        f.GetDestinationCIDRs(),
+		"sports":      f.GetSourcePortRanges(),
+		"dports":      f.GetDestinationPortRanges(),
+		"byteMatches": f.GetByteMatches(),
+	}
+}
+
 // anyPortToExplicitRange converts a full-range port set to the single explicit
 // range "0-65535" that both anyPortRange and nfqlb understand. If any entry
 // already covers all ports — the user-facing "any" spelling or the explicit
@@ -84,3 +100,6 @@ func (f *nameOnlyFlow) GetDestinationPortRanges() []string { return nil }
 func (f *nameOnlyFlow) GetProtocols() []string             { return nil }
 func (f *nameOnlyFlow) GetPriority() int32                 { return 0 }
 func (f *nameOnlyFlow) GetByteMatches() []string           { return nil }
+
+// MarshalLog implements logr.Marshaler (see nfqlb.Flow): only the name is known.
+func (f *nameOnlyFlow) MarshalLog() any { return map[string]any{"name": f.name} }

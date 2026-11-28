@@ -17,8 +17,11 @@ limitations under the License.
 package loadbalancer
 
 import (
+	"bytes"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	meridio2v1alpha1 "github.com/nordix/meridio-2/api/v1alpha1"
 )
@@ -64,5 +67,38 @@ var _ = Describe("l34RouteFlow any-port conversion", func() {
 		f := newFlow(nil, nil)
 		Expect(f.GetSourcePortRanges()).To(BeNil())
 		Expect(f.GetDestinationPortRanges()).To(BeNil())
+	})
+})
+
+var _ = Describe("flow adapters as log values", func() {
+	// The adapters have only unexported fields, so without MarshalLog zap's
+	// reflection encoder would log them as {}. Log through the same zap-backed
+	// logger the binaries use and assert the content actually shows up.
+	logged := func(flow any) string {
+		var buf bytes.Buffer
+		ctrlzap.New(ctrlzap.WriteTo(&buf), ctrlzap.UseDevMode(false)).Info("msg", "flow", flow)
+		return buf.String()
+	}
+
+	It("logs the l34RouteFlow content, not {}", func() {
+		out := logged(newL34RouteFlow("flow-a", &meridio2v1alpha1.L34Route{
+			Spec: meridio2v1alpha1.L34RouteSpec{
+				SourceCIDRs:      []string{"10.0.0.0/24"},
+				DestinationPorts: []string{"any"},
+				Priority:         5,
+			},
+		}))
+		Expect(out).NotTo(ContainSubstring(`"flow":{}`))
+		Expect(out).To(ContainSubstring(`"name":"flow-a"`))
+		Expect(out).To(ContainSubstring(`"srcs":["10.0.0.0/24"]`))
+		// The ports nfqlb receives, i.e. after the any -> explicit conversion.
+		Expect(out).To(ContainSubstring(`"dports":["0-65535"]`))
+		Expect(out).To(ContainSubstring(`"priority":5`))
+	})
+
+	It("logs the name of a nameOnlyFlow, not {}", func() {
+		out := logged(&nameOnlyFlow{name: "flow-b"})
+		Expect(out).NotTo(ContainSubstring(`"flow":{}`))
+		Expect(out).To(ContainSubstring(`"name":"flow-b"`))
 	})
 })
