@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/nordix/meridio-2/internal/common/gatewayutil"
@@ -41,6 +42,8 @@ func (r *DistributionGroupReconciler) mapPodToDistributionGroup(ctx context.Cont
 	var dgList meridio2v1alpha1.DistributionGroupList
 	listOpts := []client.ListOption{client.InNamespace(pod.Namespace)}
 	if err := r.List(ctx, &dgList, listOpts...); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list DistributionGroups for Pod, enqueuing nothing",
+			"pod", client.ObjectKeyFromObject(pod), "error", err)
 		return nil
 	}
 
@@ -51,6 +54,8 @@ func (r *DistributionGroupReconciler) mapPodToDistributionGroup(ctx context.Cont
 		}
 		selector, err := metav1.LabelSelectorAsSelector(dg.Spec.Selector)
 		if err != nil {
+			logf.FromContext(ctx).V(1).Info("Skipping DistributionGroup with invalid selector",
+				"distGroup", client.ObjectKeyFromObject(&dg), "error", err)
 			continue
 		}
 		if selector.Matches(labels.Set(pod.Labels)) {
@@ -117,6 +122,8 @@ func (r *DistributionGroupReconciler) mapGatewayConfigToDistributionGroup(ctx co
 	// Find Gateways using this GatewayConfiguration
 	var gwList gatewayv1.GatewayList
 	if err := r.List(ctx, &gwList, client.InNamespace(gwConfig.Namespace)); err != nil {
+		logf.FromContext(ctx).V(1).Info("Failed to list Gateways for GatewayConfiguration, enqueuing nothing",
+			"gatewayConfig", client.ObjectKeyFromObject(gwConfig), "error", err)
 		return nil
 	}
 
