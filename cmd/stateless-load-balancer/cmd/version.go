@@ -24,8 +24,8 @@ import (
 	"github.com/nordix/meridio-2/internal/common/version"
 )
 
-// newVersionCmd creates the version subcommand
-func newVersionCmd() *cobra.Command {
+// NewVersionCmd creates the version subcommand
+func NewVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",

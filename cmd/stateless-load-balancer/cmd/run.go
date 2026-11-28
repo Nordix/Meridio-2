@@ -72,7 +72,7 @@ func init() {
 	utilruntime.Must(gatewayv1.Install(scheme))
 }
 
-func newCmdRun() *cobra.Command {
+func NewRunCmd() *cobra.Command {
 	cfg := &config.LoadBalancerConfig{}
 
 	cmd := &cobra.Command{

@@ -16,8 +16,14 @@ limitations under the License.
 
 package main
 
-import "github.com/nordix/meridio-2/cmd/network-sidecar/cmd"
+import (
+	"os"
+
+	"github.com/nordix/meridio-2/cmd/network-sidecar/cmd"
+)
 
 func main() {
-	cmd.Execute()
+	if err := cmd.NewRootCmd().Execute(); err != nil {
+		os.Exit(1)
+	}
 }
